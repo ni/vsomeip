@@ -21,7 +21,7 @@ jobs:
           arch: x86
           cache: true
 
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - name: install dependencies
         run: |
@@ -59,7 +59,7 @@ jobs:
           arch: x86
           cache: true
 
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - name: Run CMake
         run: cmake -Bbuild -D BOOST_ROOT=C:\runner\boost/boost\ .
