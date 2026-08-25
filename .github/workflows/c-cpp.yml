@@ -11,7 +11,7 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       - name: Ubuntu - Install boost 1.83.0 with gcc and x86
-        uses: MarkusJx/install-boost@v2.4.4
+        uses: MarkusJx/install-boost@v2.6.0
         id: ubuntu-gcc-1_83-x86
         with:
           boost_version: 1.83.0
@@ -49,7 +49,7 @@ jobs:
     runs-on: windows-latest
     steps:
       - name: Windows - Install boost 1.83.0 with gcc and x86
-        uses: MarkusJx/install-boost@6d8df42f57de83c5b326b5b83e7b35d650030103
+        uses: MarkusJx/install-boost@f9d34f6fe427b8f2ae424d7bf2a3ebccb0dae5a3
         id: windows-gcc-1_83-x86
         with:
           boost_version: 1.83.0
