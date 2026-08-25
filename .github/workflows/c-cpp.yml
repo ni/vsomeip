@@ -40,7 +40,7 @@ jobs:
       - name: Run BenchMark tests
         run: env -C build test/benchmark_tests/benchmark_tests_bin
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: vsomeip
           path: "${{ runner.workspace }}/install/**/*"
