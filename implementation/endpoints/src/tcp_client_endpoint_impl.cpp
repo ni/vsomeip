@@ -37,7 +37,12 @@ tcp_client_endpoint_impl::tcp_client_endpoint_impl(const std::shared_ptr<boardne
     // send timeout after 2/3 of configured ttl, warning after 1/3
     send_timeout_(configuration_->get_sd_ttl() * 666), send_timeout_warning_(send_timeout_ / 2),
     tcp_restart_aborts_max_(configuration_->get_max_tcp_restart_aborts()),
-    tcp_connect_time_max_(configuration_->get_max_tcp_connect_time()), aborted_restart_count_(0), sent_timer_(_io) {
+    tcp_connect_time_max_(configuration_->get_max_tcp_connect_time()), aborted_restart_count_(0),
+    bad_descriptor_burst_count_(0),
+    bad_descriptor_window_start_(std::chrono::steady_clock::time_point::min()),
+    bad_descriptor_restart_threshold_(3),
+    bad_descriptor_restart_window_(std::chrono::milliseconds(500)),
+    sent_timer_(_io) {
 
     this->max_message_size_ = _configuration->get_max_message_size_reliable(_remote.address().to_string(), _remote.port());
     this->queue_limit_ = _configuration->get_endpoint_queue_limit(_remote.address().to_string(), _remote.port());
@@ -614,8 +619,34 @@ void tcp_client_endpoint_impl::receive_cbk(boost::system::error_code const& _err
         } else {
             VSOMEIP_WARNING_P << _error.message() << "(" << _error.value() << ") local: " << get_address_port_local()
                               << " remote: " << get_address_port_remote();
-            if (_error == boost::asio::error::eof || _error == boost::asio::error::timed_out || _error == boost::asio::error::bad_descriptor
-                || _error == boost::asio::error::connection_reset) {
+            bool should_restart = false;
+            if (_error == boost::asio::error::bad_descriptor) {
+                const auto now = std::chrono::steady_clock::now();
+                if (bad_descriptor_window_start_ == std::chrono::steady_clock::time_point::min()
+                    || (now - bad_descriptor_window_start_) > bad_descriptor_restart_window_) {
+                    bad_descriptor_window_start_ = now;
+                    bad_descriptor_burst_count_ = 1;
+                } else {
+                    ++bad_descriptor_burst_count_;
+                }
+
+                should_restart = (bad_descriptor_burst_count_ >= bad_descriptor_restart_threshold_);
+                if (!should_restart) {
+                    VSOMEIP_WARNING_P << "Deferring restart for bad_descriptor. "
+                                      << "count=" << bad_descriptor_burst_count_
+                                      << " threshold=" << bad_descriptor_restart_threshold_
+                                      << " window_ms=" << bad_descriptor_restart_window_.count();
+                }
+            } else {
+                bad_descriptor_burst_count_ = 0;
+                bad_descriptor_window_start_ = std::chrono::steady_clock::time_point::min();
+                should_restart = (_error == boost::asio::error::eof || _error == boost::asio::error::timed_out
+                                  || _error == boost::asio::error::connection_reset);
+            }
+
+            if (should_restart) {
+                bad_descriptor_burst_count_ = 0;
+                bad_descriptor_window_start_ = std::chrono::steady_clock::time_point::min();
                 if (state_ == cei_state_e::CONNECTING) {
                     VSOMEIP_WARNING_P << "Already restarting" << get_remote_information();
                 } else {
