@@ -6,6 +6,7 @@
 #pragma once
 
 #include <boost/asio/ip/tcp.hpp>
+#include <chrono>
 #include <functional>
 #include "../include/io_control_operation.hpp"
 
@@ -149,6 +150,14 @@ public:
 #endif
 
     virtual void listen(int, boost::system::error_code&) = 0;
+
+     /**
+     * Wait for an incoming connection to become readable on the acceptor.
+     * Returns true if there is data pending (connection ready), false on timeout
+     * or error (error details in _ec).
+     **/
+    [[nodiscard]] virtual bool wait_for_pending_connection(std::chrono::milliseconds _timeout,
+                                                          boost::system::error_code& _ec) = 0;
 
     virtual void async_accept(tcp_socket&, boost::asio::ip::tcp::endpoint&, connect_handler) = 0;
 
