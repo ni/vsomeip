@@ -20,6 +20,7 @@
 #include <boost/asio/local/stream_protocol.hpp>
 #endif
 #include <functional>
+#include <string>
 
 namespace vsomeip_v3 {
 
@@ -47,6 +48,16 @@ public:
 #endif
 
     virtual std::unique_ptr<abstract_timer> create_timer(boost::asio::io_context& _io) = 0;
+
+    virtual bool register_io_context(boost::asio::io_context&, const std::string&) {
+        return true;
+    }
+
+    virtual void unregister_io_context(boost::asio::io_context&, const std::string&) { }
+
+    virtual bool is_xnet_backend() const {
+        return false;
+    }
 };
 
 // In order for this function to change the globally used abstract_socket_factory,
@@ -54,5 +65,9 @@ public:
 // If this function is not called the asio_socket_factory is used as the global
 // factory.
 void set_abstract_factory(std::shared_ptr<abstract_socket_factory> ptr);
+void freeze_abstract_factory();
+
+bool is_abstract_factory_finalized();
+bool was_abstract_factory_late_injection_detected();
 
 }
