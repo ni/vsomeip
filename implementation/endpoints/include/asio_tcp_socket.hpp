@@ -5,11 +5,21 @@
 
 #pragma once
 
+#include "backend_socket_option_helpers.hpp"
 #include "tcp_socket.hpp"
 
 #include <boost/asio/write.hpp>
 #include <boost/asio/ip/tcp.hpp>
+#include <chrono>
 
+#if defined(_WIN32)
+#include <Winsock2.h>
+#else
+#include <poll.h>
+#include <cerrno>
+#endif
+
+#include <limits>
 #include <memory>
 #include <string>
 
@@ -37,31 +47,24 @@ private:
     void set_option(boost::asio::ip::tcp::socket::reuse_address ra, boost::system::error_code& ec) override { socket_->set_option(ra, ec); }
 #if defined(__linux__)
     [[nodiscard]] bool set_user_timeout(unsigned int timeout) override {
-        return setsockopt(socket_->native_handle(), IPPROTO_TCP, TCP_USER_TIMEOUT, &timeout, sizeof(timeout)) != -1;
+        return socket_option_helpers::set_tcp_user_timeout(socket_->native_handle(), timeout);
     }
     [[nodiscard]] bool set_keepidle(uint32_t idle) override {
-        auto opt = static_cast<int>(idle);
-        return setsockopt(socket_->native_handle(), IPPROTO_TCP, TCP_KEEPIDLE, &opt, sizeof(opt)) != -1;
+        return socket_option_helpers::set_tcp_keepidle(socket_->native_handle(), idle);
     }
     [[nodiscard]] bool set_keepintvl(uint32_t interval) override {
-        auto opt = static_cast<int>(interval);
-        return setsockopt(socket_->native_handle(), IPPROTO_TCP, TCP_KEEPINTVL, &opt, sizeof(opt)) != -1;
+        return socket_option_helpers::set_tcp_keepintvl(socket_->native_handle(), interval);
     }
     [[nodiscard]] bool set_keepcnt(uint32_t count) override {
-        auto opt = static_cast<int>(count);
-        return setsockopt(socket_->native_handle(), IPPROTO_TCP, TCP_KEEPCNT, &opt, sizeof(opt)) != -1;
+        return socket_option_helpers::set_tcp_keepcnt(socket_->native_handle(), count);
     }
     [[nodiscard]] bool set_quick_ack() override {
-        int flag = 1;
-        return setsockopt(socket_->native_handle(), IPPROTO_TCP, TCP_QUICKACK, &flag, sizeof(flag)) != -1;
+        return socket_option_helpers::set_tcp_quick_ack(socket_->native_handle());
     }
 #endif
 #if defined(__linux__) || defined(__QNX__)
     [[nodiscard]] bool bind_to_device(std::string const& _device) override {
-        // +1 since std::string.size does not take into account the null terminator
-        return setsockopt(socket_->native_handle(), SOL_SOCKET, SO_BINDTODEVICE, _device.c_str(),
-                          static_cast<socklen_t>(_device.size() + 1))
-                != -1;
+        return socket_option_helpers::set_bind_to_device(socket_->native_handle(), _device);
     }
     [[nodiscard]] bool can_read_fd_flags() override { return fcntl(socket_->native_handle(), F_GETFD) != -1; }
 #endif
@@ -103,27 +106,82 @@ private:
     void cancel(boost::system::error_code& ec) override { acceptor_->cancel(ec); }
     void listen(int backlog, boost::system::error_code& ec) override { acceptor_->listen(backlog, ec); }
 
+    bool wait_for_pending_connection(std::chrono::milliseconds timeout, boost::system::error_code& ec) override {
+        if (!acceptor_->is_open()) {
+            ec = boost::asio::error::bad_descriptor;
+            return false;
+        }
+
+        if (timeout.count() < 0 || timeout.count() > std::numeric_limits<int>::max()) {
+            ec = boost::asio::error::invalid_argument;
+            return false;
+        }
+
+        const int timeout_ms = static_cast<int>(timeout.count());
+
+#if defined(_WIN32)
+        WSAPOLLFD pfd{};
+        pfd.fd = acceptor_->native_handle();
+        pfd.events = POLLIN;
+
+        const int rc = ::WSAPoll(&pfd, 1, timeout_ms);
+        if (rc < 0) {
+            ec = boost::system::error_code(WSAGetLastError(), boost::asio::error::get_system_category());
+            return false;
+        }
+        if (rc == 0) {
+            ec.clear();
+            return false;
+        }
+        if (pfd.revents & (POLLERR | POLLHUP | POLLNVAL)) {
+            ec = boost::asio::error::fault;
+            return false;
+        }
+
+        ec.clear();
+        return (pfd.revents & POLLIN) != 0;
+#else
+        pollfd pfd{};
+        pfd.fd = acceptor_->native_handle();
+        pfd.events = POLLIN;
+
+        const int rc = ::poll(&pfd, 1, timeout_ms);
+        if (rc < 0) {
+            ec.assign(errno, boost::system::system_category());
+            return false;
+        }
+        if (rc == 0) {
+            ec.clear();
+            return false;
+        }
+        if (pfd.revents & (POLLERR | POLLHUP | POLLNVAL)) {
+            ec = boost::asio::error::fault;
+            return false;
+        }
+
+        ec.clear();
+        return (pfd.revents & POLLIN) != 0;
+#endif
+    }
+
+
     void set_option(boost::asio::ip::tcp::socket::reuse_address ra, boost::system::error_code& ec) override {
         acceptor_->set_option(ra, ec);
     }
 
 #if defined(__linux__)
     [[nodiscard]] bool set_reuse_port() override {
-        int flag = 1;
-        return setsockopt(acceptor_->native_handle(), SOL_SOCKET, SO_REUSEPORT, &flag, sizeof(flag)) != -1;
+        return socket_option_helpers::set_tcp_acceptor_reuse_port(acceptor_->native_handle());
+            setsockopt(acceptor_->native_handle(), SOL_SOCKET, SO_REUSEPORT, &flag, sizeof(flag)) != -1;
     }
 
     [[nodiscard]] bool set_native_option_free_bind() override {
-        int opt = 1;
-        return setsockopt(acceptor_->native_handle(), IPPROTO_IP, IP_FREEBIND, &opt, sizeof(opt)) != -1;
+        return socket_option_helpers::set_tcp_acceptor_free_bind(acceptor_->native_handle());
     }
 #endif
 #if defined(__linux__) || defined(__QNX__)
     [[nodiscard]] bool bind_to_device(std::string const& _device) override {
-        // +1 since std::string.size does not take into account the null terminator
-        return setsockopt(acceptor_->native_handle(), SOL_SOCKET, SO_BINDTODEVICE, _device.c_str(),
-                          static_cast<socklen_t>(_device.size() + 1))
-                != -1;
+        return socket_option_helpers::set_bind_to_device(socket_->native_handle(), _device);
     }
 #endif
     void async_accept(tcp_socket& _socket, boost::asio::ip::tcp::endpoint& _peer_ep, connect_handler _handler) override {
