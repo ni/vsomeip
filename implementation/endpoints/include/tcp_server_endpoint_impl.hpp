@@ -16,12 +16,16 @@
 #include "tcp_socket.hpp"
 
 #include <chrono>
+#include <boost/system/error_code.hpp>
 
 #if defined(__QNX__)
 #include "../../utility/include/qnx_helper.hpp"
 #endif
 
 namespace vsomeip_v3 {
+
+VSOMEIP_EXPORT boost::system::error_code apply_tcp_server_accept_socket_option_policy(tcp_socket& _socket,
+                                                                                       const std::string& _instance_name);
 
 typedef server_endpoint_impl<boost::asio::ip::tcp> tcp_server_endpoint_base_impl;
 
