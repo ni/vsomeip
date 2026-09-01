@@ -385,7 +385,7 @@ void tcp_server_endpoint_impl::accept_cbk(connection::ptr _connection, std::shar
     if (!_error) {
         // Remote endpoint was captured by the kernel at accept() time via the peer-endpoint
         // overload of async_accept, so it is valid even if the client already disconnected.
-        boost::system::error_code its_error;
+        boost::system::error_code its_fatal_error;
         const endpoint_type remote(*_remote_ep);
         {
             std::unique_lock its_socket_lock(_connection->get_socket_lock());
