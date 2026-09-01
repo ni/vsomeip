@@ -318,6 +318,47 @@ bool configuration_impl::load(const std::string& _name) {
     return is_loaded_;
 }
 
+bool configuration_impl::load_from_string(const std::string& _name, const std::string& _json) {
+    (void)_name;
+    std::scoped_lock its_lock(mutex_);
+    if (is_loaded_)
+        return true;
+
+    std::chrono::steady_clock::time_point begin = std::chrono::steady_clock::now();
+
+    // Parse the configuration from the in-memory JSON string. No file or folder
+    // is read and no temporary file is created on the filesystem.
+    std::vector<configuration_element> its_elements;
+    try {
+        boost::property_tree::ptree its_tree;
+        std::stringstream its_stream(_json);
+        boost::property_tree::json_parser::read_json(its_stream, its_tree);
+        its_elements.push_back({"<in-memory>", its_tree});
+    } catch (boost::property_tree::json_parser_error& e) {
+        VSOMEIP_ERROR << "Parsing of in-memory vsomeip configuration failed: " << e.what();
+        return false;
+    }
+
+    // Feed the parsed element into the regular in-memory load pipeline.
+    load_data(its_elements, true, true);
+
+    // Dummy initialization; if logger configs were not found use default
+    if (!is_logging_loaded_) {
+        logger::logger_impl::init(shared_from_this());
+    }
+
+    // set global unicast address for all services with magic cookies enabled
+    set_magic_cookies_unicast_address();
+
+    std::chrono::steady_clock::time_point end = std::chrono::steady_clock::now();
+
+    VSOMEIP_INFO << "Parsed in-memory vsomeip configuration in "
+                 << std::chrono::duration_cast<std::chrono::milliseconds>(end - begin).count() << "ms";
+
+    is_loaded_ = true;
+    return is_loaded_;
+}
+
 #ifndef VSOMEIP_DISABLE_SECURITY
 void configuration_impl::lazy_load_security(const std::string& _client_host) {
 

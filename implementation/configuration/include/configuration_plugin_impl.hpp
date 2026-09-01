@@ -25,6 +25,7 @@ public:
     virtual ~configuration_plugin_impl();
 
     std::shared_ptr<configuration> get_configuration(const std::string& _name, const std::string& _path);
+    std::shared_ptr<configuration> get_configuration_from_string(const std::string& _name, const std::string& _json);
     bool remove_configuration(const std::string& _name);
 
 private:
