@@ -62,6 +62,7 @@ public:
     VSOMEIP_EXPORT virtual ~configuration_impl();
 
     VSOMEIP_EXPORT bool load(const std::string& _name);
+    VSOMEIP_EXPORT bool load_from_string(const std::string& _name, const std::string& _json);
 #ifndef VSOMEIP_DISABLE_SECURITY
     VSOMEIP_EXPORT void lazy_load_security(const std::string& _client_host);
 #endif // !VSOMEIP_DISABLE_SECURITY

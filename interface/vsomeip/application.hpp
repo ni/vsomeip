@@ -108,6 +108,25 @@ public:
 
     /**
      *
+     * \brief Initializes the application from an in-memory JSON configuration.
+     *
+     * This overload behaves like @ref init but takes the complete vsomeip
+     * configuration as a JSON string instead of reading it from a
+     * configuration file or folder. The configuration is parsed and applied
+     * entirely in memory; no temporary or permanent file is created on the
+     * filesystem.
+     *
+     * \param _json The complete vsomeip configuration encoded as a JSON
+     * string.
+     *
+     * \return True if the application was initialized successfully, false
+     * otherwise (e.g. if the JSON could not be parsed).
+     *
+     */
+    virtual bool init(const std::string& _json) = 0;
+
+    /**
+     *
      * \brief Starts message processing.
      *
      * This method must be called after init to start message processing. It

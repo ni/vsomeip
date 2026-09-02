@@ -45,6 +45,7 @@ public:
     VSOMEIP_EXPORT ~application_impl();
 
     VSOMEIP_EXPORT bool init();
+    VSOMEIP_EXPORT bool init(const std::string& _json);
     VSOMEIP_EXPORT void start();
     VSOMEIP_EXPORT void stop();
     VSOMEIP_EXPORT void process(int _number);
@@ -193,6 +194,10 @@ public:
                                                      const message_handler_t& _handler, handler_registration_type_e _type);
 
 private:
+    // Common initialization logic shared by init() and init(const std::string&),
+    // executed once the configuration_ member has been resolved.
+    bool init_configuration();
+
     using members_key_t = std::uint64_t;
     using members_t = std::unordered_map<members_key_t, std::deque<message_handler_t>>;
 
