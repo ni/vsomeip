@@ -51,6 +51,13 @@ set_target_properties(${VSOMEIP_NAME}-test PROPERTIES BUILD_RPATH "${CMAKE_CURRE
 set_target_properties(${VSOMEIP_NAME}-test PROPERTIES OUTPUT_NAME ${VSOMEIP_NAME} VERSION ${VSOMEIP_VERSION} SOVERSION ${VSOMEIP_MAJOR_VERSION})
 target_link_libraries(${VSOMEIP_NAME}-test PRIVATE ${Boost_LIBRARIES} ${USE_RT} ${DL_LIBRARY} ${DLT_LIBRARIES} ${SystemD_LIBRARIES} ${CMAKE_THREAD_LIBS_INIT})
 
+# The test flavour of the library reuses the ${VSOMEIP_NAME}-internal objects, which
+# contain the XNET backend (xnet_api.cpp). It therefore needs the same NI XNET
+# import library as ${VSOMEIP_NAME}, otherwise nxsocket & co. stay unresolved.
+if (ENABLE_XNET_BACKEND)
+    target_link_libraries(${VSOMEIP_NAME}-test PRIVATE ${NIXNET_LIBRARY})
+endif ()
+
 if (NOT MSVC)
     if(${CMAKE_SYSTEM_NAME} MATCHES "QNX")
         # add syscall wrappers to deal with CLOEXEC
@@ -63,6 +70,9 @@ endif ()
 
 set(VSOMEIP_TEST_LIBRARY_TARGETS ${VSOMEIP_NAME}-test)
 
+# The cfg object library only exists when the configuration sources are not
+# compiled into the base library (see top-level CMakeLists.txt). When it is
+# absent, an INTERFACE stub keeps the dependent test subdirectories linkable.
 if (TARGET ${VSOMEIP_NAME}-cfg-internal)
     add_library(${VSOMEIP_NAME}-cfg-test SHARED $<TARGET_OBJECTS:${VSOMEIP_NAME}-cfg-internal>)
     target_include_directories(${VSOMEIP_NAME}-cfg-test PRIVATE ${VSOMEIP_CONFIG_INCLUDE_DIR})
@@ -70,9 +80,11 @@ if (TARGET ${VSOMEIP_NAME}-cfg-internal)
     target_link_libraries(${VSOMEIP_NAME}-cfg-test ${VSOMEIP_NAME}-test ${Boost_LIBRARIES} ${USE_RT} ${DL_LIBRARY} ${SystemD_LIBRARIES})
     set_target_properties(${VSOMEIP_NAME}-cfg-test PROPERTIES VERSION ${VSOMEIP_VERSION} SOVERSION ${VSOMEIP_MAJOR_VERSION})
     list(APPEND VSOMEIP_TEST_LIBRARY_TARGETS ${VSOMEIP_NAME}-cfg-test)
-else()
+else ()
     add_library(${VSOMEIP_NAME}-cfg-test INTERFACE)
-endif()
+endif ()
+
+
 
 add_library(${VSOMEIP_NAME}-sd-test SHARED $<TARGET_OBJECTS:${VSOMEIP_NAME}-sd-internal>)
 target_include_directories(${VSOMEIP_NAME}-sd-test PRIVATE ${VSOMEIP_CONFIG_INCLUDE_DIR})
@@ -89,7 +101,7 @@ if (MSVC)
     set_target_properties(${VSOMEIP_NAME}-test PROPERTIES COMPILE_DEFINITIONS "VSOMEIP_DLL_COMPILATION_PLUGIN")
     if (TARGET ${VSOMEIP_NAME}-cfg-internal)
         set_target_properties(${VSOMEIP_NAME}-cfg-test PROPERTIES COMPILE_DEFINITIONS "VSOMEIP_DLL_COMPILATION_PLUGIN")
-    endif()
+    endif ()
     set_target_properties(${VSOMEIP_NAME}-sd-test PROPERTIES COMPILE_DEFINITIONS "VSOMEIP_DLL_COMPILATION_PLUGIN")
     set_target_properties(${VSOMEIP_NAME}-e2e-test PROPERTIES COMPILE_DEFINITIONS "VSOMEIP_DLL_COMPILATION_PLUGIN")
 endif ()
@@ -165,16 +177,18 @@ set(CMAKE_CTEST_COMMAND ctest -V)
 add_custom_target(check COMMAND ${CMAKE_CTEST_COMMAND})
 add_dependencies(check build_tests)
 
+set(VSOMEIP_TEST_LIBRARIES ${VSOMEIP_TEST_LIBRARY_TARGETS} ${VSOMEIP_NAME}-e2e-test ${VSOMEIP_NAME}-sd-test)
+
 add_custom_target(build_network_tests)
-add_dependencies(build_network_tests ${VSOMEIP_TEST_LIBRARY_TARGETS} ${VSOMEIP_NAME}-e2e-test ${VSOMEIP_NAME}-sd-test)
+add_dependencies(build_network_tests ${VSOMEIP_TEST_LIBRARIES})
 add_dependencies(build_tests build_network_tests)
 
 add_custom_target(build_unit_tests)
-add_dependencies(build_unit_tests ${VSOMEIP_TEST_LIBRARY_TARGETS} ${VSOMEIP_NAME}-e2e-test ${VSOMEIP_NAME}-sd-test)
+add_dependencies(build_unit_tests ${VSOMEIP_TEST_LIBRARIES})
 add_dependencies(build_tests build_unit_tests)
 
 add_custom_target(build_benchmark_tests)
-add_dependencies(build_benchmark_tests ${VSOMEIP_TEST_LIBRARY_TARGETS} ${VSOMEIP_NAME}-e2e-test ${VSOMEIP_NAME}-sd-test)
+add_dependencies(build_benchmark_tests ${VSOMEIP_TEST_LIBRARIES})
 add_dependencies(build_tests build_benchmark_tests)
 
 ##############################################################################
