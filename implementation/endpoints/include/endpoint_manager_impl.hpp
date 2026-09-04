@@ -138,6 +138,9 @@ private:
     boost::asio::io_context& io_;
     std::shared_ptr<configuration> configuration_;
     routing_manager_impl* const router_;
+    // Cached at construction: the router (and its host) may already be gone when this
+    // object is destroyed, so its name must not be queried during destruction.
+    std::string const router_name_;
 
     bool const is_local_routing_;
     bool const is_uds_preferred_;
