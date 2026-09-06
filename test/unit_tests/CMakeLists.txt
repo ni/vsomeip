@@ -13,6 +13,7 @@ add_subdirectory(security_policy_manager_impl_tests)
 add_subdirectory(security_policy_tests)
 add_subdirectory(security_tests)
 add_subdirectory(utility_utility_tests)
+add_subdirectory(in_memory_json_api_tests)
 
 if (NOT WIN32)
 add_subdirectory(netlink_tests)
