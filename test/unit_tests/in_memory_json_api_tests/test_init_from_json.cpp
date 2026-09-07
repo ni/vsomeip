@@ -2,6 +2,7 @@
 // initializes the application from an in-memory JSON string without reading or
 // writing any configuration file on the filesystem.
 
+#include <cstdint>
 #include <filesystem>
 #include <string>
 
