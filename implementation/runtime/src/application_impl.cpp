@@ -129,6 +129,12 @@ bool application_impl::init() {
     return init_configuration();
 }
 
+// --- NI modification: BEGIN ---
+// init() was split into two parts: the configuration-independent part that
+// resolves the configuration (init() itself and the new init(const std::string&)
+// overload, which builds the configuration from a JSON string passed in memory)
+// and init_configuration(), which contains the remaining initialization steps
+// that were previously part of init() and are now shared by both overloads.
 bool application_impl::init(const std::string& _json) {
     std::scoped_lock its_initialized_lock{initialize_mutex_};
     if (is_initialized_) {
@@ -182,6 +188,8 @@ bool application_impl::init(const std::string& _json) {
 }
 
 bool application_impl::init_configuration() {
+    // --- NI modification: END ---
+
     if (configuration_->is_local_routing()) {
         sec_client_.port = VSOMEIP_SEC_PORT_UNUSED;
 #ifdef __unix__

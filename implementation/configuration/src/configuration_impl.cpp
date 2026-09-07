@@ -318,6 +318,7 @@ bool configuration_impl::load(const std::string& _name) {
     return is_loaded_;
 }
 
+// --- NI modification: BEGIN ---
 bool configuration_impl::load_from_string(const std::string& _name, const std::string& _json) {
     (void)_name;
     std::scoped_lock its_lock(mutex_);
@@ -358,6 +359,7 @@ bool configuration_impl::load_from_string(const std::string& _name, const std::s
     is_loaded_ = true;
     return is_loaded_;
 }
+// --- NI modification: END ---
 
 #ifndef VSOMEIP_DISABLE_SECURITY
 void configuration_impl::lazy_load_security(const std::string& _client_host) {

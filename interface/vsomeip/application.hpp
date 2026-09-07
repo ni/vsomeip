@@ -106,6 +106,7 @@ public:
      */
     virtual bool init() = 0;
 
+    // --- NI modification: BEGIN ---
     /**
      *
      * \brief Initializes the application from an in-memory JSON configuration.
@@ -124,6 +125,7 @@ public:
      *
      */
     virtual bool init(const std::string& _json) = 0;
+    // --- NI modification: END ---
 
     /**
      *

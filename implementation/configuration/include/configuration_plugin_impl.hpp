@@ -25,7 +25,13 @@ public:
     virtual ~configuration_plugin_impl();
 
     std::shared_ptr<configuration> get_configuration(const std::string& _name, const std::string& _path);
+
+    // --- NI modification: BEGIN ---
+    // Creates a configuration from an in-memory JSON string instead of reading
+    // it from a configuration file or folder.
     std::shared_ptr<configuration> get_configuration_from_string(const std::string& _name, const std::string& _json);
+    // --- NI modification: END ---
+
     bool remove_configuration(const std::string& _name);
 
 private:

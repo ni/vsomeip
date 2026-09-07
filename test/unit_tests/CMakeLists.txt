@@ -13,7 +13,11 @@ add_subdirectory(security_policy_manager_impl_tests)
 add_subdirectory(security_policy_tests)
 add_subdirectory(security_tests)
 add_subdirectory(utility_utility_tests)
+
+# --- NI modification: BEGIN ---
+# Unit tests for initializing an application from an in-memory JSON configuration.
 add_subdirectory(in_memory_json_api_tests)
+# --- NI modification: END ---
 
 if (NOT WIN32)
 add_subdirectory(netlink_tests)
