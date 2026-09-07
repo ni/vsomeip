@@ -118,6 +118,12 @@ bool application_impl::init() {
         std::exit(EXIT_FAILURE);
     }
 #else
+    // --- NI modification: BEGIN ---
+    // Bug fix: 'configuration_path' stayed empty, so the path given to the
+    // application constructor was ignored. Pass it on so it is actually used.
+    configuration_path = path_;
+    // --- NI modification: END ---
+
     configuration_ = std::dynamic_pointer_cast<configuration>(std::make_shared<vsomeip_v3::cfg::configuration_impl>(configuration_path));
     if (configuration_path.length()) {
         configuration_->set_configuration_path(configuration_path);
@@ -125,6 +131,70 @@ bool application_impl::init() {
     configuration_->load(name_);
     VSOMEIP_INFO << "Configuration loaded with Multiple Routing Managers ENABLED.";
 #endif // VSOMEIP_ENABLE_MULTIPLE_ROUTING_MANAGERS
+
+    return init_configuration();
+}
+
+// --- NI modification: BEGIN ---
+// init() was split into two parts: the configuration-independent part that
+// resolves the configuration (init() itself and the new init(const std::string&)
+// overload, which builds the configuration from a JSON string passed in memory)
+// and init_configuration(), which contains the remaining initialization steps
+// that were previously part of init() and are now shared by both overloads.
+bool application_impl::init(const std::string& _json) {
+    std::scoped_lock its_initialized_lock{initialize_mutex_};
+    if (is_initialized_) {
+        VSOMEIP_WARNING << "Trying to initialize already-initialized application \"" << name_ << "\" (" << hex4(client_) << ")";
+        return true;
+    }
+
+    // Application name
+    if (name_ == "") {
+        const char* its_name = getenv(VSOMEIP_ENV_APPLICATION_NAME);
+        if (nullptr != its_name) {
+            name_ = its_name;
+        }
+    }
+
+    // Load configuration from the in-memory JSON string. No configuration file
+    // or folder is read and no temporary file is created on the filesystem.
+#ifndef VSOMEIP_ENABLE_MULTIPLE_ROUTING_MANAGERS
+    auto its_plugin = plugin_manager_->get_plugin(plugin_type_e::CONFIGURATION_PLUGIN, VSOMEIP_CFG_LIBRARY);
+    if (its_plugin) {
+        auto its_configuration_plugin = std::dynamic_pointer_cast<configuration_plugin>(its_plugin);
+        if (its_configuration_plugin) {
+            configuration_ = its_configuration_plugin->get_configuration_from_string(name_, _json);
+            if (configuration_) {
+                VSOMEIP_INFO << "Configuration module loaded from in-memory JSON string.";
+            }
+        } else {
+            std::cerr << "Invalid configuration module!" << std::endl;
+            std::exit(EXIT_FAILURE);
+        }
+    } else {
+        std::cerr << "Configuration module could not be loaded!" << std::endl;
+        std::exit(EXIT_FAILURE);
+    }
+#else
+    auto its_configuration = std::make_shared<vsomeip_v3::cfg::configuration_impl>("");
+    if (!its_configuration->load_from_string(name_, _json)) {
+        VSOMEIP_ERROR << "Parsing the in-memory JSON configuration for application \"" << name_ << "\" failed.";
+        return false;
+    }
+    configuration_ = std::dynamic_pointer_cast<configuration>(its_configuration);
+    VSOMEIP_INFO << "Configuration loaded from in-memory JSON string with Multiple Routing Managers ENABLED.";
+#endif // VSOMEIP_ENABLE_MULTIPLE_ROUTING_MANAGERS
+
+    if (!configuration_) {
+        VSOMEIP_ERROR << "Failed to initialize application \"" << name_ << "\" from the in-memory JSON configuration.";
+        return false;
+    }
+
+    return init_configuration();
+}
+
+bool application_impl::init_configuration() {
+    // --- NI modification: END ---
 
     if (configuration_->is_local_routing()) {
         sec_client_.port = VSOMEIP_SEC_PORT_UNUSED;

@@ -18,6 +18,10 @@ class configuration_plugin {
 public:
     virtual ~configuration_plugin() = default;
     virtual std::shared_ptr<configuration> get_configuration(const std::string& _name, const std::string& _path) = 0;
+    // --- NI modification: BEGIN ---
+    // Returns a configuration built from an in-memory JSON string.
+    virtual std::shared_ptr<configuration> get_configuration_from_string(const std::string& _name, const std::string& _json) = 0;
+    // --- NI modification: END ---
     virtual bool remove_configuration(const std::string& _name) = 0;
 };
 
