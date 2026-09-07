@@ -118,6 +118,12 @@ bool application_impl::init() {
         std::exit(EXIT_FAILURE);
     }
 #else
+    // --- NI modification: BEGIN ---
+    // Bug fix: 'configuration_path' stayed empty, so the path given to the
+    // application constructor was ignored. Pass it on so it is actually used.
+    configuration_path = path_;
+    // --- NI modification: END ---
+
     configuration_ = std::dynamic_pointer_cast<configuration>(std::make_shared<vsomeip_v3::cfg::configuration_impl>(configuration_path));
     if (configuration_path.length()) {
         configuration_->set_configuration_path(configuration_path);
