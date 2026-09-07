@@ -35,19 +35,16 @@ std::shared_ptr<configuration> configuration_plugin_impl::get_configuration_from
 
     std::shared_ptr<cfg::configuration_impl> its_configuration;
     std::scoped_lock its_lock(mutex_);
-    auto its_iterator = configurations_.find(_name);
-    if (its_iterator != configurations_.end()) {
-        its_configuration = its_iterator->second;
-    } else {
-        its_configuration = std::make_shared<cfg::configuration_impl>("");
-        if (!its_configuration->load_from_string(_name, _json)) {
-            // Parsing the in-memory JSON failed. Do not cache the broken
-            // configuration so a corrected retry under the same name can
-            // succeed, and signal the failure to the caller.
-            return nullptr;
-        }
-        configurations_[_name] = its_configuration;
+
+    // Always parse and apply the provided in-memory JSON: do not reuse a cached configuration
+    its_configuration = std::make_shared<cfg::configuration_impl>("");
+    if (!its_configuration->load_from_string(_name, _json)) {
+        // Parsing the in-memory JSON failed. Do not cache the broken
+        // configuration so a corrected retry under the same name can
+        // succeed, and signal the failure to the caller.
+        return nullptr;
     }
+    configurations_[_name] = its_configuration;
 
     return its_configuration;
 }
