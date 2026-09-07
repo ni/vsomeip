@@ -32,7 +32,7 @@ std::shared_ptr<configuration> configuration_plugin_impl::get_configuration(cons
 }
 
 // --- NI modification: BEGIN ---
-std::shared_ptr<configuration> configuration_plugin_impl::get_configuration_from_string(
+std::shared_ptr<configuration> configuration_plugin_impl::get_configuration_from_string(const std::string& _name, const std::string& _json) {
 
     std::shared_ptr<cfg::configuration_impl> its_configuration;
     std::scoped_lock its_lock(mutex_);
@@ -51,7 +51,7 @@ std::shared_ptr<configuration> configuration_plugin_impl::get_configuration_from
 }
 // --- NI modification: END ---
 
-bool configuration_plugin_impl::remove_configuration
+bool configuration_plugin_impl::remove_configuration(const std::string& _name) {
     std::scoped_lock its_lock(mutex_);
     return configurations_.erase(_name) > 0;
 }
