@@ -760,8 +760,9 @@ endif()
 
 add_subdirectory( examples/wait-until-available )
 
-#Re-enable when xnet socket factory builds to compile examples
-add_subdirectory( examples/xnet-examples )
+if (ENABLE_XNET_BACKEND)
+    add_subdirectory( examples/xnet-examples )
+endif()
 
 # build tools
 add_custom_target( tools )
