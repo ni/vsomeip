@@ -22,6 +22,8 @@ set (CMAKE_VERBOSE_MAKEFILE off)
 
 option(ENABLE_THREAD_SANITIZER "Enable use of TSAN" OFF)
 option(ENABLE_SANITIZERS "Enable ASAN/LSAN/UBSAN, not compatible with ENABLE_THREAD_SANITIZER" OFF)
+option(ENABLE_XNET_BACKEND "Enable XNET transport backend support" ON) 
+option(ENABLE_SIGNAL_HANDLING "Enable XNET transport backend support" ON) 
 
 if (NOT GTEST_ROOT)
     if (DEFINED ENV{GTEST_ROOT})
@@ -259,6 +261,51 @@ if (VSOMEIP_ENABLE_MULTIPLE_ROUTING_MANAGERS EQUAL 1)
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DVSOMEIP_ENABLE_MULTIPLE_ROUTING_MANAGERS")
 endif ()
 
+#XNET Backend
+
+if (NOT ENABLE_XNET_BACKEND)
+    message(STATUS "XNET transport backend: disabled")
+else()
+    message(STATUS "XNET transport backend: enabled")
+endif()
+
+if(DEFINED ENV{NIEXTCCOMPILERSUPP} AND NOT "$ENV{NIEXTCCOMPILERSUPP}" STREQUAL "")
+    set(NIXNET_INCLUDE_DIR "$ENV{NIEXTCCOMPILERSUPP}/include")
+    if(MSVC)
+        set(NIXNET_LIBRARY_DIR "$ENV{NIEXTCCOMPILERSUPP}/lib64/msvc")
+    else()
+        set(NIXNET_LIBRARY_DIR "$ENV{NIEXTCCOMPILERSUPP}/lib64")
+    endif()
+else()
+    if(MSVC)
+        message(FATAL_ERROR "ENABLE_XNET_BACKEND=ON, but NIEXTCCOMPILERSUPP is not set. Cannot locate nxsocket.h/nixntipstack.")
+    endif()
+    # On GCC/Linux the headers and library may be system-installed
+    set(NIXNET_INCLUDE_DIR "")
+    set(NIXNET_LIBRARY_DIR "")
+endif()
+
+if(NIXNET_INCLUDE_DIR AND NOT EXISTS "${NIXNET_INCLUDE_DIR}/nxsocket.h")
+    message(FATAL_ERROR "ENABLE_XNET_BACKEND=ON, but nxsocket.h was not found at ${NIXNET_INCLUDE_DIR}/nxsocket.h")
+endif()
+
+if(MSVC)
+    if(NOT EXISTS "${NIXNET_LIBRARY_DIR}/nixntipstack.lib")
+        message(FATAL_ERROR "ENABLE_XNET_BACKEND=ON, but nixntipstack.lib was not found at ${NIXNET_LIBRARY_DIR}/nixntipstack.lib")
+    endif()
+    set(NIXNET_LIBRARY "${NIXNET_LIBRARY_DIR}/nixntipstack.lib")
+else()
+    find_library(NIXNET_LIBRARY nixntipstack HINTS "${NIXNET_LIBRARY_DIR}")
+    if(NOT NIXNET_LIBRARY)
+        message(FATAL_ERROR "ENABLE_XNET_BACKEND=ON, but nixntipstack library was not found. Install libnixntipstack or set NIEXTCCOMPILERSUPP.")
+    endif()
+endif()
+
+if(NIXNET_INCLUDE_DIR)
+    include_directories(SYSTEM ${NIXNET_INCLUDE_DIR})
+    link_directories(${NIXNET_LIBRARY_DIR})
+endif()
+
 ################################################################################
 # Directories
 ################################################################################
@@ -357,6 +404,10 @@ if (VSOMEIP_ENABLE_MULTIPLE_ROUTING_MANAGERS EQUAL 0)
         set_target_properties(${VSOMEIP_NAME}-cfg-internal PROPERTIES COMPILE_DEFINITIONS "VSOMEIP_DLL_COMPILATION_PLUGIN")
         set_target_properties(${VSOMEIP_NAME}-cfg PROPERTIES COMPILE_DEFINITIONS "VSOMEIP_DLL_COMPILATION_PLUGIN")
     endif()
+    if (ENABLE_XNET_BACKEND)
+        target_compile_definitions(${VSOMEIP_NAME}-cfg-internal PUBLIC VSOMEIP_ENABLE_XNET)
+        target_compile_definitions(${VSOMEIP_NAME}-cfg PUBLIC VSOMEIP_ENABLE_XNET)
+    endif()
 
     target_link_libraries(${VSOMEIP_NAME}-cfg ${VSOMEIP_NAME} ${Boost_LIBRARIES} ${USE_RT} ${DL_LIBRARY} ${SystemD_LIBRARIES})
 endif ()
@@ -414,6 +465,10 @@ else ()
         set_target_properties(${VSOMEIP_NAME} PROPERTIES LINK_FLAGS "-Wl,-wrap,socket -Wl,-wrap,accept -Wl,-wrap,open -Wl,-wrap,close -Wl,-wrap,recvfrom -Wl,-wrap,recvmsg -Wl,-wrap,sendto -Wl,-wrap,sendmsg -Wl,-wrap,epoll_wait -Wl,-wrap,epoll_pwait")
     endif ()
 endif ()
+if (ENABLE_XNET_BACKEND)
+    target_compile_definitions(${VSOMEIP_NAME}-internal PUBLIC VSOMEIP_ENABLE_XNET)
+    target_compile_definitions(${VSOMEIP_NAME} PUBLIC VSOMEIP_ENABLE_XNET)
+endif()
 target_include_directories(${VSOMEIP_NAME} INTERFACE
     $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/interface>
     $<BUILD_INTERFACE:${PROJECT_BINARY_DIR}>
@@ -424,6 +479,9 @@ target_include_directories(${VSOMEIP_NAME} INTERFACE
 # build host paths as of writing, which also makes this important as it breaks
 # the build.
 target_link_libraries(${VSOMEIP_NAME} PRIVATE ${Boost_LIBRARIES} ${USE_RT} ${DL_LIBRARY} ${DLT_LIBRARIES} ${SystemD_LIBRARIES} ${CMAKE_THREAD_LIBS_INIT})
+if (ENABLE_XNET_BACKEND)
+    target_link_libraries(${VSOMEIP_NAME} PRIVATE ${NIXNET_LIBRARY})
+endif()
 
 if(NOT WIN32)
     target_link_options(${VSOMEIP_NAME} PRIVATE "LINKER:-as-needed")
@@ -448,6 +506,10 @@ if (MSVC)
     set_target_properties(${VSOMEIP_NAME}-sd-internal PROPERTIES COMPILE_DEFINITIONS "VSOMEIP_DLL_COMPILATION_PLUGIN")
     set_target_properties(${VSOMEIP_NAME}-sd PROPERTIES COMPILE_DEFINITIONS "VSOMEIP_DLL_COMPILATION_PLUGIN")
 endif ()
+if (ENABLE_XNET_BACKEND)
+    target_compile_definitions(${VSOMEIP_NAME}-sd-internal PUBLIC VSOMEIP_ENABLE_XNET)
+    target_compile_definitions(${VSOMEIP_NAME}-sd PUBLIC VSOMEIP_ENABLE_XNET)
+endif()
 
 target_link_libraries(${VSOMEIP_NAME}-sd ${VSOMEIP_NAME} ${Boost_LIBRARIES} ${USE_RT} ${DL_LIBRARY} ${SystemD_LIBRARIES} ${CMAKE_THREAD_LIBS_INIT})
 
@@ -471,6 +533,10 @@ if (MSVC)
     set_target_properties(${VSOMEIP_NAME}-e2e-internal PROPERTIES COMPILE_DEFINITIONS "VSOMEIP_DLL_COMPILATION_PLUGIN")
     set_target_properties(${VSOMEIP_NAME}-e2e PROPERTIES COMPILE_DEFINITIONS "VSOMEIP_DLL_COMPILATION_PLUGIN")
 endif ()
+if (ENABLE_XNET_BACKEND)
+    target_compile_definitions(${VSOMEIP_NAME}-e2e-internal PUBLIC VSOMEIP_ENABLE_XNET)
+    target_compile_definitions(${VSOMEIP_NAME}-e2e PUBLIC VSOMEIP_ENABLE_XNET)
+endif()
 
 target_link_libraries(${VSOMEIP_NAME}-e2e ${VSOMEIP_NAME} ${Boost_LIBRARIES} ${USE_RT} ${DL_LIBRARY} ${SystemD_LIBRARIES})
 
@@ -692,6 +758,9 @@ add_subdirectory( examples/hello_world )
 endif()
 
 add_subdirectory( examples/wait-until-available )
+
+#Re-enable when xnet socket factory builds to compile examples
+#add_subdirectory( examples/xnet-examples )
 
 # build tools
 add_custom_target( tools )

@@ -7,6 +7,9 @@
 #include "../include/asio_socket_factory.hpp"
 
 #include <iostream>
+#include <mutex>
+#include <stdexcept>
+
 namespace vsomeip_v3 {
 
 /**
@@ -36,20 +39,60 @@ namespace vsomeip_v3 {
  *non-neglectable cost to pay during production run-time for enabling these tests.
  **/
 static std::shared_ptr<abstract_socket_factory> _factory;
+static bool _factory_finalized{false};
+static bool _late_injection_detected{false};
+static std::mutex _factory_mutex;
+
 static std::shared_ptr<abstract_socket_factory> init() {
+    std::scoped_lock its_lock{_factory_mutex};
     if (!_factory) {
+        std::cerr << "[vsomeip] socket_factory_freeze=default_asio" << std::endl;
         _factory = std::make_shared<asio_socket_factory>();
+    } else {
+        std::cerr << "[vsomeip] socket_factory_freeze=preinjected" << std::endl;
     }
+    _factory_finalized = true;
     return _factory;
 }
 
 void set_abstract_factory(std::shared_ptr<abstract_socket_factory> ptr) {
+    std::scoped_lock its_lock{_factory_mutex};
+    if (_factory_finalized) {
+        _late_injection_detected = true;
+        std::cerr << "[vsomeip] late socket factory injection detected after factory freeze."
+                  << std::endl;
+        throw std::runtime_error("Late socket factory injection detected after factory freeze.");
+    }
     _factory = ptr;
+}
+
+void freeze_abstract_factory() {
+    std::scoped_lock its_lock{_factory_mutex};
+    if (_factory_finalized) {
+        return;
+    }
+
+    if (!_factory) {
+        std::cerr << "[vsomeip] socket_factory_freeze=default_asio" << std::endl;
+        _factory = std::make_shared<asio_socket_factory>();
+    } else {
+        std::cerr << "[vsomeip] socket_factory_freeze=preinjected" << std::endl;
+    }
+
+    _factory_finalized = true;
 }
 
 abstract_socket_factory* abstract_socket_factory::get() {
     static auto const factory = init();
     return factory.get();
+}
+
+bool is_abstract_factory_finalized() {
+    return _factory_finalized;
+}
+
+bool was_abstract_factory_late_injection_detected() {
+    return _late_injection_detected;
 }
 
 }

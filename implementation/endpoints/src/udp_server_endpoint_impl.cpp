@@ -876,9 +876,13 @@ void udp_server_endpoint_impl::set_multicast_option(const boost::asio::ip::addre
             }
 
 #ifdef _WIN32
-            const char* its_pktinfo_option("0001");
-            ::setsockopt(multicast_socket_->native_handle(), (is_v4_ ? IPPROTO_IP : IPPROTO_IPV6), (is_v4_ ? IP_PKTINFO : IPV6_PKTINFO),
-                         its_pktinfo_option, sizeof(its_pktinfo_option));
+            if (!abstract_socket_factory::get()->is_xnet_backend()) {
+                const char* its_pktinfo_option("0001");
+                ::setsockopt(multicast_socket_->native_handle(), (is_v4_ ? IPPROTO_IP : IPPROTO_IPV6), (is_v4_ ? IP_PKTINFO : IPV6_PKTINFO),
+                             its_pktinfo_option, sizeof(its_pktinfo_option));
+            } else {
+                VSOMEIP_INFO_P << instance_name_ << "Skip native IP_PKTINFO/IPV6_PKTINFO on Windows for XNET backend";
+            }
 #else
             boost::system::error_code its_pktinfo_error{};
             if (is_v4_) {

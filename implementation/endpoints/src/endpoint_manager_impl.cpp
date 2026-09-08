@@ -10,6 +10,7 @@
 #include "../include/endpoint_manager_impl.hpp"
 
 #include "logger_ext.hpp"
+#include "../include/abstract_socket_factory.hpp"
 #include "../include/local_server.hpp"
 #include "../include/local_acceptor_uds_impl.hpp"
 #include "../include/local_acceptor_tcp_impl.hpp"
@@ -47,9 +48,22 @@ endpoint_manager_impl::endpoint_manager_impl(routing_manager_impl* const _rm, bo
                                              const std::shared_ptr<configuration>& _configuration) :
     io_(_io), configuration_(_configuration), router_(_rm), is_local_routing_(configuration_->is_local_routing()),
     is_uds_preferred_(configuration_->is_uds_preferred()),
-    auxiliary_context_(configuration_->get_io_thread_nice_level(router_->get_name())), is_processing_options_(true) { }
+    auxiliary_context_(configuration_->get_io_thread_nice_level(router_->get_name())), is_processing_options_(true) {
+    auto* const its_factory = abstract_socket_factory::get();
+    if (!its_factory->register_io_context(io_, router_->get_name())) {
+        throw std::runtime_error("Failed to register application I/O context with the socket factory.");
+    }
+    if (!its_factory->register_io_context(auxiliary_context_.get_context(), router_->get_name())) {
+        its_factory->unregister_io_context(io_, router_->get_name());
+        throw std::runtime_error("Failed to register auxiliary I/O context with the socket factory.");
+    }
+}
 
-endpoint_manager_impl::~endpoint_manager_impl() { }
+endpoint_manager_impl::~endpoint_manager_impl() {
+    auto* const its_factory = abstract_socket_factory::get();
+    its_factory->unregister_io_context(auxiliary_context_.get_context(), router_->get_name());
+    its_factory->unregister_io_context(io_, router_->get_name());
+}
 
 void endpoint_manager_impl::start() {
     options_thread_ = std::thread([this]() {
