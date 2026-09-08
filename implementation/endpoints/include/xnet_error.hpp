@@ -1,5 +1,3 @@
-// Copyright (C) 2024 - XNET Integration
-
 #pragma once
 
 #include <boost/system/error_code.hpp>

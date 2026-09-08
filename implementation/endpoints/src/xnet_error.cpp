@@ -1,5 +1,3 @@
-// Copyright (C) 2024 - XNET Integration
-
 #include "../include/xnet_error.hpp"
 #include "../include/xnet_api.hpp"
 

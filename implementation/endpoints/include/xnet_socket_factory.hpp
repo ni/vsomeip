@@ -1,6 +1,3 @@
-// XNET Socket Factory for vsomeip
-// Copyright (C) 2024 - XNET Integration
-
 #ifndef XNET_SOCKET_FACTORY_HPP_
 #define XNET_SOCKET_FACTORY_HPP_
 

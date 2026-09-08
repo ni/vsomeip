@@ -1,8 +1,3 @@
-// Copyright (C) 2024 - XNET Integration
-// Backend-neutral type definitions for XNET socket wrappers.
-// When VSOMEIP_ENABLE_XNET is defined, maps to real NI XNET types.
-// When not defined, provides minimal stubs so headers compile without NI SDK.
-
 #ifndef XNET_TYPES_HPP_
 #define XNET_TYPES_HPP_
 
