@@ -269,6 +269,7 @@ else()
     message(STATUS "XNET transport backend: enabled")
 endif()
 
+if (ENABLE_XNET_BACKEND)
 if(DEFINED ENV{NIEXTCCOMPILERSUPP} AND NOT "$ENV{NIEXTCCOMPILERSUPP}" STREQUAL "")
     set(NIXNET_INCLUDE_DIR "$ENV{NIEXTCCOMPILERSUPP}/include")
     if(MSVC)
