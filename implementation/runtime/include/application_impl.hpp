@@ -45,10 +45,12 @@ public:
     VSOMEIP_EXPORT ~application_impl();
 
     VSOMEIP_EXPORT bool init();
+
     // --- NI modification: BEGIN ---
     // Initializes the application from a configuration passed as JSON string.
     VSOMEIP_EXPORT bool init(const std::string& _json);
     // --- NI modification: END ---
+
     VSOMEIP_EXPORT void start();
     VSOMEIP_EXPORT void stop();
     VSOMEIP_EXPORT void process(int _number);
