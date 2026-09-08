@@ -5,7 +5,10 @@
 
 #pragma once
 
+// --- NI modification: BEGIN ---
+// Centralize platform-specific socket-option handling for the ASIO backend.
 #include "backend_socket_option_helpers.hpp"
+// --- NI modification: END ---
 #include "tcp_socket.hpp"
 
 #include <boost/asio/write.hpp>
@@ -46,6 +49,8 @@ private:
     void set_option(boost::asio::ip::tcp::socket::linger l, boost::system::error_code& ec) override { socket_->set_option(l, ec); }
     void set_option(boost::asio::ip::tcp::socket::reuse_address ra, boost::system::error_code& ec) override { socket_->set_option(ra, ec); }
 #if defined(__linux__)
+    // --- NI modification: BEGIN ---
+    // Route Linux TCP options through the shared backend helper layer.
     [[nodiscard]] bool set_user_timeout(unsigned int timeout) override {
         return socket_option_helpers::set_tcp_user_timeout(socket_->native_handle(), timeout);
     }
@@ -61,12 +66,16 @@ private:
     [[nodiscard]] bool set_quick_ack() override {
         return socket_option_helpers::set_tcp_quick_ack(socket_->native_handle());
     }
+    // --- NI modification: END ---
 #endif
 #if defined(__linux__) || defined(__QNX__)
+    // --- NI modification: BEGIN ---
+    // Route device binding through the shared backend helper layer.
     [[nodiscard]] bool bind_to_device(std::string const& _device) override {
         return socket_option_helpers::set_bind_to_device(socket_->native_handle(), _device);
     }
     [[nodiscard]] bool can_read_fd_flags() override { return fcntl(socket_->native_handle(), F_GETFD) != -1; }
+    // --- NI modification: END ---
 #endif
     boost::asio::ip::tcp::endpoint local_endpoint(boost::system::error_code& ec) const override { return socket_->local_endpoint(ec); }
     void async_connect(boost::asio::ip::tcp::endpoint const& ep, connect_handler handler) override {
@@ -106,6 +115,8 @@ private:
     void cancel(boost::system::error_code& ec) override { acceptor_->cancel(ec); }
     void listen(int backlog, boost::system::error_code& ec) override { acceptor_->listen(backlog, ec); }
 
+    // --- NI modification: BEGIN ---
+    // Provide backend-neutral acceptor polling for connection checks.
     bool wait_for_pending_connection(std::chrono::milliseconds timeout, boost::system::error_code& ec) override {
         if (!acceptor_->is_open()) {
             ec = boost::asio::error::bad_descriptor;
@@ -163,6 +174,7 @@ private:
         return (pfd.revents & POLLIN) != 0;
 #endif
     }
+    // --- NI modification: END ---
 
 
     void set_option(boost::asio::ip::tcp::socket::reuse_address ra, boost::system::error_code& ec) override {
@@ -170,6 +182,8 @@ private:
     }
 
 #if defined(__linux__)
+    // --- NI modification: BEGIN ---
+    // Route Linux acceptor options through the shared backend helper layer.
     [[nodiscard]] bool set_reuse_port() override {
         return socket_option_helpers::set_tcp_acceptor_reuse_port(acceptor_->native_handle());
             setsockopt(acceptor_->native_handle(), SOL_SOCKET, SO_REUSEPORT, &flag, sizeof(flag)) != -1;
@@ -178,6 +192,7 @@ private:
     [[nodiscard]] bool set_native_option_free_bind() override {
         return socket_option_helpers::set_tcp_acceptor_free_bind(acceptor_->native_handle());
     }
+    // --- NI modification: END ---
 #endif
 #if defined(__linux__) || defined(__QNX__)
     [[nodiscard]] bool bind_to_device(std::string const& _device) override {

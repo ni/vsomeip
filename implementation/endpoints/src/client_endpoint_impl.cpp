@@ -455,6 +455,8 @@ void client_endpoint_impl<Protocol>::connect_cbk(boost::system::error_code const
 
 template<typename Protocol>
 void client_endpoint_impl<Protocol>::cancel_and_connect_cbk(boost::system::error_code const& _error) {
+    // --- NI modification: BEGIN ---
+    // Make cancellation and timer completion idempotent before notifying the endpoint.
     const bool call_connect_cbk = !connecting_result_handled_.exchange(true, std::memory_order_relaxed);
     std::size_t operations_cancelled;
     {
@@ -478,6 +480,7 @@ void client_endpoint_impl<Protocol>::cancel_and_connect_cbk(boost::system::error
     } else {
         VSOMEIP_INFO_P << "Connect callback already handled endpoint > " << this << " socket state > " << to_string(state_.load());
     }
+    // --- NI modification: END ---
 }
 
 template<typename Protocol>
@@ -492,6 +495,7 @@ void client_endpoint_impl<Protocol>::wait_connect_cbk(boost::system::error_code 
 template<typename Protocol>
 void client_endpoint_impl<Protocol>::wait_connecting_cbk(boost::system::error_code const& _error) {
 
+    // --- NI modification: BEGIN --- // Handle timeout, cancellation, and successful connect completion exactly once.
     if (!_error && !client_endpoint_impl<Protocol>::sending_blocked_) {
         const bool call_connect_cbk = !connecting_result_handled_.exchange(true, std::memory_order_relaxed);
         if (call_connect_cbk) {
@@ -516,6 +520,7 @@ void client_endpoint_impl<Protocol>::wait_connecting_cbk(boost::system::error_co
                           << _error.value() << "):" << _error.message() << ", remote: " << get_remote_information() << ", endpoint > "
                           << this << " socket state > " << to_string(state_.load());
     }
+    // --- NI modification: END ---
 }
 
 template<typename Protocol>
@@ -766,10 +771,12 @@ template<typename Protocol>
 void client_endpoint_impl<Protocol>::start_connecting_timer() {
 
     std::scoped_lock its_lock(connecting_timer_mutex_);
+    // --- NI modification: BEGIN --- // Reset the one-shot completion guard for each new connection attempt.
     connecting_result_handled_.store(false, std::memory_order_relaxed);
     connecting_timer_.expires_after(std::chrono::milliseconds(connecting_timeout_));
     connecting_timer_.async_wait(
             std::bind(&client_endpoint_impl<Protocol>::wait_connecting_cbk, this->shared_from_this(), std::placeholders::_1));
+    // --- NI modification: END ---
 }
 
 template<typename Protocol>

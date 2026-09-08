@@ -24,8 +24,11 @@
 
 namespace vsomeip_v3 {
 
+// --- NI modification: BEGIN ---
+// Apply TCP accept options while treating unsupported backend options as non-fatal.
 VSOMEIP_EXPORT boost::system::error_code apply_tcp_server_accept_socket_option_policy(tcp_socket& _socket,
                                                                                        const std::string& _instance_name);
+// --- NI modification: END ---
 
 typedef server_endpoint_impl<boost::asio::ip::tcp> tcp_server_endpoint_base_impl;
 

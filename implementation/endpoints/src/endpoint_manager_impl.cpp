@@ -49,6 +49,8 @@ endpoint_manager_impl::endpoint_manager_impl(routing_manager_impl* const _rm, bo
     io_(_io), configuration_(_configuration), router_(_rm), router_name_(_rm->get_name()),
     is_local_routing_(configuration_->is_local_routing()), is_uds_preferred_(configuration_->is_uds_preferred()),
     auxiliary_context_(configuration_->get_io_thread_nice_level(router_name_)), is_processing_options_(true) {
+    // --- NI modification: BEGIN ---
+    // Register both application I/O contexts with backends that require explicit ownership.
     auto* const its_factory = abstract_socket_factory::get();
     if (!its_factory->register_io_context(io_, router_name_)) {
         throw std::runtime_error("Failed to register application I/O context with the socket factory.");
@@ -57,12 +59,16 @@ endpoint_manager_impl::endpoint_manager_impl(routing_manager_impl* const _rm, bo
         its_factory->unregister_io_context(io_, router_name_);
         throw std::runtime_error("Failed to register auxiliary I/O context with the socket factory.");
     }
+    // --- NI modification: END ---
 }
 
 endpoint_manager_impl::~endpoint_manager_impl() {
+    // --- NI modification: BEGIN ---
+    // Release I/O-context registrations before destroying the endpoint manager.
     auto* const its_factory = abstract_socket_factory::get();
     its_factory->unregister_io_context(auxiliary_context_.get_context(), router_name_);
     its_factory->unregister_io_context(io_, router_name_);
+    // --- NI modification: END ---
 }
 
 void endpoint_manager_impl::start() {

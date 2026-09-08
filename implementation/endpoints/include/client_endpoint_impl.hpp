@@ -126,7 +126,10 @@ protected:
     boost::asio::steady_timer connecting_timer_;
     std::condition_variable connecting_timer_condition_;
     std::atomic<connecting_timer_state_e> connecting_timer_state_;
+    // --- NI modification: BEGIN ---
+    // Prevent timer and cancellation paths from invoking the connect callback twice.
     std::atomic<bool> connecting_result_handled_;
+    // --- NI modification: END ---
     std::atomic<uint32_t> connecting_timeout_;
 
     // send data
