@@ -35,9 +35,13 @@ client_endpoint_impl<Protocol>::client_endpoint_impl(const std::shared_ptr<board
                                                      boost::asio::io_context& _io, const std::shared_ptr<configuration>& _configuration) :
     endpoint_impl<Protocol>(_boardnet_endpoint_host, _routing_host, _io, _configuration), remote_{_remote}, flush_timer_{_io},
     connect_timer_{_io}, connect_timeout_{VSOMEIP_DEFAULT_CONNECT_TIMEOUT}, state_{cei_state_e::CLOSED}, reconnect_counter_{0},
-    connecting_timer_{_io}, connecting_result_handled_{false}, connecting_timeout_{VSOMEIP_DEFAULT_CONNECTING_TIMEOUT},
-    train_{std::make_shared<train>()}, dispatch_timer_{_io}, has_last_departure_{false}, queue_size_{0}, was_not_connected_{false},
-    is_sending_{false}, strand_(_io) {
+    connecting_timer_{_io},
+    // --- NI modification: BEGIN ---
+    // Initialize the one-shot connect callback guard to prevent duplicate callback handling.
+    connecting_result_handled_{false},
+    // --- NI modification: END ---
+    connecting_timeout_{VSOMEIP_DEFAULT_CONNECTING_TIMEOUT}, train_{std::make_shared<train>()},
+    dispatch_timer_{_io}, has_last_departure_{false}, queue_size_{0}, was_not_connected_{false}, is_sending_{false}, strand_(_io) {
     this->local_ = _local;
     recreate_socket();
 }
