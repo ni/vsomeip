@@ -186,7 +186,6 @@ private:
     // Route Linux acceptor options through the shared backend helper layer.
     [[nodiscard]] bool set_reuse_port() override {
         return socket_option_helpers::set_tcp_acceptor_reuse_port(acceptor_->native_handle());
-            setsockopt(acceptor_->native_handle(), SOL_SOCKET, SO_REUSEPORT, &flag, sizeof(flag)) != -1;
     }
 
     [[nodiscard]] bool set_native_option_free_bind() override {
