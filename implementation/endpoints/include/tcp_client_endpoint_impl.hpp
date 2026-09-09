@@ -88,6 +88,14 @@ private:
     std::atomic<uint32_t> aborted_restart_count_;
     std::chrono::steady_clock::time_point connect_timepoint_;
 
+    // --- NI modification: BEGIN ---
+    // Track bad-descriptor bursts so transient errors do not trigger immediate restarts.
+    std::uint32_t bad_descriptor_burst_count_;
+    std::chrono::steady_clock::time_point bad_descriptor_window_start_;
+    const std::uint32_t bad_descriptor_restart_threshold_;
+    const std::chrono::milliseconds bad_descriptor_restart_window_;
+    // --- NI modification: END ---
+
     boost::asio::steady_timer sent_timer_;
 };
 

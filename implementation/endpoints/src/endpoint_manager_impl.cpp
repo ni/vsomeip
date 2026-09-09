@@ -10,6 +10,7 @@
 #include "../include/endpoint_manager_impl.hpp"
 
 #include "logger_ext.hpp"
+#include "../include/abstract_socket_factory.hpp"
 #include "../include/local_server.hpp"
 #include "../include/local_acceptor_uds_impl.hpp"
 #include "../include/local_acceptor_tcp_impl.hpp"
@@ -45,18 +46,37 @@ namespace vsomeip_v3 {
 
 endpoint_manager_impl::endpoint_manager_impl(routing_manager_impl* const _rm, boost::asio::io_context& _io,
                                              const std::shared_ptr<configuration>& _configuration) :
-    io_(_io), configuration_(_configuration), router_(_rm), is_local_routing_(configuration_->is_local_routing()),
-    is_uds_preferred_(configuration_->is_uds_preferred()),
-    auxiliary_context_(configuration_->get_io_thread_nice_level(router_->get_name())), is_processing_options_(true) { }
+    io_(_io), configuration_(_configuration), router_(_rm), router_name_(_rm->get_name()),
+    is_local_routing_(configuration_->is_local_routing()), is_uds_preferred_(configuration_->is_uds_preferred()),
+    auxiliary_context_(configuration_->get_io_thread_nice_level(router_name_)), is_processing_options_(true) {
+    // --- NI modification: BEGIN ---
+    // Register both application I/O contexts with backends that require explicit ownership.
+    auto* const its_factory = abstract_socket_factory::get();
+    if (!its_factory->register_io_context(io_, router_name_)) {
+        throw std::runtime_error("Failed to register application I/O context with the socket factory.");
+    }
+    if (!its_factory->register_io_context(auxiliary_context_.get_context(), router_name_)) {
+        its_factory->unregister_io_context(io_, router_name_);
+        throw std::runtime_error("Failed to register auxiliary I/O context with the socket factory.");
+    }
+    // --- NI modification: END ---
+}
 
-endpoint_manager_impl::~endpoint_manager_impl() { }
+endpoint_manager_impl::~endpoint_manager_impl() {
+    // --- NI modification: BEGIN ---
+    // Release I/O-context registrations before destroying the endpoint manager.
+    auto* const its_factory = abstract_socket_factory::get();
+    its_factory->unregister_io_context(auxiliary_context_.get_context(), router_name_);
+    its_factory->unregister_io_context(io_, router_name_);
+    // --- NI modification: END ---
+}
 
 void endpoint_manager_impl::start() {
     options_thread_ = std::thread([this]() {
 #if defined(__linux__) || defined(__QNX__)
         pthread_setname_np(pthread_self(), "m_multicast");
 #endif
-        utility::set_thread_niceness(configuration_->get_io_thread_nice_level(router_->get_name()));
+        utility::set_thread_niceness(configuration_->get_io_thread_nice_level(router_name_));
 
         VSOMEIP_INFO << "Started thread m_multicast " << std::hex << std::this_thread::get_id()
 #if defined(__linux__)
