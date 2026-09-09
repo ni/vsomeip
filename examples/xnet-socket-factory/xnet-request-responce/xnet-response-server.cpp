@@ -50,9 +50,9 @@ int main() {
         return 1;
     }
 
-    // register a message handler callback for messages sent to the service
+    // register a message handler callback for messages from the client
     app->register_message_handler(SAMPLE_SERVICE_ID, SAMPLE_INSTANCE_ID, SAMPLE_METHOD_ID, on_message);
-
+    
     // start offering the service
     app->offer_service(SAMPLE_SERVICE_ID, SAMPLE_INSTANCE_ID);
 

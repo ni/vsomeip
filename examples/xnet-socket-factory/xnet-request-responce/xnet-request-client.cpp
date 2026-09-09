@@ -22,7 +22,7 @@ void stop_application(int signum) {
 
 void on_availability(vsomeip::service_t _service, vsomeip::instance_t _instance, bool _is_available) {
     if (_service == SAMPLE_SERVICE_ID && _instance == SAMPLE_INSTANCE_ID && _is_available) {
-        // send a request to the service
+        // send a request to the server when it becomes available
         const std::string request_text = "XNET Request";
 
         std::shared_ptr<vsomeip::message> request = vsomeip::runtime::get()->create_request();
@@ -45,11 +45,9 @@ void on_message(const std::shared_ptr<vsomeip::message>& _response) {
     // parse the received message
     std::shared_ptr<vsomeip::payload> response_payload = _response->get_payload();
 
-    std::string received_text(reinterpret_cast<const char*>(response_payload->get_data()),
-                              response_payload->get_length());
+    std::string received_text(reinterpret_cast<const char*>(response_payload->get_data()), response_payload->get_length());
 
-    std::cout << "Received from " << std::setw(4) << std::setfill('0') << std::hex
-              << _response->get_client() << ": " << received_text << std::endl;
+    std::cout << "Received: " << received_text << std::endl;
 
     // stop the application
     app->release_service(SAMPLE_SERVICE_ID, SAMPLE_INSTANCE_ID);
@@ -66,13 +64,13 @@ int main() {
         return 1;
     }
 
-    // register a callback for responses from the service
+    // register a message handler callback for responses from the server
     app->register_message_handler(SAMPLE_SERVICE_ID, SAMPLE_INSTANCE_ID, SAMPLE_METHOD_ID, on_message);
 
-    // register a callback which is called as soon as the service is available
+    // register a callback which is called as soon as the server is available
     app->register_availability_handler(SAMPLE_SERVICE_ID, SAMPLE_INSTANCE_ID, on_availability);
 
-    // request the service
+    // request the server
     app->request_service(SAMPLE_SERVICE_ID, SAMPLE_INSTANCE_ID);
 
     // start the application
