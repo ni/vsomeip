@@ -72,6 +72,7 @@ private:
     // --- NI modification: BEGIN ---
     // Route device binding through the shared backend helper layer.
     [[nodiscard]] bool bind_to_device(std::string const& _device) override {
+        // +1 since std::string.size does not take into account the null terminator
         return socket_option_helpers::set_bind_to_device(socket_->native_handle(), _device);
     }
     [[nodiscard]] bool can_read_fd_flags() override { return fcntl(socket_->native_handle(), F_GETFD) != -1; }
@@ -194,9 +195,13 @@ private:
     // --- NI modification: END ---
 #endif
 #if defined(__linux__) || defined(__QNX__)
+    // --- NI modification: BEGIN ---
+    // Route device binding through the shared backend helper layer.
     [[nodiscard]] bool bind_to_device(std::string const& _device) override {
-        return socket_option_helpers::set_bind_to_device(socket_->native_handle(), _device);
+        // +1 since std::string.size does not take into account the null terminator
+        return socket_option_helpers::set_bind_to_device(acceptor_->native_handle(), _device);
     }
+    // --- NI modification: END ---
 #endif
     void async_accept(tcp_socket& _socket, boost::asio::ip::tcp::endpoint& _peer_ep, connect_handler _handler) override {
         auto* socket_impl = dynamic_cast<asio_tcp_socket*>(&_socket);
