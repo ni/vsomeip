@@ -438,6 +438,12 @@ if (WIN32)
 list(FILTER ${VSOMEIP_NAME}_SRC EXCLUDE REGEX ".*uds.*")
 endif()
 
+# When the NI-XNET backend is disabled its sources cannot compile
+# so keep them out of the build entirely
+if (NOT ENABLE_XNET_BACKEND)
+list(FILTER ${VSOMEIP_NAME}_SRC EXCLUDE REGEX ".*xnet_.*")
+endif()
+
 list(SORT ${VSOMEIP_NAME}_SRC)
 
 # internal object library, all symbols exposed, used for testing

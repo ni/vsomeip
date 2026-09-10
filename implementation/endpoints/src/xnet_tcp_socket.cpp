@@ -128,7 +128,8 @@ bool endpoint_to_native(boost::asio::ip::tcp::endpoint const& _endpoint, nxsocka
         auto* its_addr = reinterpret_cast<nxsockaddr_in*>(&_storage);
         its_addr->sin_family = nxAF_INET;
         its_addr->sin_port = boost::endian::native_to_big(_endpoint.port());
-        its_addr->sin_addr.addr = boost::endian::native_to_big(_endpoint.address().to_v4().to_uint());
+        const auto its_v4 = boost::endian::native_to_big(_endpoint.address().to_v4().to_uint());
+        std::memcpy(&its_addr->sin_addr, &its_v4, sizeof(its_v4));
         _len = static_cast<nxsocklen_t>(sizeof(nxsockaddr_in));
         _ec.clear();
         return true;
@@ -141,7 +142,7 @@ bool endpoint_to_native(boost::asio::ip::tcp::endpoint const& _endpoint, nxsocka
         its_addr->sin6_flowinfo = 0;
         its_addr->sin6_scope_id = _endpoint.address().to_v6().scope_id();
         const auto its_bytes = _endpoint.address().to_v6().to_bytes();
-        std::memcpy(its_addr->sin6_addr.addr, its_bytes.data(), its_bytes.size());
+        std::memcpy(&its_addr->sin6_addr, its_bytes.data(), its_bytes.size());
         _len = static_cast<nxsocklen_t>(sizeof(nxsockaddr_in6));
         _ec.clear();
         return true;
@@ -156,7 +157,9 @@ bool native_to_endpoint(nxsockaddr_storage const& _storage, nxsocklen_t _len, bo
     const auto* its_sockaddr = reinterpret_cast<const nxsockaddr*>(&_storage);
     if (its_sockaddr->sa_family == nxAF_INET && static_cast<std::size_t>(_len) >= sizeof(nxsockaddr_in)) {
         const auto* its_addr = reinterpret_cast<const nxsockaddr_in*>(&_storage);
-        const auto its_ip = boost::asio::ip::address_v4(boost::endian::big_to_native(its_addr->sin_addr.addr));
+        std::uint32_t its_raw_v4 = 0;
+        std::memcpy(&its_raw_v4, &its_addr->sin_addr, sizeof(its_raw_v4));
+        const auto its_ip = boost::asio::ip::address_v4(boost::endian::big_to_native(its_raw_v4));
         const auto its_port = boost::endian::big_to_native(its_addr->sin_port);
         _endpoint = boost::asio::ip::tcp::endpoint(its_ip, its_port);
         _ec.clear();
@@ -166,7 +169,7 @@ bool native_to_endpoint(nxsockaddr_storage const& _storage, nxsocklen_t _len, bo
     if (its_sockaddr->sa_family == nxAF_INET6 && static_cast<std::size_t>(_len) >= sizeof(nxsockaddr_in6)) {
         const auto* its_addr = reinterpret_cast<const nxsockaddr_in6*>(&_storage);
         boost::asio::ip::address_v6::bytes_type its_bytes{};
-        std::memcpy(its_bytes.data(), its_addr->sin6_addr.addr, its_bytes.size());
+        std::memcpy(its_bytes.data(), &its_addr->sin6_addr, its_bytes.size());
         const auto its_ip = boost::asio::ip::address_v6(its_bytes, its_addr->sin6_scope_id);
         const auto its_port = boost::endian::big_to_native(its_addr->sin6_port);
         _endpoint = boost::asio::ip::tcp::endpoint(its_ip, its_port);

@@ -41,7 +41,7 @@ bool is_xnet_enabled() const { return xnet_stack_ != nullptr; }
     bool is_xnet_backend() const override;
 
 private:
-    nxIpStackRef_t xnet_stack_ = nullptr;  // XNET IP stack reference
+    nxIpStackRef_t xnet_stack_ = nullptr; // XNET IP stack reference (always null on non-XNET builds)
 };
 
 }
