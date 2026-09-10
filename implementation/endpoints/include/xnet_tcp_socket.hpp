@@ -16,7 +16,7 @@
 #include <string>
 #include <thread>
 
-#include "xnet_types.hpp"
+#include "nxsocket.h"
 
 namespace vsomeip_v3 {
 

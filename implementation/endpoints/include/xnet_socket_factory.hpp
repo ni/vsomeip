@@ -4,9 +4,7 @@
 #include <iostream>
 
 #include "abstract_socket_factory.hpp"
-
-#include "xnet_types.hpp"
-
+#include "nxsocket.h"
 
 namespace vsomeip_v3 {
 

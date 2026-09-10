@@ -1,7 +1,7 @@
 #ifndef XNET_API_HPP_
 #define XNET_API_HPP_
 
-#include "xnet_types.hpp"
+#include "nxsocket.h"
 
 namespace vsomeip_v3::xnet_api {
 
