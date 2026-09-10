@@ -151,6 +151,8 @@ public:
 
     virtual void listen(int, boost::system::error_code&) = 0;
 
+    // --- NI modification: BEGIN ---
+    // Abstract acceptor readiness polling so each backend owns its platform details.
      /**
      * Wait for an incoming connection to become readable on the acceptor.
      * Returns true if there is data pending (connection ready), false on timeout
@@ -158,6 +160,7 @@ public:
      **/
     [[nodiscard]] virtual bool wait_for_pending_connection(std::chrono::milliseconds _timeout,
                                                           boost::system::error_code& _ec) = 0;
+    // --- NI modification: END ---
 
     virtual void async_accept(tcp_socket&, boost::asio::ip::tcp::endpoint&, connect_handler) = 0;
 

@@ -35,9 +35,13 @@ client_endpoint_impl<Protocol>::client_endpoint_impl(const std::shared_ptr<board
                                                      boost::asio::io_context& _io, const std::shared_ptr<configuration>& _configuration) :
     endpoint_impl<Protocol>(_boardnet_endpoint_host, _routing_host, _io, _configuration), remote_{_remote}, flush_timer_{_io},
     connect_timer_{_io}, connect_timeout_{VSOMEIP_DEFAULT_CONNECT_TIMEOUT}, state_{cei_state_e::CLOSED}, reconnect_counter_{0},
-    connecting_timer_{_io}, connecting_result_handled_{false}, connecting_timeout_{VSOMEIP_DEFAULT_CONNECTING_TIMEOUT},
-    train_{std::make_shared<train>()}, dispatch_timer_{_io}, has_last_departure_{false}, queue_size_{0}, was_not_connected_{false},
-    is_sending_{false}, strand_(_io) {
+    connecting_timer_{_io},
+    // --- NI modification: BEGIN ---
+    // Initialize the one-shot connect callback guard to prevent duplicate callback handling.
+    connecting_result_handled_{false},
+    // --- NI modification: END ---
+    connecting_timeout_{VSOMEIP_DEFAULT_CONNECTING_TIMEOUT}, train_{std::make_shared<train>()},
+    dispatch_timer_{_io}, has_last_departure_{false}, queue_size_{0}, was_not_connected_{false}, is_sending_{false}, strand_(_io) {
     this->local_ = _local;
     recreate_socket();
 }
@@ -455,6 +459,8 @@ void client_endpoint_impl<Protocol>::connect_cbk(boost::system::error_code const
 
 template<typename Protocol>
 void client_endpoint_impl<Protocol>::cancel_and_connect_cbk(boost::system::error_code const& _error) {
+    // --- NI modification: BEGIN ---
+    // Make cancellation and timer completion idempotent before notifying the endpoint.
     const bool call_connect_cbk = !connecting_result_handled_.exchange(true, std::memory_order_relaxed);
     std::size_t operations_cancelled;
     {
@@ -478,6 +484,7 @@ void client_endpoint_impl<Protocol>::cancel_and_connect_cbk(boost::system::error
     } else {
         VSOMEIP_INFO_P << "Connect callback already handled endpoint > " << this << " socket state > " << to_string(state_.load());
     }
+    // --- NI modification: END ---
 }
 
 template<typename Protocol>
@@ -492,6 +499,7 @@ void client_endpoint_impl<Protocol>::wait_connect_cbk(boost::system::error_code 
 template<typename Protocol>
 void client_endpoint_impl<Protocol>::wait_connecting_cbk(boost::system::error_code const& _error) {
 
+    // --- NI modification: BEGIN --- // Handle timeout, cancellation, and successful connect completion exactly once.
     if (!_error && !client_endpoint_impl<Protocol>::sending_blocked_) {
         const bool call_connect_cbk = !connecting_result_handled_.exchange(true, std::memory_order_relaxed);
         if (call_connect_cbk) {
@@ -516,6 +524,7 @@ void client_endpoint_impl<Protocol>::wait_connecting_cbk(boost::system::error_co
                           << _error.value() << "):" << _error.message() << ", remote: " << get_remote_information() << ", endpoint > "
                           << this << " socket state > " << to_string(state_.load());
     }
+    // --- NI modification: END ---
 }
 
 template<typename Protocol>
@@ -766,10 +775,12 @@ template<typename Protocol>
 void client_endpoint_impl<Protocol>::start_connecting_timer() {
 
     std::scoped_lock its_lock(connecting_timer_mutex_);
+    // --- NI modification: BEGIN --- // Reset the one-shot completion guard for each new connection attempt.
     connecting_result_handled_.store(false, std::memory_order_relaxed);
     connecting_timer_.expires_after(std::chrono::milliseconds(connecting_timeout_));
     connecting_timer_.async_wait(
             std::bind(&client_endpoint_impl<Protocol>::wait_connecting_cbk, this->shared_from_this(), std::placeholders::_1));
+    // --- NI modification: END ---
 }
 
 template<typename Protocol>

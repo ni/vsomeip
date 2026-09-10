@@ -10,7 +10,7 @@ find_package(${VSOMEIP_NAME} REQUIRED)
 
 # vsomeip headers include Boost.Asio, and the exported vsomeip3 target links
 # Boost PRIVATE, so its include directories must be added explicitly here.
-find_package(Boost 1.75 COMPONENTS filesystem REQUIRED)
+find_package(Boost COMPONENTS filesystem REQUIRED)
 
 include_directories (${VSOMEIP_INCLUDE_DIRS} ${CMAKE_CURRENT_SOURCE_DIR}/../../../implementation/endpoints/include)
 include_directories (SYSTEM ${Boost_INCLUDE_DIRS})

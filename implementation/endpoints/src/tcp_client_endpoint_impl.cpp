@@ -38,10 +38,13 @@ tcp_client_endpoint_impl::tcp_client_endpoint_impl(const std::shared_ptr<boardne
     send_timeout_(configuration_->get_sd_ttl() * 666), send_timeout_warning_(send_timeout_ / 2),
     tcp_restart_aborts_max_(configuration_->get_max_tcp_restart_aborts()),
     tcp_connect_time_max_(configuration_->get_max_tcp_connect_time()), aborted_restart_count_(0),
+    // --- NI modification: BEGIN ---
+    // Configure a bounded bad-descriptor burst window before restarting TCP.
     bad_descriptor_burst_count_(0),
     bad_descriptor_window_start_(std::chrono::steady_clock::time_point::min()),
     bad_descriptor_restart_threshold_(3),
     bad_descriptor_restart_window_(std::chrono::milliseconds(500)),
+    // --- NI modification: END ---
     sent_timer_(_io) {
 
     this->max_message_size_ = _configuration->get_max_message_size_reliable(_remote.address().to_string(), _remote.port());
@@ -619,6 +622,8 @@ void tcp_client_endpoint_impl::receive_cbk(boost::system::error_code const& _err
         } else {
             VSOMEIP_WARNING_P << _error.message() << "(" << _error.value() << ") local: " << get_address_port_local()
                               << " remote: " << get_address_port_remote();
+            // --- NI modification: BEGIN ---
+            // Defer bad-descriptor restarts until repeated failures indicate a persistent fault.
             bool should_restart = false;
             if (_error == boost::asio::error::bad_descriptor) {
                 const auto now = std::chrono::steady_clock::now();
@@ -665,6 +670,7 @@ void tcp_client_endpoint_impl::receive_cbk(boost::system::error_code const& _err
                     self->receive(_recv_buffer, _recv_buffer_size, its_missing_capacity);
                 });
             }
+            // --- NI modification: END ---
         }
     }
 }

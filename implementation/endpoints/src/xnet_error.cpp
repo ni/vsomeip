@@ -1,5 +1,3 @@
-// Copyright (C) 2024 - XNET Integration
-
 #include "../include/xnet_error.hpp"
 #include "../include/xnet_api.hpp"
 
@@ -7,24 +5,12 @@
 #include <boost/system/errc.hpp>
 #include <cerrno>
 
-#if defined(VSOMEIP_ENABLE_XNET)
 #include "nxsocket.h"
-#endif
-
-#if defined(_WIN32)
-#include <winsock2.h>
-#endif
 
 namespace vsomeip_v3 {
 
 int xnet_get_last_error() {
-#if defined(VSOMEIP_ENABLE_XNET)
     return static_cast<int>(xnet_api::nxgetlasterrornum());
-#elif defined(_WIN32)
-    return WSAGetLastError();
-#else
-    return errno;
-#endif
 }
 
 boost::system::error_code xnet_to_boost_error(int _xnet_error) {
@@ -32,8 +18,7 @@ boost::system::error_code xnet_to_boost_error(int _xnet_error) {
         return {};
     }
 
-#if defined(VSOMEIP_ENABLE_XNET)
-    // XNET reports stack-native error numbers via nxgetlasterrornum().
+// XNET reports stack-native error numbers via nxgetlasterrornum().
     // These are NI XNET specific codes (nxE* from nxsocket_errors.h), NOT standard errno values.
     // Both positive (nxE*) and negative (nxIpStackErr*) variants are mapped.
     switch (_xnet_error) {
@@ -86,42 +71,6 @@ boost::system::error_code xnet_to_boost_error(int _xnet_error) {
     case -13836: // nxIpStackErrWouldDeadlock (0xFFFFC9F4)
         return boost::asio::error::make_error_code(boost::asio::error::would_block);
     }
-#elif defined(_WIN32)
-    switch (_xnet_error) {
-    case WSAEWOULDBLOCK:
-        return boost::asio::error::make_error_code(boost::asio::error::would_block);
-    case WSAEINPROGRESS:
-        return boost::asio::error::make_error_code(boost::asio::error::in_progress);
-    case WSAEALREADY:
-        return boost::asio::error::make_error_code(boost::asio::error::already_started);
-    case WSAEINTR:
-        return boost::asio::error::make_error_code(boost::asio::error::interrupted);
-    case WSAEACCES:
-        return boost::asio::error::make_error_code(boost::asio::error::access_denied);
-    case WSAEADDRINUSE:
-        return boost::asio::error::make_error_code(boost::asio::error::address_in_use);
-    case WSAENETUNREACH:
-        return boost::asio::error::make_error_code(boost::asio::error::network_unreachable);
-    case WSAEHOSTUNREACH:
-        return boost::asio::error::make_error_code(boost::asio::error::host_unreachable);
-    case WSAECONNABORTED:
-        return boost::asio::error::make_error_code(boost::asio::error::connection_aborted);
-    case WSAECONNRESET:
-        return boost::asio::error::make_error_code(boost::asio::error::connection_reset);
-    case WSAENOBUFS:
-        return boost::asio::error::make_error_code(boost::asio::error::no_buffer_space);
-    case WSAEISCONN:
-        return boost::asio::error::make_error_code(boost::asio::error::already_connected);
-    case WSAENOTCONN:
-        return boost::asio::error::make_error_code(boost::asio::error::not_connected);
-    case WSAETIMEDOUT:
-        return boost::asio::error::make_error_code(boost::asio::error::timed_out);
-    case WSAECONNREFUSED:
-        return boost::asio::error::make_error_code(boost::asio::error::connection_refused);
-    case WSAEMSGSIZE:
-        return boost::asio::error::make_error_code(boost::asio::error::message_size);
-    }
-#endif
 
     return boost::system::error_code(_xnet_error, boost::system::generic_category());
 }

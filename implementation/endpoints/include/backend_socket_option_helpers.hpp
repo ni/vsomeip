@@ -1,8 +1,3 @@
-// Copyright (C) 2014-2026 Bayerische Motoren Werke Aktiengesellschaft (BMW AG)
-// This Source Code Form is subject to the terms of the Mozilla Public
-// License, v. 2.0. If a copy of the MPL was not distributed with this
-// file, You can obtain one at http://mozilla.org/MPL/2.0/.
-
 #pragma once
 
 #include <cstdint>
@@ -21,7 +16,8 @@ namespace vsomeip_v3::socket_option_helpers {
 
 #if defined(__linux__) || defined(__QNX__)
 inline bool set_bind_to_device(int _fd, std::string const& _device) {
-    return ::setsockopt(_fd, SOL_SOCKET, SO_BINDTODEVICE, _device.c_str(), static_cast<socklen_t>(_device.size())) != -1;
+    // +1 since std::string.size does not take into account the null terminator
+    return ::setsockopt(_fd, SOL_SOCKET, SO_BINDTODEVICE, _device.c_str(), static_cast<socklen_t>(_device.size() + 1)) != -1;
 }
 #endif
 

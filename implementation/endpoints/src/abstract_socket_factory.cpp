@@ -39,6 +39,8 @@ namespace vsomeip_v3 {
  *non-neglectable cost to pay during production run-time for enabling these tests.
  **/
 static std::shared_ptr<abstract_socket_factory> _factory;
+// --- NI modification: BEGIN ---
+// Synchronize factory initialization and detect injection after selection is frozen.
 static bool _factory_finalized{false};
 static bool _late_injection_detected{false};
 static std::mutex _factory_mutex;
@@ -94,5 +96,6 @@ bool is_abstract_factory_finalized() {
 bool was_abstract_factory_late_injection_detected() {
     return _late_injection_detected;
 }
+// --- NI modification: END ---
 
 }

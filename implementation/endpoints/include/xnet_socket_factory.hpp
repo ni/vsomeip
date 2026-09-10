@@ -1,35 +1,22 @@
-// XNET Socket Factory for vsomeip
-// Copyright (C) 2024 - XNET Integration
-
 #ifndef XNET_SOCKET_FACTORY_HPP_
 #define XNET_SOCKET_FACTORY_HPP_
 
 #include <iostream>
 
 #include "abstract_socket_factory.hpp"
-
-#if defined(VSOMEIP_ENABLE_XNET)
-#include "xnet_types.hpp"
-#endif
-
+#include "nxsocket.h"
 
 namespace vsomeip_v3 {
 
 class xnet_socket_factory final : public abstract_socket_factory {
 public:
-  #if defined(VSOMEIP_ENABLE_XNET)
-	xnet_socket_factory();
-	explicit xnet_socket_factory(nxIpStackRef_t xnet_stack);
-  #else
-    xnet_socket_factory();
-    #endif
-	~xnet_socket_factory() override = default;
+xnet_socket_factory();
+explicit xnet_socket_factory(nxIpStackRef_t xnet_stack);
+~xnet_socket_factory() override = default;
 
-	// Get XNET stack reference
-   #if defined(VSOMEIP_ENABLE_XNET)
-	nxIpStackRef_t get_xnet_stack() const { return xnet_stack_; }
- #endif
-	bool is_xnet_enabled() const { return xnet_stack_ != nullptr; }
+// Get XNET stack reference
+nxIpStackRef_t get_xnet_stack() const { return xnet_stack_; }
+bool is_xnet_enabled() const { return xnet_stack_ != nullptr; }
 
 #if defined(__linux__)
     std::shared_ptr<abstract_netlink_connector> create_netlink_connector(boost::asio::io_context& _io,
@@ -52,11 +39,7 @@ public:
     bool is_xnet_backend() const override;
 
 private:
-   #if defined(VSOMEIP_ENABLE_XNET)
-    nxIpStackRef_t xnet_stack_ = nullptr;  // XNET IP stack reference
-  #else
-    void *xnet_stack_ = nullptr;
-    #endif
+    nxIpStackRef_t xnet_stack_ = nullptr; // XNET IP stack reference (always null on non-XNET builds)
 };
 
 }

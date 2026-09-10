@@ -28,6 +28,8 @@ namespace ip = boost::asio::ip;
 
 namespace vsomeip_v3 {
 
+// --- NI modification: BEGIN ---
+// Share TCP accept-option policy and tolerate unsupported backend options.
 boost::system::error_code apply_tcp_server_accept_socket_option_policy(tcp_socket& _socket, const std::string& _instance_name) {
     boost::system::error_code its_error;
     boost::system::error_code its_fatal_error;
@@ -67,6 +69,7 @@ boost::system::error_code apply_tcp_server_accept_socket_option_policy(tcp_socke
 
     return its_fatal_error;
 }
+// --- NI modification: END ---
 
 tcp_server_endpoint_impl::tcp_server_endpoint_impl(const std::shared_ptr<boardnet_endpoint_host>& _boardnet_endpoint_host,
                                                    const std::shared_ptr<boardnet_routing_host>& _routing_host,
@@ -267,6 +270,8 @@ void tcp_server_endpoint_impl::get_configured_times_from_endpoint(service_t _ser
 bool tcp_server_endpoint_impl::is_established_to(const std::shared_ptr<endpoint_definition>& _endpoint) {
 
     // Check if we have incoming TCP connections waiting in the acceptor queue
+    // --- NI modification: BEGIN ---
+    // Replace native poll details with the backend-neutral acceptor readiness API.
     // P2-02 polling/wait refactor:
     // - use acceptor_->wait_for_pending_connection(...), which is backend-specific
     //   (ASIO uses native poll internally, XNET uses a XNET-safe wait path).
@@ -293,6 +298,7 @@ bool tcp_server_endpoint_impl::is_established_to(const std::shared_ptr<endpoint_
             std::this_thread::sleep_for(std::chrono::milliseconds(1));
         }
     }
+    // --- NI modification: END ---
 
     // Flush jobs handling the incoming connections if necessary.
 
@@ -385,6 +391,8 @@ void tcp_server_endpoint_impl::accept_cbk(connection::ptr _connection, std::shar
     if (!_error) {
         // Remote endpoint was captured by the kernel at accept() time via the peer-endpoint
         // overload of async_accept, so it is valid even if the client already disconnected.
+        // --- NI modification: BEGIN ---
+        // Distinguish unsupported TCP options from fatal socket setup failures.
         boost::system::error_code its_fatal_error;
         const endpoint_type remote(*_remote_ep);
         {
@@ -423,6 +431,7 @@ void tcp_server_endpoint_impl::accept_cbk(connection::ptr _connection, std::shar
         } else {
             VSOMEIP_ERROR_P << instance_name_ << "Socket couldn't be started, " << its_fatal_error.message();
         }
+        // --- NI modification: END ---
     } else {
         auto err_msg = instance_name_ + "Error, " + _error.message();
         if (_error == boost::system::errc::operation_canceled) {
