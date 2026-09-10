@@ -1,18 +1,18 @@
 {
-  "unicast": "134.86.56.94",
+  "unicast": "10.0.0.2",
   "logging": {
     "level": "debug",
     "console": "true"
   },
   "applications": [
-  {
-    "name": "xnet-response-server",
-    "id": "0x1212"
-  },
-  {
-    "name": "xnet-request-client",
-    "id": "0x1313"
-  }
+    {
+      "name": "xnet-response-server",
+      "id": "0x1212"
+    },
+    {
+      "name": "xnet-request-client",
+      "id": "0x1313"
+    }
   ],
   "services": [
     {
