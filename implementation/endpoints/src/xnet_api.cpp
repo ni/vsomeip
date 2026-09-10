@@ -1,7 +1,5 @@
 #include "../include/xnet_api.hpp"
 
-#if defined(VSOMEIP_ENABLE_XNET)
-
 #include <atomic>
 #include <memory>
 
@@ -35,5 +33,3 @@ void reset_api_table_for_test() {
 }
 
 } // namespace vsomeip_v3::xnet_api
-
-#endif // VSOMEIP_ENABLE_XNET

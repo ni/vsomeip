@@ -1,15 +1,10 @@
 // XNET Socket Factory Implementation
 
 #include "../include/xnet_socket_factory.hpp"
-#if defined(VSOMEIP_ENABLE_XNET)
 #include "../include/xnet_tcp_acceptor.hpp"
 #include "../include/xnet_tcp_socket.hpp"
 #include "../include/xnet_udp_socket.hpp"
-#endif
 
-// Standard ASIO socket implementations (fallback when XNET disabled)
-#include "../include/asio_udp_socket.hpp"
-#include "../include/asio_tcp_socket.hpp"  // Contains both asio_tcp_socket and asio_tcp_acceptor
 #include "../include/asio_timer.hpp"
 
 #include <iostream>   
@@ -68,20 +63,15 @@ void log_startup_report(nxIpStackRef_t _stack) {
     VSOMEIP_INFO << "[XNET][factory][startup] "
                  << k_xnet_backend_tag
                  << " stack_ref=" << _stack
-                 << " stack_ready=" << (_stack != nullptr ? "true" : "false")
-                 << " compile_gate=VSOMEIP_ENABLE_XNET";
+                 << " stack_ready=" << (_stack != nullptr ? "true" : "false");
 }
 
 } // namespace
 
-#if defined(VSOMEIP_ENABLE_XNET)
-// Defined only when XNET is enabled because the nxIpStackRef_t-based constructor
-// is conditionally declared in the header under VSOMEIP_ENABLE_XNET.
 xnet_socket_factory::xnet_socket_factory(nxIpStackRef_t xnet_stack) 
     : xnet_stack_(xnet_stack) {
         log_startup_report(xnet_stack_);
 }
-#endif
 
 // Always provide the default constructor because it is always declared in the header.
 xnet_socket_factory::xnet_socket_factory() {
@@ -92,60 +82,44 @@ xnet_socket_factory::xnet_socket_factory() {
     std::shared_ptr<abstract_netlink_connector>
         xnet_socket_factory::create_netlink_connector(boost::asio::io_context& _io, const boost::asio::ip::address& _address,
             const boost::asio::ip::address& _multicast_address, bool _is_requiring_link) {
-#if defined(VSOMEIP_ENABLE_XNET)
         // XNET manages its own IP stack — the OS kernel never gets the configured unicast
         // address. Skip the real netlink watcher and immediately signal interface+route ready.
         (void)_io; (void)_address; (void)_multicast_address; (void)_is_requiring_link;
         return std::make_shared<xnet_netlink_bypass>();
-#else
-        return std::make_shared<netlink_connector>(_io, _address, _multicast_address, _is_requiring_link);
-#endif
     }
 #endif
 
     std::unique_ptr<udp_socket> xnet_socket_factory::create_udp_socket(boost::asio::io_context& _io) {
-        #if defined(VSOMEIP_ENABLE_XNET)
-            if (!is_xnet_enabled()) {
-                VSOMEIP_ERROR << "[XNET][factory][create_udp_socket] " << k_xnet_backend_tag
-                              << " failure_class=stack_init stack_ref=null";
-                throw std::runtime_error("xnet_socket_factory: XNET backend selected but stack is null (udp_socket)");
-            }
-            VSOMEIP_INFO << "[XNET][factory][create_udp_socket] " << k_xnet_backend_tag
-                         << " stack_ref=" << xnet_stack_;
-            return std::make_unique<xnet_udp_socket>(_io, xnet_stack_);
-        #else
-            return std::make_unique<asio_udp_socket>(_io);
-        #endif
+        if (!is_xnet_enabled()) {
+            VSOMEIP_ERROR << "[XNET][factory][create_udp_socket] " << k_xnet_backend_tag
+                          << " failure_class=stack_init stack_ref=null";
+            throw std::runtime_error("xnet_socket_factory: XNET backend selected but stack is null (udp_socket)");
+        }
+        VSOMEIP_INFO << "[XNET][factory][create_udp_socket] " << k_xnet_backend_tag
+                     << " stack_ref=" << xnet_stack_;
+        return std::make_unique<xnet_udp_socket>(_io, xnet_stack_);
     }
 
     std::unique_ptr<tcp_socket> xnet_socket_factory::create_tcp_socket(boost::asio::io_context& _io) {
-        #if defined(VSOMEIP_ENABLE_XNET)
-            if (!is_xnet_enabled()) {
-                VSOMEIP_ERROR << "[XNET][factory][create_tcp_socket] " << k_xnet_backend_tag
-                              << " failure_class=stack_init stack_ref=null";
-                throw std::runtime_error("xnet_socket_factory: XNET backend selected but stack is null (tcp_socket)");
-            }
-            VSOMEIP_INFO << "[XNET][factory][create_tcp_socket] " << k_xnet_backend_tag
-                         << " stack_ref=" << xnet_stack_;
-            return std::make_unique<xnet_tcp_socket>(_io, xnet_stack_);
-        #else
-            return std::make_unique<asio_tcp_socket>(_io);
-        #endif
+        if (!is_xnet_enabled()) {
+            VSOMEIP_ERROR << "[XNET][factory][create_tcp_socket] " << k_xnet_backend_tag
+                          << " failure_class=stack_init stack_ref=null";
+            throw std::runtime_error("xnet_socket_factory: XNET backend selected but stack is null (tcp_socket)");
+        }
+        VSOMEIP_INFO << "[XNET][factory][create_tcp_socket] " << k_xnet_backend_tag
+                     << " stack_ref=" << xnet_stack_;
+        return std::make_unique<xnet_tcp_socket>(_io, xnet_stack_);
     }
 
     std::unique_ptr<tcp_acceptor> xnet_socket_factory::create_tcp_acceptor(boost::asio::io_context& _io) {
-        #if defined(VSOMEIP_ENABLE_XNET)
-            if (!is_xnet_enabled()) {
-                VSOMEIP_ERROR << "[XNET][factory][create_tcp_acceptor] " << k_xnet_backend_tag
-                              << " failure_class=stack_init stack_ref=null";
-                throw std::runtime_error("xnet_socket_factory: XNET backend selected but stack is null (tcp_acceptor)");
-            }
-            VSOMEIP_INFO << "[XNET][factory][create_tcp_acceptor] " << k_xnet_backend_tag
-                         << " stack_ref=" << xnet_stack_;
-            return std::make_unique<xnet_tcp_acceptor>(_io, xnet_stack_);
-        #else
-            return std::make_unique<asio_tcp_acceptor>(_io);
-        #endif
+        if (!is_xnet_enabled()) {
+            VSOMEIP_ERROR << "[XNET][factory][create_tcp_acceptor] " << k_xnet_backend_tag
+                          << " failure_class=stack_init stack_ref=null";
+            throw std::runtime_error("xnet_socket_factory: XNET backend selected but stack is null (tcp_acceptor)");
+        }
+        VSOMEIP_INFO << "[XNET][factory][create_tcp_acceptor] " << k_xnet_backend_tag
+                     << " stack_ref=" << xnet_stack_;
+        return std::make_unique<xnet_tcp_acceptor>(_io, xnet_stack_);
     }
 
     std::unique_ptr<abstract_timer> xnet_socket_factory::create_timer(boost::asio::io_context& _io) {

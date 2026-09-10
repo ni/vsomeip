@@ -7,20 +7,6 @@
 #include <boost/asio/post.hpp>
 #include <boost/endian/conversion.hpp>
 
-#if !defined(VSOMEIP_ENABLE_XNET)
-#include <sys/types.h>
-#include <sys/socket.h>
-#if defined(_WIN32)
-#include <winsock2.h>
-#include <ws2tcpip.h>
-#else
-#include <arpa/inet.h>
-#include <fcntl.h>
-#include <netinet/in.h>
-#include <unistd.h>
-#endif
-#endif
-
 #include "../include/xnet_tcp_acceptor.hpp"
 #include "../include/backend_socket_option_helpers.hpp"
 #include "../include/xnet_tcp_socket.hpp"
@@ -31,15 +17,7 @@
 
 #define VSOMEIP_LOG_PREFIX "xna"
 
-#if defined(VSOMEIP_ENABLE_XNET)
 #define INVALID_SOCKET_VALUE nxINVALID_SOCKET
-#else
-#if defined(_WIN32)
-#define INVALID_SOCKET_VALUE static_cast<nxSOCKET>(INVALID_SOCKET)
-#else
-#define INVALID_SOCKET_VALUE static_cast<nxSOCKET>(-1)
-#endif
-#endif
 #define SOCKET_ERROR_VALUE -1
 
 namespace vsomeip_v3 {
@@ -137,7 +115,6 @@ bool wait_read_ready(nxSOCKET _socket, std::chrono::milliseconds _timeout,
     const auto timeout_usec = static_cast<long>((timeout_ms % 1000) * 1000);
 
     for (;;) {
-#if defined(VSOMEIP_ENABLE_XNET)
         nxfd_set read_fds{};
         nxfd_set except_fds{};
         nxFD_ZERO(&read_fds);
@@ -150,24 +127,6 @@ bool wait_read_ready(nxSOCKET _socket, std::chrono::milliseconds _timeout,
         timeout.tv_sec = timeout_sec;
         timeout.tv_usec = static_cast<int32_t>(timeout_usec);
         const auto its_result = xnet_api::nxselect(0, &read_fds, nullptr, &except_fds, &timeout);
-#else
-        fd_set read_fds{};
-        fd_set except_fds{};
-        FD_ZERO(&read_fds);
-        FD_ZERO(&except_fds);
-
-        FD_SET(static_cast<int>(_socket), &read_fds);
-        FD_SET(static_cast<int>(_socket), &except_fds);
-
-        timeval timeout{};
-        timeout.tv_sec = timeout_sec;
-        timeout.tv_usec = timeout_usec;
-#if defined(_WIN32)
-        const auto its_result = ::select(0, &read_fds, nullptr, &except_fds, &timeout);
-#else
-        const auto its_result = ::select(static_cast<int>(_socket) + 1, &read_fds, nullptr, &except_fds, &timeout);
-#endif
-#endif
 
         if (its_result > 0) {
             _ec.clear();
@@ -298,19 +257,10 @@ void xnet_tcp_acceptor::open(boost::asio::ip::tcp::endpoint::protocol_type _pt, 
 
     is_ipv6_ = (_pt == boost::asio::ip::tcp::v6());
 
-#if defined(VSOMEIP_ENABLE_XNET)
-    acceptor_ = xnet_api::nxsocket(xnet_stack_, is_ipv6_ ? nxAF_INET6 : nxAF_INET, nxSOCK_STREAM, nxIPPROTO_TCP);
-    const bool is_invalid_socket = (acceptor_ == nxINVALID_SOCKET);
-#else
-    acceptor_ = ::socket(is_ipv6_ ? AF_INET6 : AF_INET, SOCK_STREAM, IPPROTO_TCP);
-#if defined(_WIN32)
-    const bool is_invalid_socket = (acceptor_ == static_cast<nxSOCKET>(INVALID_SOCKET));
-#else
-    const bool is_invalid_socket = (acceptor_ == INVALID_SOCKET_VALUE);
-#endif
-#endif
+acceptor_ = xnet_api::nxsocket(xnet_stack_, is_ipv6_ ? nxAF_INET6 : nxAF_INET, nxSOCK_STREAM, nxIPPROTO_TCP);
+const bool is_invalid_socket = (acceptor_ == nxINVALID_SOCKET);
 
-    if (is_invalid_socket) {
+if (is_invalid_socket) {
         acceptor_ = INVALID_SOCKET_VALUE;
         _ec = make_xnet_error("open");
         return;
@@ -340,15 +290,10 @@ void xnet_tcp_acceptor::bind(boost::asio::ip::tcp::endpoint const& _ep, boost::s
         return;
     }
 
-#if defined(VSOMEIP_ENABLE_XNET)
-    if (xnet_api::nxbind(acceptor_, reinterpret_cast<nxsockaddr*>(&its_storage), its_len) == SOCKET_ERROR_VALUE) {
-#else
-    if (::bind(static_cast<int>(acceptor_), reinterpret_cast<sockaddr*>(&its_storage), static_cast<socklen_t>(its_len))
-        == SOCKET_ERROR_VALUE) {
-#endif
-        _ec = make_xnet_error("bind");
-        return;
-    }
+if (xnet_api::nxbind(acceptor_, reinterpret_cast<nxsockaddr*>(&its_storage), its_len) == SOCKET_ERROR_VALUE) {
+    _ec = make_xnet_error("bind");
+    return;
+}
 
     _ec.clear();
 }
@@ -370,26 +315,12 @@ void xnet_tcp_acceptor::close(boost::system::error_code& _ec) {
         return;
     }
 
-#if defined(VSOMEIP_ENABLE_XNET)
-    if (xnet_api::nxclose(acceptor_) == SOCKET_ERROR_VALUE) {
-        _ec = make_xnet_error("close");
-        return;
-    }
-#else
-#if defined(_WIN32)
-    if (::closesocket(static_cast<SOCKET>(acceptor_)) == SOCKET_ERROR_VALUE) {
-        _ec = make_xnet_error("close");
-        return;
-    }
-#else
-    if (::close(static_cast<int>(acceptor_)) == SOCKET_ERROR_VALUE) {
-        _ec = make_xnet_error("close");
-        return;
-    }
-#endif
-#endif
+if (xnet_api::nxclose(acceptor_) == SOCKET_ERROR_VALUE) {
+    _ec = make_xnet_error("close");
+    return;
+}
 
-    acceptor_ = INVALID_SOCKET_VALUE;
+acceptor_ = INVALID_SOCKET_VALUE;
     _ec.clear();
 }
 
@@ -406,14 +337,10 @@ void xnet_tcp_acceptor::listen(int _backlog, boost::system::error_code& _ec) {
     }
 
     const auto its_backlog = std::min(_backlog, static_cast<int>(std::numeric_limits<int16_t>::max()));
-#if defined(VSOMEIP_ENABLE_XNET)
-    if (xnet_api::nxlisten(acceptor_, its_backlog) == SOCKET_ERROR_VALUE) {
-#else
-    if (::listen(static_cast<int>(acceptor_), its_backlog) == SOCKET_ERROR_VALUE) {
-#endif
-        _ec = make_xnet_error("listen");
-        return;
-    }
+if (xnet_api::nxlisten(acceptor_, its_backlog) == SOCKET_ERROR_VALUE) {
+    _ec = make_xnet_error("listen");
+    return;
+}
 
     _ec.clear();
 }
@@ -425,15 +352,10 @@ void xnet_tcp_acceptor::set_option(boost::asio::ip::tcp::socket::reuse_address _
     }
 
     int opt = _ra.value() ? 1 : 0;
-#if defined(VSOMEIP_ENABLE_XNET)
-    if (xnet_api::nxsetsockopt(acceptor_, nxSOL_SOCKET, nxSO_REUSEADDR, &opt, static_cast<nxsocklen_t>(sizeof(opt))) == SOCKET_ERROR_VALUE) {
-#else
-    if (::setsockopt(static_cast<int>(acceptor_), SOL_SOCKET, SO_REUSEADDR, reinterpret_cast<const char*>(&opt),
-                     static_cast<socklen_t>(sizeof(opt))) == SOCKET_ERROR_VALUE) {
-#endif
-        _ec = make_xnet_error("set_option:reuse_address");
-        return;
-    }
+if (xnet_api::nxsetsockopt(acceptor_, nxSOL_SOCKET, nxSO_REUSEADDR, &opt, static_cast<nxsocklen_t>(sizeof(opt))) == SOCKET_ERROR_VALUE) {
+    _ec = make_xnet_error("set_option:reuse_address");
+    return;
+}
 
     _ec.clear();
 }
@@ -445,13 +367,9 @@ bool xnet_tcp_acceptor::set_reuse_port() {
         return false;
     }
 
-#if defined(VSOMEIP_ENABLE_XNET)
     (void)make_unsupported_option_error("set_reuse_port", "SO_REUSEPORT is not supported by XNET API");
     errno = ENOTSUP;
     return false;
-#else
-    return socket_option_helpers::set_tcp_acceptor_reuse_port(static_cast<int>(acceptor_));
-#endif
 }
 
 bool xnet_tcp_acceptor::set_native_option_free_bind() {
@@ -460,13 +378,9 @@ bool xnet_tcp_acceptor::set_native_option_free_bind() {
         return false;
     }
 
-#if defined(VSOMEIP_ENABLE_XNET)
     (void)make_unsupported_option_error("set_native_option_free_bind", "IP_FREEBIND is not supported by XNET API");
     errno = ENOTSUP;
     return false;
-#else
-    return socket_option_helpers::set_tcp_acceptor_free_bind(static_cast<int>(acceptor_));
-#endif
 }
 #endif
 
@@ -477,16 +391,12 @@ bool xnet_tcp_acceptor::bind_to_device(std::string const& _device) {
         return false;
     }
 
-#if defined(VSOMEIP_ENABLE_XNET)
     if (xnet_api::nxsetsockopt(acceptor_, nxSOL_SOCKET, nxSO_BINDTODEVICE, _device.c_str(), static_cast<nxsocklen_t>(_device.size()))
         == SOCKET_ERROR_VALUE) {
         (void)make_xnet_error("bind_to_device");
         return false;
     }
     return true;
-#else
-    return socket_option_helpers::set_bind_to_device(static_cast<int>(acceptor_), _device);
-#endif
 }
 #endif
 
@@ -528,24 +438,11 @@ void xnet_tcp_acceptor::async_accept(tcp_socket& _socket, boost::asio::ip::tcp::
                 continue;
             }
 
-#if defined(VSOMEIP_ENABLE_XNET)
-            its_client_socket = xnet_api::nxaccept(its_acceptor, reinterpret_cast<nxsockaddr*>(&its_peer_storage), &its_peer_len);
-#else
-            its_client_socket = ::accept(static_cast<int>(its_acceptor), reinterpret_cast<sockaddr*>(&its_peer_storage),
-                                         reinterpret_cast<socklen_t*>(&its_peer_len));
-#endif
+its_client_socket = xnet_api::nxaccept(its_acceptor, reinterpret_cast<nxsockaddr*>(&its_peer_storage), &its_peer_len);
 
-#if defined(VSOMEIP_ENABLE_XNET)
-            const bool is_accept_failed = (its_client_socket == nxINVALID_SOCKET);
-#else
-#if defined(_WIN32)
-            const bool is_accept_failed = (its_client_socket == static_cast<nxSOCKET>(INVALID_SOCKET));
-#else
-            const bool is_accept_failed = (its_client_socket == INVALID_SOCKET_VALUE);
-#endif
-#endif
+const bool is_accept_failed = (its_client_socket == nxINVALID_SOCKET);
 
-            if (is_accept_failed) {
+if (is_accept_failed) {
                 its_error = make_xnet_error("async_accept");
                 if (its_error == boost::asio::error::would_block || its_error == boost::asio::error::try_again
                     || its_error == boost::asio::error::interrupted || its_error == boost::asio::error::in_progress) {
@@ -555,30 +452,14 @@ void xnet_tcp_acceptor::async_accept(tcp_socket& _socket, boost::asio::ip::tcp::
             }
 
             if (!native_to_endpoint(its_peer_storage, its_peer_len, peer_ep.get(), its_error)) {
-#if defined(VSOMEIP_ENABLE_XNET)
                 (void)xnet_api::nxclose(its_client_socket);
-#else
-#if defined(_WIN32)
-                (void)::closesocket(static_cast<SOCKET>(its_client_socket));
-#else
-                (void)::close(static_cast<int>(its_client_socket));
-#endif
-#endif
                 its_client_socket = INVALID_SOCKET_VALUE;
                 break;
             }
 
             its_socket->assign_accepted_socket(its_client_socket, peer_ep.get().protocol() == boost::asio::ip::tcp::v6(), its_error);
             if (its_error) {
-#if defined(VSOMEIP_ENABLE_XNET)
                 (void)xnet_api::nxclose(its_client_socket);
-#else
-#if defined(_WIN32)
-                (void)::closesocket(static_cast<SOCKET>(its_client_socket));
-#else
-                (void)::close(static_cast<int>(its_client_socket));
-#endif
-#endif
                 its_client_socket = INVALID_SOCKET_VALUE;
             }
             break;

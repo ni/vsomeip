@@ -3,8 +3,6 @@
 
 #include "xnet_types.hpp"
 
-#if defined(VSOMEIP_ENABLE_XNET)
-
 namespace vsomeip_v3::xnet_api {
 
 struct api_table {
@@ -98,7 +96,5 @@ inline int nxselect(int _nfds, nxfd_set* _readfds, nxfd_set* _writefds, nxfd_set
 }
 
 } // namespace vsomeip_v3::xnet_api
-
-#endif // VSOMEIP_ENABLE_XNET
 
 #endif // XNET_API_HPP_
