@@ -74,14 +74,10 @@ void log_startup_report(nxIpStackRef_t _stack) {
 
 } // namespace
 
-#if defined(VSOMEIP_ENABLE_XNET)
-// Defined only when XNET is enabled because the nxIpStackRef_t-based constructor
-// is conditionally declared in the header under VSOMEIP_ENABLE_XNET.
 xnet_socket_factory::xnet_socket_factory(nxIpStackRef_t xnet_stack) 
     : xnet_stack_(xnet_stack) {
         log_startup_report(xnet_stack_);
 }
-#endif
 
 // Always provide the default constructor because it is always declared in the header.
 xnet_socket_factory::xnet_socket_factory() {

@@ -10,19 +10,8 @@
 #include <boost/asio/post.hpp>
 #include <boost/endian/conversion.hpp>
 
-#if !defined(VSOMEIP_ENABLE_XNET)
-#include <sys/types.h>
-#include <sys/socket.h>
-#if defined(_WIN32)
-#include <winsock2.h>
-#include <ws2tcpip.h>
-#else
-#include <arpa/inet.h>
-#include <fcntl.h>
-#include <netinet/in.h>
-#include <unistd.h>
-#endif
-#endif
+// Native socket headers (and the nx* compatibility aliases used below) are
+// provided by xnet_types.hpp, which is pulled in via xnet_tcp_socket.hpp.
 
 #include "../include/xnet_tcp_socket.hpp"
 #include "../include/backend_socket_option_helpers.hpp"
@@ -33,15 +22,7 @@
 
 #define VSOMEIP_LOG_PREFIX "xnt"
 
-#if defined(VSOMEIP_ENABLE_XNET)
 #define INVALID_SOCKET_VALUE nxINVALID_SOCKET
-#else
-#if defined(_WIN32)
-#define INVALID_SOCKET_VALUE static_cast<nxSOCKET>(INVALID_SOCKET)
-#else
-#define INVALID_SOCKET_VALUE static_cast<nxSOCKET>(-1)
-#endif
-#endif
 #define SOCKET_ERROR_VALUE -1
 
 namespace vsomeip_v3 {
@@ -120,11 +101,11 @@ bool wait_socket_ready(nxSOCKET _socket, boost::asio::ip::tcp::socket::wait_type
         FD_ZERO(&except_fds);
 
         if (_wait == boost::asio::ip::tcp::socket::wait_read) {
-            FD_SET(static_cast<int>(_socket), &read_fds);
+            FD_SET(_socket, &read_fds);
         } else if (_wait == boost::asio::ip::tcp::socket::wait_write) {
-            FD_SET(static_cast<int>(_socket), &write_fds);
+            FD_SET(_socket, &write_fds);
         } else {
-            FD_SET(static_cast<int>(_socket), &except_fds);
+            FD_SET(_socket, &except_fds);
         }
 
         timeval timeout{};
@@ -133,7 +114,7 @@ bool wait_socket_ready(nxSOCKET _socket, boost::asio::ip::tcp::socket::wait_type
 #if defined(_WIN32)
         const auto its_result = ::select(0, &read_fds, &write_fds, &except_fds, &timeout);
 #else
-        const auto its_result = ::select(static_cast<int>(_socket) + 1, &read_fds, &write_fds, &except_fds, &timeout);
+        const auto its_result = ::select(_socket + 1, &read_fds, &write_fds, &except_fds, &timeout);
 #endif
 #endif
 
@@ -178,7 +159,8 @@ bool endpoint_to_native(boost::asio::ip::tcp::endpoint const& _endpoint, nxsocka
         auto* its_addr = reinterpret_cast<nxsockaddr_in*>(&_storage);
         its_addr->sin_family = nxAF_INET;
         its_addr->sin_port = boost::endian::native_to_big(_endpoint.port());
-        its_addr->sin_addr.addr = boost::endian::native_to_big(_endpoint.address().to_v4().to_uint());
+        const auto its_v4 = boost::endian::native_to_big(_endpoint.address().to_v4().to_uint());
+        std::memcpy(&its_addr->sin_addr, &its_v4, sizeof(its_v4));
         _len = static_cast<nxsocklen_t>(sizeof(nxsockaddr_in));
         _ec.clear();
         return true;
@@ -191,7 +173,7 @@ bool endpoint_to_native(boost::asio::ip::tcp::endpoint const& _endpoint, nxsocka
         its_addr->sin6_flowinfo = 0;
         its_addr->sin6_scope_id = _endpoint.address().to_v6().scope_id();
         const auto its_bytes = _endpoint.address().to_v6().to_bytes();
-        std::memcpy(its_addr->sin6_addr.addr, its_bytes.data(), its_bytes.size());
+        std::memcpy(&its_addr->sin6_addr, its_bytes.data(), its_bytes.size());
         _len = static_cast<nxsocklen_t>(sizeof(nxsockaddr_in6));
         _ec.clear();
         return true;
@@ -206,7 +188,9 @@ bool native_to_endpoint(nxsockaddr_storage const& _storage, nxsocklen_t _len, bo
     const auto* its_sockaddr = reinterpret_cast<const nxsockaddr*>(&_storage);
     if (its_sockaddr->sa_family == nxAF_INET && static_cast<std::size_t>(_len) >= sizeof(nxsockaddr_in)) {
         const auto* its_addr = reinterpret_cast<const nxsockaddr_in*>(&_storage);
-        const auto its_ip = boost::asio::ip::address_v4(boost::endian::big_to_native(its_addr->sin_addr.addr));
+        std::uint32_t its_raw_v4 = 0;
+        std::memcpy(&its_raw_v4, &its_addr->sin_addr, sizeof(its_raw_v4));
+        const auto its_ip = boost::asio::ip::address_v4(boost::endian::big_to_native(its_raw_v4));
         const auto its_port = boost::endian::big_to_native(its_addr->sin_port);
         _endpoint = boost::asio::ip::tcp::endpoint(its_ip, its_port);
         _ec.clear();
@@ -216,7 +200,7 @@ bool native_to_endpoint(nxsockaddr_storage const& _storage, nxsocklen_t _len, bo
     if (its_sockaddr->sa_family == nxAF_INET6 && static_cast<std::size_t>(_len) >= sizeof(nxsockaddr_in6)) {
         const auto* its_addr = reinterpret_cast<const nxsockaddr_in6*>(&_storage);
         boost::asio::ip::address_v6::bytes_type its_bytes{};
-        std::memcpy(its_bytes.data(), its_addr->sin6_addr.addr, its_bytes.size());
+        std::memcpy(its_bytes.data(), &its_addr->sin6_addr, its_bytes.size());
         const auto its_ip = boost::asio::ip::address_v6(its_bytes, its_addr->sin6_scope_id);
         const auto its_port = boost::endian::big_to_native(its_addr->sin6_port);
         _endpoint = boost::asio::ip::tcp::endpoint(its_ip, its_port);
@@ -406,17 +390,17 @@ void xnet_tcp_socket::assign_accepted_socket(nxSOCKET _socket, bool _is_ipv6, bo
 #else
 #if defined(_WIN32)
     u_long non_blocking = 1UL;
-    if (::ioctlsocket(static_cast<SOCKET>(its_socket), FIONBIO, &non_blocking) != 0) {
+    if (::ioctlsocket(its_socket, FIONBIO, &non_blocking) != 0) {
         _ec = make_xnet_error("assign_accepted_socket:non_blocking");
         return;
     }
 #else
-    int flags = ::fcntl(static_cast<int>(its_socket), F_GETFL, 0);
+    int flags = ::fcntl(its_socket, F_GETFL, 0);
     if (flags == SOCKET_ERROR_VALUE) {
         _ec = make_xnet_error("assign_accepted_socket:non_blocking");
         return;
     }
-    if (::fcntl(static_cast<int>(its_socket), F_SETFL, flags | O_NONBLOCK) == SOCKET_ERROR_VALUE) {
+    if (::fcntl(its_socket, F_SETFL, flags | O_NONBLOCK) == SOCKET_ERROR_VALUE) {
         _ec = make_xnet_error("assign_accepted_socket:non_blocking");
         return;
     }
@@ -442,17 +426,11 @@ void xnet_tcp_socket::open(boost::asio::ip::tcp::endpoint::protocol_type _pt, bo
 
 #if defined(VSOMEIP_ENABLE_XNET)
     socket_ = xnet_api::nxsocket(xnet_stack_, is_ipv6_ ? nxAF_INET6 : nxAF_INET, nxSOCK_STREAM, nxIPPROTO_TCP);
-    const bool is_invalid_socket = (socket_ == nxINVALID_SOCKET);
 #else
     socket_ = ::socket(is_ipv6_ ? AF_INET6 : AF_INET, SOCK_STREAM, IPPROTO_TCP);
-#if defined(_WIN32)
-    const bool is_invalid_socket = (socket_ == static_cast<nxSOCKET>(INVALID_SOCKET));
-#else
-    const bool is_invalid_socket = (socket_ == INVALID_SOCKET_VALUE);
-#endif
 #endif
 
-    if (is_invalid_socket) {
+    if (socket_ == INVALID_SOCKET_VALUE) {
         socket_ = INVALID_SOCKET_VALUE;
         _ec = make_xnet_error("open");
         return;
@@ -470,7 +448,7 @@ void xnet_tcp_socket::open(boost::asio::ip::tcp::endpoint::protocol_type _pt, bo
 #else
 #if defined(_WIN32)
     u_long non_blocking = 1UL;
-    if (::ioctlsocket(static_cast<SOCKET>(socket_), FIONBIO, &non_blocking) != 0) {
+    if (::ioctlsocket(socket_, FIONBIO, &non_blocking) != 0) {
         const auto its_non_blocking_error = make_xnet_error("open:non_blocking");
         boost::system::error_code its_close_error;
         close(its_close_error);
@@ -478,7 +456,7 @@ void xnet_tcp_socket::open(boost::asio::ip::tcp::endpoint::protocol_type _pt, bo
         return;
     }
 #else
-    int flags = ::fcntl(static_cast<int>(socket_), F_GETFL, 0);
+    int flags = ::fcntl(socket_, F_GETFL, 0);
     if (flags == SOCKET_ERROR_VALUE) {
         const auto its_non_blocking_error = make_xnet_error("open:non_blocking");
         boost::system::error_code its_close_error;
@@ -486,7 +464,7 @@ void xnet_tcp_socket::open(boost::asio::ip::tcp::endpoint::protocol_type _pt, bo
         _ec = its_non_blocking_error;
         return;
     }
-    if (::fcntl(static_cast<int>(socket_), F_SETFL, flags | O_NONBLOCK) == SOCKET_ERROR_VALUE) {
+    if (::fcntl(socket_, F_SETFL, flags | O_NONBLOCK) == SOCKET_ERROR_VALUE) {
         const auto its_non_blocking_error = make_xnet_error("open:non_blocking");
         boost::system::error_code its_close_error;
         close(its_close_error);
@@ -516,7 +494,7 @@ void xnet_tcp_socket::bind(boost::asio::ip::tcp::endpoint const& _ep, boost::sys
 #if defined(VSOMEIP_ENABLE_XNET)
     if (xnet_api::nxbind(socket_, reinterpret_cast<nxsockaddr*>(&its_storage), its_len) == SOCKET_ERROR_VALUE) {
 #else
-    if (::bind(static_cast<int>(socket_), reinterpret_cast<sockaddr*>(&its_storage), static_cast<socklen_t>(its_len))
+    if (::bind(socket_, reinterpret_cast<sockaddr*>(&its_storage), its_len)
         == SOCKET_ERROR_VALUE) {
 #endif
         _ec = make_xnet_error("bind");
@@ -550,12 +528,12 @@ void xnet_tcp_socket::close(boost::system::error_code& _ec) {
     }
 #else
 #if defined(_WIN32)
-    if (::closesocket(static_cast<SOCKET>(socket_)) == SOCKET_ERROR_VALUE) {
+    if (::closesocket(socket_) == SOCKET_ERROR_VALUE) {
         _ec = make_xnet_error("close");
         return;
     }
 #else
-    if (::close(static_cast<int>(socket_)) == SOCKET_ERROR_VALUE) {
+    if (::close(socket_) == SOCKET_ERROR_VALUE) {
         _ec = make_xnet_error("close");
         return;
     }
@@ -584,7 +562,7 @@ boost::asio::ip::tcp::endpoint xnet_tcp_socket::local_endpoint(boost::system::er
 #if defined(VSOMEIP_ENABLE_XNET)
     if (xnet_api::nxgetsockname(socket_, reinterpret_cast<nxsockaddr*>(&its_storage), &its_len) == SOCKET_ERROR_VALUE) {
 #else
-    if (::getsockname(static_cast<int>(socket_), reinterpret_cast<sockaddr*>(&its_storage), reinterpret_cast<socklen_t*>(&its_len))
+    if (::getsockname(socket_, reinterpret_cast<sockaddr*>(&its_storage), &its_len)
         == SOCKET_ERROR_VALUE) {
 #endif
         _ec = make_xnet_error("local_endpoint");
@@ -632,8 +610,8 @@ void xnet_tcp_socket::set_option(boost::asio::ip::tcp::no_delay _nd, boost::syst
 #if defined(VSOMEIP_ENABLE_XNET)
     if (xnet_api::nxsetsockopt(socket_, nxIPPROTO_TCP, nxTCP_NODELAY, &opt, static_cast<nxsocklen_t>(sizeof(opt))) == SOCKET_ERROR_VALUE) {
 #else
-    if (::setsockopt(static_cast<int>(socket_), IPPROTO_TCP, TCP_NODELAY, reinterpret_cast<const char*>(&opt),
-                     static_cast<socklen_t>(sizeof(opt))) == SOCKET_ERROR_VALUE) {
+    if (::setsockopt(socket_, IPPROTO_TCP, TCP_NODELAY, reinterpret_cast<const char*>(&opt),
+                     static_cast<nxsocklen_t>(sizeof(opt))) == SOCKET_ERROR_VALUE) {
 #endif
         _ec = make_xnet_error("set_option:no_delay");
         return;
@@ -654,8 +632,8 @@ void xnet_tcp_socket::set_option(boost::asio::ip::tcp::socket::keep_alive _ka, b
                                                     : "disable keepalive is not supported by XNET socket API");
 #else
     int opt = _ka.value() ? 1 : 0;
-    if (::setsockopt(static_cast<int>(socket_), SOL_SOCKET, SO_KEEPALIVE, reinterpret_cast<const char*>(&opt),
-                     static_cast<socklen_t>(sizeof(opt))) == SOCKET_ERROR_VALUE) {
+    if (::setsockopt(socket_, SOL_SOCKET, SO_KEEPALIVE, reinterpret_cast<const char*>(&opt),
+                     static_cast<nxsocklen_t>(sizeof(opt))) == SOCKET_ERROR_VALUE) {
         _ec = make_xnet_error("set_option:keep_alive");
         return;
     }
@@ -678,9 +656,9 @@ void xnet_tcp_socket::set_option(boost::asio::ip::tcp::socket::linger _l, boost:
 #else
     linger linger_opt{};
     linger_opt.l_onoff = _l.enabled() ? 1 : 0;
-    linger_opt.l_linger = _l.timeout();
-    if (::setsockopt(static_cast<int>(socket_), SOL_SOCKET, SO_LINGER, reinterpret_cast<const char*>(&linger_opt),
-                     static_cast<socklen_t>(sizeof(linger_opt))) == SOCKET_ERROR_VALUE) {
+    linger_opt.l_linger = static_cast<decltype(linger_opt.l_linger)>(_l.timeout());
+    if (::setsockopt(socket_, SOL_SOCKET, SO_LINGER, reinterpret_cast<const char*>(&linger_opt),
+                     static_cast<nxsocklen_t>(sizeof(linger_opt))) == SOCKET_ERROR_VALUE) {
 #endif
         _ec = make_xnet_error("set_option:linger");
         return;
@@ -699,8 +677,8 @@ void xnet_tcp_socket::set_option(boost::asio::ip::tcp::socket::reuse_address _ra
 #if defined(VSOMEIP_ENABLE_XNET)
     if (xnet_api::nxsetsockopt(socket_, nxSOL_SOCKET, nxSO_REUSEADDR, &opt, static_cast<nxsocklen_t>(sizeof(opt))) == SOCKET_ERROR_VALUE) {
 #else
-    if (::setsockopt(static_cast<int>(socket_), SOL_SOCKET, SO_REUSEADDR, reinterpret_cast<const char*>(&opt),
-                     static_cast<socklen_t>(sizeof(opt))) == SOCKET_ERROR_VALUE) {
+    if (::setsockopt(socket_, SOL_SOCKET, SO_REUSEADDR, reinterpret_cast<const char*>(&opt),
+                     static_cast<nxsocklen_t>(sizeof(opt))) == SOCKET_ERROR_VALUE) {
 #endif
         _ec = make_xnet_error("set_option:reuse_address");
         return;
@@ -731,8 +709,7 @@ void xnet_tcp_socket::async_connect(boost::asio::ip::tcp::endpoint const& _ep, c
 #if defined(VSOMEIP_ENABLE_XNET)
         const auto its_result = xnet_api::nxconnect(its_socket, reinterpret_cast<nxsockaddr*>(&its_storage), its_length);
 #else
-        const auto its_result = ::connect(static_cast<int>(its_socket), reinterpret_cast<sockaddr*>(&its_storage),
-                                          static_cast<socklen_t>(its_length));
+        const auto its_result = ::connect(its_socket, reinterpret_cast<sockaddr*>(&its_storage), its_length);
 #endif
 
         if (its_result == SOCKET_ERROR_VALUE) {
@@ -753,10 +730,10 @@ void xnet_tcp_socket::async_connect(boost::asio::ip::tcp::endpoint const& _ep, c
                         its_error.clear();
                     }
 #else
-                    socklen_t its_so_error_len = static_cast<socklen_t>(sizeof(its_so_error));
-                    if (::getsockopt(static_cast<int>(its_socket), SOL_SOCKET, SO_ERROR,
+                    nxsocklen_t its_so_error_len = static_cast<nxsocklen_t>(sizeof(its_so_error));
+                    if (::getsockopt(its_socket, SOL_SOCKET, SO_ERROR,
                                      reinterpret_cast<char*>(&its_so_error), &its_so_error_len) == SOCKET_ERROR_VALUE
-                        || its_so_error_len < static_cast<socklen_t>(sizeof(its_so_error))) {
+                        || its_so_error_len < static_cast<nxsocklen_t>(sizeof(its_so_error))) {
                         its_error = make_xnet_error("async_connect:so_error_query");
                     } else if (its_so_error != 0) {
                         its_error = xnet_to_boost_error(static_cast<int>(its_so_error));
@@ -802,7 +779,7 @@ void xnet_tcp_socket::async_receive(boost::asio::mutable_buffer _b, rw_handler _
 #if defined(VSOMEIP_ENABLE_XNET)
             const auto its_result = xnet_api::nxrecv(its_socket, its_buffer, its_buffer_size, 0);
 #else
-            const auto its_result = ::recv(static_cast<int>(its_socket), reinterpret_cast<char*>(its_buffer), its_buffer_size, 0);
+            const auto its_result = ::recv(its_socket, reinterpret_cast<char*>(its_buffer), its_buffer_size, 0);
 #endif
 
             if (its_result > 0) {
@@ -902,7 +879,7 @@ void xnet_tcp_socket::async_write(std::vector<boost::asio::const_buffer> const& 
 #if defined(VSOMEIP_ENABLE_XNET)
                 const auto result = xnet_api::nxsend(its_socket, data_ptr + sent_in_buffer, chunk, 0);
 #else
-                const auto result = ::send(static_cast<int>(its_socket), reinterpret_cast<const char*>(data_ptr + sent_in_buffer),
+                const auto result = ::send(its_socket, reinterpret_cast<const char*>(data_ptr + sent_in_buffer),
                                            chunk, 0);
 #endif
                 if (result > 0) {
@@ -982,7 +959,7 @@ void xnet_tcp_socket::async_write(boost::asio::const_buffer const& _b, completio
 #if defined(VSOMEIP_ENABLE_XNET)
             const auto its_result = xnet_api::nxsend(its_socket, data->data() + total_sent, its_chunk, 0);
 #else
-            const auto its_result = ::send(static_cast<int>(its_socket), reinterpret_cast<const char*>(data->data() + total_sent),
+            const auto its_result = ::send(its_socket, reinterpret_cast<const char*>(data->data() + total_sent),
                                            its_chunk, 0);
 #endif
 

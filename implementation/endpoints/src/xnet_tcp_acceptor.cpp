@@ -7,19 +7,8 @@
 #include <boost/asio/post.hpp>
 #include <boost/endian/conversion.hpp>
 
-#if !defined(VSOMEIP_ENABLE_XNET)
-#include <sys/types.h>
-#include <sys/socket.h>
-#if defined(_WIN32)
-#include <winsock2.h>
-#include <ws2tcpip.h>
-#else
-#include <arpa/inet.h>
-#include <fcntl.h>
-#include <netinet/in.h>
-#include <unistd.h>
-#endif
-#endif
+// Native socket headers (and the nx* compatibility aliases used below) are
+// provided by xnet_types.hpp, which is pulled in via xnet_tcp_acceptor.hpp.
 
 #include "../include/xnet_tcp_acceptor.hpp"
 #include "../include/backend_socket_option_helpers.hpp"
@@ -31,15 +20,7 @@
 
 #define VSOMEIP_LOG_PREFIX "xna"
 
-#if defined(VSOMEIP_ENABLE_XNET)
 #define INVALID_SOCKET_VALUE nxINVALID_SOCKET
-#else
-#if defined(_WIN32)
-#define INVALID_SOCKET_VALUE static_cast<nxSOCKET>(INVALID_SOCKET)
-#else
-#define INVALID_SOCKET_VALUE static_cast<nxSOCKET>(-1)
-#endif
-#endif
 #define SOCKET_ERROR_VALUE -1
 
 namespace vsomeip_v3 {
@@ -72,7 +53,8 @@ bool endpoint_to_native(boost::asio::ip::tcp::endpoint const& _endpoint, nxsocka
         auto* its_addr = reinterpret_cast<nxsockaddr_in*>(&_storage);
         its_addr->sin_family = nxAF_INET;
         its_addr->sin_port = boost::endian::native_to_big(_endpoint.port());
-        its_addr->sin_addr.addr = boost::endian::native_to_big(_endpoint.address().to_v4().to_uint());
+        const auto its_v4 = boost::endian::native_to_big(_endpoint.address().to_v4().to_uint());
+        std::memcpy(&its_addr->sin_addr, &its_v4, sizeof(its_v4));
         _len = static_cast<nxsocklen_t>(sizeof(nxsockaddr_in));
         _ec.clear();
         return true;
@@ -85,7 +67,7 @@ bool endpoint_to_native(boost::asio::ip::tcp::endpoint const& _endpoint, nxsocka
         its_addr->sin6_flowinfo = 0;
         its_addr->sin6_scope_id = _endpoint.address().to_v6().scope_id();
         const auto its_bytes = _endpoint.address().to_v6().to_bytes();
-        std::memcpy(its_addr->sin6_addr.addr, its_bytes.data(), its_bytes.size());
+        std::memcpy(&its_addr->sin6_addr, its_bytes.data(), its_bytes.size());
         _len = static_cast<nxsocklen_t>(sizeof(nxsockaddr_in6));
         _ec.clear();
         return true;
@@ -100,7 +82,9 @@ bool native_to_endpoint(nxsockaddr_storage const& _storage, nxsocklen_t _len, bo
     const auto* its_sockaddr = reinterpret_cast<const nxsockaddr*>(&_storage);
     if (its_sockaddr->sa_family == nxAF_INET && static_cast<std::size_t>(_len) >= sizeof(nxsockaddr_in)) {
         const auto* its_addr = reinterpret_cast<const nxsockaddr_in*>(&_storage);
-        const auto its_ip = boost::asio::ip::address_v4(boost::endian::big_to_native(its_addr->sin_addr.addr));
+        std::uint32_t its_raw_v4 = 0;
+        std::memcpy(&its_raw_v4, &its_addr->sin_addr, sizeof(its_raw_v4));
+        const auto its_ip = boost::asio::ip::address_v4(boost::endian::big_to_native(its_raw_v4));
         const auto its_port = boost::endian::big_to_native(its_addr->sin_port);
         _endpoint = boost::asio::ip::tcp::endpoint(its_ip, its_port);
         _ec.clear();
@@ -110,7 +94,7 @@ bool native_to_endpoint(nxsockaddr_storage const& _storage, nxsocklen_t _len, bo
     if (its_sockaddr->sa_family == nxAF_INET6 && static_cast<std::size_t>(_len) >= sizeof(nxsockaddr_in6)) {
         const auto* its_addr = reinterpret_cast<const nxsockaddr_in6*>(&_storage);
         boost::asio::ip::address_v6::bytes_type its_bytes{};
-        std::memcpy(its_bytes.data(), its_addr->sin6_addr.addr, its_bytes.size());
+        std::memcpy(its_bytes.data(), &its_addr->sin6_addr, its_bytes.size());
         const auto its_ip = boost::asio::ip::address_v6(its_bytes, its_addr->sin6_scope_id);
         const auto its_port = boost::endian::big_to_native(its_addr->sin6_port);
         _endpoint = boost::asio::ip::tcp::endpoint(its_ip, its_port);
@@ -156,8 +140,8 @@ bool wait_read_ready(nxSOCKET _socket, std::chrono::milliseconds _timeout,
         FD_ZERO(&read_fds);
         FD_ZERO(&except_fds);
 
-        FD_SET(static_cast<int>(_socket), &read_fds);
-        FD_SET(static_cast<int>(_socket), &except_fds);
+        FD_SET(_socket, &read_fds);
+        FD_SET(_socket, &except_fds);
 
         timeval timeout{};
         timeout.tv_sec = timeout_sec;
@@ -165,7 +149,7 @@ bool wait_read_ready(nxSOCKET _socket, std::chrono::milliseconds _timeout,
 #if defined(_WIN32)
         const auto its_result = ::select(0, &read_fds, nullptr, &except_fds, &timeout);
 #else
-        const auto its_result = ::select(static_cast<int>(_socket) + 1, &read_fds, nullptr, &except_fds, &timeout);
+        const auto its_result = ::select(_socket + 1, &read_fds, nullptr, &except_fds, &timeout);
 #endif
 #endif
 
@@ -300,17 +284,11 @@ void xnet_tcp_acceptor::open(boost::asio::ip::tcp::endpoint::protocol_type _pt, 
 
 #if defined(VSOMEIP_ENABLE_XNET)
     acceptor_ = xnet_api::nxsocket(xnet_stack_, is_ipv6_ ? nxAF_INET6 : nxAF_INET, nxSOCK_STREAM, nxIPPROTO_TCP);
-    const bool is_invalid_socket = (acceptor_ == nxINVALID_SOCKET);
 #else
     acceptor_ = ::socket(is_ipv6_ ? AF_INET6 : AF_INET, SOCK_STREAM, IPPROTO_TCP);
-#if defined(_WIN32)
-    const bool is_invalid_socket = (acceptor_ == static_cast<nxSOCKET>(INVALID_SOCKET));
-#else
-    const bool is_invalid_socket = (acceptor_ == INVALID_SOCKET_VALUE);
-#endif
 #endif
 
-    if (is_invalid_socket) {
+    if (acceptor_ == INVALID_SOCKET_VALUE) {
         acceptor_ = INVALID_SOCKET_VALUE;
         _ec = make_xnet_error("open");
         return;
@@ -343,7 +321,7 @@ void xnet_tcp_acceptor::bind(boost::asio::ip::tcp::endpoint const& _ep, boost::s
 #if defined(VSOMEIP_ENABLE_XNET)
     if (xnet_api::nxbind(acceptor_, reinterpret_cast<nxsockaddr*>(&its_storage), its_len) == SOCKET_ERROR_VALUE) {
 #else
-    if (::bind(static_cast<int>(acceptor_), reinterpret_cast<sockaddr*>(&its_storage), static_cast<socklen_t>(its_len))
+    if (::bind(acceptor_, reinterpret_cast<sockaddr*>(&its_storage), its_len)
         == SOCKET_ERROR_VALUE) {
 #endif
         _ec = make_xnet_error("bind");
@@ -377,12 +355,12 @@ void xnet_tcp_acceptor::close(boost::system::error_code& _ec) {
     }
 #else
 #if defined(_WIN32)
-    if (::closesocket(static_cast<SOCKET>(acceptor_)) == SOCKET_ERROR_VALUE) {
+    if (::closesocket(acceptor_) == SOCKET_ERROR_VALUE) {
         _ec = make_xnet_error("close");
         return;
     }
 #else
-    if (::close(static_cast<int>(acceptor_)) == SOCKET_ERROR_VALUE) {
+    if (::close(acceptor_) == SOCKET_ERROR_VALUE) {
         _ec = make_xnet_error("close");
         return;
     }
@@ -409,7 +387,7 @@ void xnet_tcp_acceptor::listen(int _backlog, boost::system::error_code& _ec) {
 #if defined(VSOMEIP_ENABLE_XNET)
     if (xnet_api::nxlisten(acceptor_, its_backlog) == SOCKET_ERROR_VALUE) {
 #else
-    if (::listen(static_cast<int>(acceptor_), its_backlog) == SOCKET_ERROR_VALUE) {
+    if (::listen(acceptor_, its_backlog) == SOCKET_ERROR_VALUE) {
 #endif
         _ec = make_xnet_error("listen");
         return;
@@ -428,8 +406,8 @@ void xnet_tcp_acceptor::set_option(boost::asio::ip::tcp::socket::reuse_address _
 #if defined(VSOMEIP_ENABLE_XNET)
     if (xnet_api::nxsetsockopt(acceptor_, nxSOL_SOCKET, nxSO_REUSEADDR, &opt, static_cast<nxsocklen_t>(sizeof(opt))) == SOCKET_ERROR_VALUE) {
 #else
-    if (::setsockopt(static_cast<int>(acceptor_), SOL_SOCKET, SO_REUSEADDR, reinterpret_cast<const char*>(&opt),
-                     static_cast<socklen_t>(sizeof(opt))) == SOCKET_ERROR_VALUE) {
+    if (::setsockopt(acceptor_, SOL_SOCKET, SO_REUSEADDR, reinterpret_cast<const char*>(&opt),
+                     static_cast<nxsocklen_t>(sizeof(opt))) == SOCKET_ERROR_VALUE) {
 #endif
         _ec = make_xnet_error("set_option:reuse_address");
         return;
@@ -531,21 +509,10 @@ void xnet_tcp_acceptor::async_accept(tcp_socket& _socket, boost::asio::ip::tcp::
 #if defined(VSOMEIP_ENABLE_XNET)
             its_client_socket = xnet_api::nxaccept(its_acceptor, reinterpret_cast<nxsockaddr*>(&its_peer_storage), &its_peer_len);
 #else
-            its_client_socket = ::accept(static_cast<int>(its_acceptor), reinterpret_cast<sockaddr*>(&its_peer_storage),
-                                         reinterpret_cast<socklen_t*>(&its_peer_len));
+            its_client_socket = ::accept(its_acceptor, reinterpret_cast<sockaddr*>(&its_peer_storage), &its_peer_len);
 #endif
 
-#if defined(VSOMEIP_ENABLE_XNET)
-            const bool is_accept_failed = (its_client_socket == nxINVALID_SOCKET);
-#else
-#if defined(_WIN32)
-            const bool is_accept_failed = (its_client_socket == static_cast<nxSOCKET>(INVALID_SOCKET));
-#else
-            const bool is_accept_failed = (its_client_socket == INVALID_SOCKET_VALUE);
-#endif
-#endif
-
-            if (is_accept_failed) {
+            if (its_client_socket == INVALID_SOCKET_VALUE) {
                 its_error = make_xnet_error("async_accept");
                 if (its_error == boost::asio::error::would_block || its_error == boost::asio::error::try_again
                     || its_error == boost::asio::error::interrupted || its_error == boost::asio::error::in_progress) {
@@ -557,12 +524,10 @@ void xnet_tcp_acceptor::async_accept(tcp_socket& _socket, boost::asio::ip::tcp::
             if (!native_to_endpoint(its_peer_storage, its_peer_len, peer_ep.get(), its_error)) {
 #if defined(VSOMEIP_ENABLE_XNET)
                 (void)xnet_api::nxclose(its_client_socket);
+#elif defined(_WIN32)
+                (void)::closesocket(its_client_socket);
 #else
-#if defined(_WIN32)
-                (void)::closesocket(static_cast<SOCKET>(its_client_socket));
-#else
-                (void)::close(static_cast<int>(its_client_socket));
-#endif
+                (void)::close(its_client_socket);
 #endif
                 its_client_socket = INVALID_SOCKET_VALUE;
                 break;
@@ -572,12 +537,10 @@ void xnet_tcp_acceptor::async_accept(tcp_socket& _socket, boost::asio::ip::tcp::
             if (its_error) {
 #if defined(VSOMEIP_ENABLE_XNET)
                 (void)xnet_api::nxclose(its_client_socket);
+#elif defined(_WIN32)
+                (void)::closesocket(its_client_socket);
 #else
-#if defined(_WIN32)
-                (void)::closesocket(static_cast<SOCKET>(its_client_socket));
-#else
-                (void)::close(static_cast<int>(its_client_socket));
-#endif
+                (void)::close(its_client_socket);
 #endif
                 its_client_socket = INVALID_SOCKET_VALUE;
             }
