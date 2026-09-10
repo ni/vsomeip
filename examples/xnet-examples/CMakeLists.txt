@@ -5,8 +5,5 @@
 
 add_executable(xnet-example xnet-example.cpp)
 target_include_directories(xnet-example PRIVATE ${CMAKE_SOURCE_DIR}/implementation/endpoints/include)
-target_link_libraries(xnet-example PRIVATE ${VSOMEIP_NAME})
-if (ENABLE_XNET_BACKEND)
-    target_link_libraries(xnet-example PRIVATE ${NIXNET_LIBRARY})
-endif()
+target_link_libraries(xnet-example PRIVATE ${VSOMEIP_NAME} ${NIXNET_LIBRARY})
 add_dependencies(xnet-example ${VSOMEIP_NAME})

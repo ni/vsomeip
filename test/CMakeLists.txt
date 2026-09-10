@@ -49,14 +49,7 @@ target_include_directories(${VSOMEIP_NAME}-test PRIVATE ${VSOMEIP_CONFIG_INCLUDE
 # libvsomeip also `dlopens` other libs (cfg, sd, ..) so leave a rpath hint
 set_target_properties(${VSOMEIP_NAME}-test PROPERTIES BUILD_RPATH "${CMAKE_CURRENT_BINARY_DIR}")
 set_target_properties(${VSOMEIP_NAME}-test PROPERTIES OUTPUT_NAME ${VSOMEIP_NAME} VERSION ${VSOMEIP_VERSION} SOVERSION ${VSOMEIP_MAJOR_VERSION})
-target_link_libraries(${VSOMEIP_NAME}-test PRIVATE ${Boost_LIBRARIES} ${USE_RT} ${DL_LIBRARY} ${DLT_LIBRARIES} ${SystemD_LIBRARIES} ${CMAKE_THREAD_LIBS_INIT})
-
-# The test flavour of the library reuses the ${VSOMEIP_NAME}-internal objects, which
-# contain the XNET backend (xnet_api.cpp). It therefore needs the same NI XNET
-# import library as ${VSOMEIP_NAME}, otherwise nxsocket & co. stay unresolved.
-if (ENABLE_XNET_BACKEND)
-    target_link_libraries(${VSOMEIP_NAME}-test PRIVATE ${NIXNET_LIBRARY})
-endif ()
+target_link_libraries(${VSOMEIP_NAME}-test PRIVATE ${Boost_LIBRARIES} ${USE_RT} ${DL_LIBRARY} ${DLT_LIBRARIES} ${SystemD_LIBRARIES} ${CMAKE_THREAD_LIBS_INIT} ${NIXNET_LIBRARY})
 
 if (NOT MSVC)
     if(${CMAKE_SYSTEM_NAME} MATCHES "QNX")

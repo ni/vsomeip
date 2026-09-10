@@ -16,10 +16,6 @@
                 "ENABLE_MULTIPLE_ROUTING_MANAGERS": {
                     "type": "BOOL",
                     "value": "OFF"
-                },
-                "ENABLE_XNET_BACKEND": {
-                    "type": "BOOL",
-                    "value": "ON"
                 }
             }
         },
