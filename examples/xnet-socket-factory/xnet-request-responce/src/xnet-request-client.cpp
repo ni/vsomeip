@@ -9,44 +9,10 @@
 
 #include <vsomeip/vsomeip.hpp>
 
-#define SAMPLE_SERVICE_ID   0x1234
-#define SAMPLE_INSTANCE_ID  0x5678
-#define SAMPLE_METHOD_ID    0x0421
+#include "xnet-request-client.h"
 
 std::shared_ptr<vsomeip::application> app;
 static nxIpStackRef_t g_xnet_stack = nullptr;
-
-// Create a dummy XNET IP stack
-const char* config = R"(
-{
-    "schema":  "file:///NIXNET_Documentation/xnetIpStackSchema-07.json",
-    "xnetInterfaces":  [
-                           {
-                               "name":  "ENET2",
-                               "loopbackMode":  "externalAndInternal",
-                               "MACs":  [
-                                            {
-                                                "address":  "generated",
-                                                "VLANs":  [
-                                                              {
-                                                                  "IPv4":  {
-                                                                               "mode":  "static",
-                                                                               "staticAddresses":  [
-                                                                                                       {
-                                                                                                           "address":  "10.0.0.2",
-                                                                                                           "subnetMask":  "255.255.255.0"
-                                                                                                       }
-                                                                                                   ]
-                                                                           }
-                                                              }
-                                                          ]
-                                            }
-                                        ]
-                           }
-                       ]
-}
-)";
-
 
 void stop_application(int signum) {
     std::cout << "\nShutting down application..." << std::endl;
@@ -94,7 +60,7 @@ void on_message(const std::shared_ptr<vsomeip::message>& _response) {
 int main() {
     // Initialize the xnet IP stack with the provided configuration
     nxStatus_t status{};
-    status = nxIpStackCreate("XnetExampleApp", config, &g_xnet_stack);
+    status = nxIpStackCreate("xnet-request-responce-client", xnet_ip_stack_config, &g_xnet_stack);
     if (status != 0) {
         std::cerr << "Failed to create XNET IP stack. Status code: " << status << std::endl;
         return 1;
@@ -102,7 +68,7 @@ int main() {
 
     // Wait for the interface to be ready
     std::cout << "Waiting for XNET IP stack to be ready..." << std::endl;
-    nxIpStackWaitForInterface(g_xnet_stack, "ENET1", 30000); // Wait for the interface to be ready (30 seconds timeout)
+    nxIpStackWaitForInterface(g_xnet_stack, "ENET2", 30000); // Wait for the interface to be ready (30 seconds timeout)
 
     // Get and print the actual stack information
     char* ip_stack_info = nullptr;
@@ -130,7 +96,7 @@ int main() {
 
 
     // create a vsomeip application
-    app = vsomeip::runtime::get()->create_application("xnet-request-client");
+    app = vsomeip::runtime::get()->create_application("xnet-request-responce-client");
 
     // initialize the application
     if (!app->init()) {

@@ -6,22 +6,18 @@
   },
   "applications": [
     {
-      "name": "xnet-response-server",
+      "name": "xnet-request-responce-server",
       "id": "0x1212"
-    },
-    {
-      "name": "xnet-request-client",
-      "id": "0x1313"
     }
   ],
   "services": [
     {
       "service": "0x1234",
       "instance": "0x5678",
-      "reliable": "30509"
+      "unreliable": "30509"
     }
   ],
-  "routing": "xnet-response-server",
+  "routing": "xnet-request-responce-server",
   "service-discovery": {
     "enable": "true",
     "multicast": "224.224.224.245",
