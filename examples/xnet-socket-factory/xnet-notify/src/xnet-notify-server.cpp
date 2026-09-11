@@ -44,9 +44,7 @@ void notify() {
 
         std::cout << "Notifying: " << timer++ << std::endl;
         
-        ++timer;
-
-        std::this_thread::sleep_for(std::chrono::seconds(1));
+        std::this_thread::sleep_for(std::chrono::seconds(5));
     }
 }
 
