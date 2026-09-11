@@ -1,5 +1,5 @@
 {
-  "unicast": "134.86.56.94",
+  "unicast": "10.0.0.3",
   "network": "xnet-notify-client",
   "logging": {
     "level": "debug",
