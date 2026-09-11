@@ -5,7 +5,9 @@
 #include <iostream>
 #include <memory>
 #include <set>
+#include <string>
 #include <thread>
+#include <vector>
 
 #include "nxsocket.h"
 #include "nixnet.h"
@@ -33,17 +35,38 @@ void stop_application(int exit_code) {
     std::exit(exit_code);
 }
 
+// Total size of the notification payload. It exceeds the UDP-SOMEIP/TP
+// segmentation threshold, so the message is sent as several TP segments.
+constexpr std::size_t MESSAGE_LENGTH = 1000;
+
+// Builds a MESSAGE_LENGTH byte message of the form:
+// "<START #n>####...####<END #n>"
+static std::vector<vsomeip::byte_t> build_message(std::uint32_t counter) {
+    const std::string start = "<START #" + std::to_string(counter) + ">";
+    const std::string end = "<END #" + std::to_string(counter) + ">";
+
+    std::string message = start;
+    if (start.size() + end.size() < MESSAGE_LENGTH) {
+        message.append(MESSAGE_LENGTH - start.size() - end.size(), '#');
+    }
+    message.append(end);
+    message.resize(MESSAGE_LENGTH, '#');
+
+    return std::vector<vsomeip::byte_t>(message.begin(), message.end());
+}
+
 void notify() {
     std::uint32_t timer = 0;
     std::shared_ptr<vsomeip::payload> payload = vsomeip::runtime::get()->create_payload();
 
     while (running) {
-        payload->set_data(reinterpret_cast<const vsomeip::byte_t*>(&timer), sizeof(timer));
+        const std::vector<vsomeip::byte_t> data = build_message(timer);
+        payload->set_data(data);
 
         app->notify(SAMPLE_SERVICE_ID, SAMPLE_INSTANCE_ID, SAMPLE_EVENT_ID, payload);
 
-        std::cout << "Notifying: " << timer++ << std::endl;
-        
+        std::cout << "Notifying #" << timer++ << " with " << data.size() << " bytes" << std::endl;
+
         std::this_thread::sleep_for(std::chrono::seconds(5));
     }
 }
