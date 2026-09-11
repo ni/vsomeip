@@ -1,18 +1,23 @@
 {
-  "unicast": "10.0.0.3",
-  "network": "xnet-request-responce-client",
+  "unicast": "10.0.0.2",
   "logging": {
     "level": "debug",
     "console": "true"
   },
   "applications": [
     {
-      "name": "xnet-request-responce-client",
-      "id": "0x1313"
+      "name": "xnet-request-responce-server",
+      "id": "0x1212"
     }
   ],
-  "services": [],
-  "routing": "xnet-request-responce-client",
+  "services": [
+    {
+      "service": "0x1234",
+      "instance": "0x5678",
+      "reliable": "30509"
+    }
+  ],
+  "routing": "xnet-request-responce-server",
   "service-discovery": {
     "enable": "true",
     "multicast": "224.224.224.245",

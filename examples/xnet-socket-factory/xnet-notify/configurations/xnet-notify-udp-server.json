@@ -1,13 +1,17 @@
 {
   "unicast": "10.0.0.2",
-  "network": "xnet-request-responce-server",
+  "network": "xnet-notify-server",
   "logging": {
     "level": "debug",
-    "console": "true"
+    "console": "false",
+    "file": {
+      "enable": "true",
+      "path": "./vsomeip.log"
+    }
   },
   "applications": [
     {
-      "name": "xnet-request-responce-server",
+      "name": "xnet-notify-server",
       "id": "0x1212"
     }
   ],
@@ -15,10 +19,22 @@
     {
       "service": "0x1234",
       "instance": "0x5678",
-      "unreliable": "30509"
+      "unreliable": "30509",
+      "events": [
+        {
+          "event": "0x8778",
+          "is_field": "true"
+        }
+      ],
+      "eventgroups": [
+        {
+          "eventgroup": "0x4465",
+          "events": [ "0x8778" ]
+        }
+      ]
     }
   ],
-  "routing": "xnet-request-responce-server",
+  "routing": "xnet-notify-server",
   "service-discovery": {
     "enable": "true",
     "multicast": "224.224.224.245",

@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.13)
 
-project(xnet-request-responce)
+project(xnet-notify)
 
 set(CMAKE_CXX_STANDARD 20)
 
@@ -33,21 +33,21 @@ set(NIXNET_LIBRARY "${NIXNET_LIBRARY_DIR}/nixntipstack.lib")
 include_directories (${NIXNET_INCLUDE_DIR})
 
 if(USE_TCP)
-    set(CONFIG_PREFIX "xnet-request-responce-tcp")
+    set(CONFIG_PREFIX "xnet-notify-tcp")
 else()
-    set(CONFIG_PREFIX "xnet-request-responce-udp")
+    set(CONFIG_PREFIX "xnet-notify-udp")
 endif()
 
 set(CONFIG_DIR "${CMAKE_CURRENT_SOURCE_DIR}/configurations")
 
 # sample name -> configuration suffix (client/server)
 set(SAMPLES
-    xnet-request-client
-    xnet-response-server
+    xnet-notify-client
+    xnet-notify-server
 )
 
-set(xnet-request-client_CONFIG  "${CONFIG_DIR}/${CONFIG_PREFIX}-client.json")
-set(xnet-response-server_CONFIG "${CONFIG_DIR}/${CONFIG_PREFIX}-server.json")
+set(xnet-notify-client_CONFIG "${CONFIG_DIR}/${CONFIG_PREFIX}-client.json")
+set(xnet-notify-server_CONFIG "${CONFIG_DIR}/${CONFIG_PREFIX}-server.json")
 
 foreach(sample ${SAMPLES})
     add_executable(${sample} ${CMAKE_CURRENT_SOURCE_DIR}/src/${sample}.cpp)

@@ -1,18 +1,22 @@
 {
   "unicast": "10.0.0.3",
-  "network": "xnet-request-responce-client",
+  "network": "xnet-notify-client",
   "logging": {
     "level": "debug",
-    "console": "true"
+    "console": "false",
+    "file": {
+      "enable": "true",
+      "path": "./vsomeip.log"
+    }
   },
   "applications": [
     {
-      "name": "xnet-request-responce-client",
+      "name": "xnet-notify-client",
       "id": "0x1313"
     }
   ],
   "services": [],
-  "routing": "xnet-request-responce-client",
+  "routing": "xnet-notify-client",
   "service-discovery": {
     "enable": "true",
     "multicast": "224.224.224.245",
