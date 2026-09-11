@@ -1,3 +1,4 @@
+#include <csignal>
 #include <iomanip>
 #include <iostream>
 #include <memory>
@@ -19,8 +20,16 @@
 std::shared_ptr<vsomeip::application> app;
 static nxIpStackRef_t g_xnet_stack = nullptr;
 
-// Create a dummy XNET IP stack
-
+void signal_handler(int signum) {
+    std::cout << "\nShutting down application..." << std::endl;
+    if (app) {
+        app->stop_offer_service(SAMPLE_SERVICE_ID, SAMPLE_INSTANCE_ID);
+        // Properly stop vsomeip application to ensure all resources are released correctly
+        std::cout << "Stopping vsomeip application..." << std::endl;
+        app->stop();
+    }
+    std::exit(signum);
+}
 
 void on_message(const std::shared_ptr<vsomeip::message>& _request) {
     // sarse the received message
@@ -44,10 +53,6 @@ void on_message(const std::shared_ptr<vsomeip::message>& _request) {
     app->send(response);
 
     std::cout << "Sending: " << response_text << std::endl;
-
-    // stop the application
-    app->stop_offer_service(SAMPLE_SERVICE_ID, SAMPLE_INSTANCE_ID);
-    app->stop();
 }
 
 int main() {
@@ -101,6 +106,10 @@ int main() {
     
     // start offering the service
     app->offer_service(SAMPLE_SERVICE_ID, SAMPLE_INSTANCE_ID);
+
+    // Register signal handler for clean shutdown
+    std::signal(SIGINT, signal_handler);
+    std::signal(SIGTERM, signal_handler);
 
     // Start the application and wait for incoming messages
     app->start();

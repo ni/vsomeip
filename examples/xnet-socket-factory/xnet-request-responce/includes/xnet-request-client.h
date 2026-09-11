@@ -9,7 +9,7 @@ const char* xnet_ip_stack_config = R"(
     "schema":  "file:///NIXNET_Documentation/xnetIpStackSchema-07.json",
     "xnetInterfaces":  [
                            {
-                               "name":  "ENET1",
+                               "name":  "ENET2",
                                "loopbackMode":  "externalAndInternal",
                                "MACs":  [
                                             {
@@ -20,7 +20,7 @@ const char* xnet_ip_stack_config = R"(
                                                                                "mode":  "static",
                                                                                "staticAddresses":  [
                                                                                                        {
-                                                                                                           "address":  "10.0.0.2",
+                                                                                                           "address":  "10.0.0.3",
                                                                                                            "subnetMask":  "255.255.255.0"
                                                                                                        }
                                                                                                    ]
