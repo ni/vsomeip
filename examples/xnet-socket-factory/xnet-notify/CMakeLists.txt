@@ -46,7 +46,9 @@ set(SAMPLES
     xnet-notify-server
 )
 
-set(xnet-notify-client_CONFIG "${CONFIG_DIR}/${CONFIG_PREFIX}-client.json")
+# the client configuration is protocol independent, only the server one
+# differs between the TCP and UDP variants
+set(xnet-notify-client_CONFIG "${CONFIG_DIR}/xnet-notify-client.json")
 set(xnet-notify-server_CONFIG "${CONFIG_DIR}/${CONFIG_PREFIX}-server.json")
 
 foreach(sample ${SAMPLES})

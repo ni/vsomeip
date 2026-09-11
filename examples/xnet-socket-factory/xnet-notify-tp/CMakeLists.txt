@@ -17,8 +17,6 @@ include_directories (${VSOMEIP_INCLUDE_DIRS}
                      ${CMAKE_CURRENT_SOURCE_DIR}/../../../implementation/endpoints/include)
 include_directories (SYSTEM ${Boost_INCLUDE_DIRS})
 
-option(USE_TCP "Use the TCP configuration instead of UDP" OFF)
-
 ################################################################################
 # NI-XNET (nixntipstack) library    
 ################################################################################
@@ -32,11 +30,7 @@ set(NIXNET_LIBRARY "${NIXNET_LIBRARY_DIR}/nixntipstack.lib")
 
 include_directories (${NIXNET_INCLUDE_DIR})
 
-if(USE_TCP)
-    set(CONFIG_PREFIX "xnet-notify-tp-tcp")
-else()
-    set(CONFIG_PREFIX "xnet-notify-tp-udp")
-endif()
+set(CONFIG_PREFIX "xnet-notify-tp-udp")
 
 set(CONFIG_DIR "${CMAKE_CURRENT_SOURCE_DIR}/configurations")
 
