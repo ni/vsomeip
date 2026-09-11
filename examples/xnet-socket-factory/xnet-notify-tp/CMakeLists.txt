@@ -30,8 +30,6 @@ set(NIXNET_LIBRARY "${NIXNET_LIBRARY_DIR}/nixntipstack.lib")
 
 include_directories (${NIXNET_INCLUDE_DIR})
 
-set(CONFIG_PREFIX "xnet-notify-tp-udp")
-
 set(CONFIG_DIR "${CMAKE_CURRENT_SOURCE_DIR}/configurations")
 
 # sample name -> configuration suffix (client/server)
@@ -40,8 +38,8 @@ set(SAMPLES
     xnet-notify-tp-server
 )
 
-set(xnet-notify-tp-client_CONFIG "${CONFIG_DIR}/${CONFIG_PREFIX}-client.json")
-set(xnet-notify-tp-server_CONFIG "${CONFIG_DIR}/${CONFIG_PREFIX}-server.json")
+set(xnet-notify-tp-client_CONFIG "${CONFIG_DIR}/xnet-notify-tp-client.json")
+set(xnet-notify-tp-server_CONFIG "${CONFIG_DIR}/xnet-notify-tp-server.json")
 
 foreach(sample ${SAMPLES})
     add_executable(${sample} ${CMAKE_CURRENT_SOURCE_DIR}/src/${sample}.cpp)
