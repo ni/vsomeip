@@ -96,6 +96,8 @@ int main() {
         return 1;
     }
 
+    app->offer_service(SAMPLE_SERVICE_ID, SAMPLE_INSTANCE_ID);
+
     // offer the event
     std::set<vsomeip::eventgroup_t> its_groups;
     its_groups.insert(SAMPLE_EVENTGROUP_ID);

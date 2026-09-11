@@ -1,13 +1,9 @@
 {
-  "unicast": "10.0.0.2",
+  "unicast": "134.86.56.95",
   "network": "xnet-notify-server",
   "logging": {
     "level": "debug",
-    "console": "false",
-    "file": {
-      "enable": "true",
-      "path": "./vsomeip.log"
-    }
+    "console": "true"
   },
   "applications": [
     {
@@ -23,7 +19,8 @@
       "events": [
         {
           "event": "0x8778",
-          "is_field": "true"
+          "is_field": "true",
+          "is_reliable": "false"
         }
       ],
       "eventgroups": [

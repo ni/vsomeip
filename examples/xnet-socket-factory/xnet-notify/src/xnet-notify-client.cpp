@@ -35,7 +35,7 @@ void on_availability(vsomeip::service_t _service, vsomeip::instance_t _instance,
     if (_is_available) {
         std::set<vsomeip::eventgroup_t> groups;
         groups.insert(SAMPLE_EVENTGROUP_ID);
-        app->request_event(SAMPLE_SERVICE_ID, SAMPLE_INSTANCE_ID, SAMPLE_EVENT_ID, groups);
+        app->request_event(SAMPLE_SERVICE_ID, SAMPLE_INSTANCE_ID, SAMPLE_EVENT_ID, groups, vsomeip::event_type_e::ET_FIELD);
         app->subscribe(SAMPLE_SERVICE_ID, SAMPLE_INSTANCE_ID, SAMPLE_EVENTGROUP_ID);
     }
 }

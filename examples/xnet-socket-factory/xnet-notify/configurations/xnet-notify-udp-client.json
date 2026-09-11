@@ -1,13 +1,9 @@
 {
-  "unicast": "10.0.0.3",
+  "unicast": "134.86.56.94",
   "network": "xnet-notify-client",
   "logging": {
     "level": "debug",
-    "console": "false",
-    "file": {
-      "enable": "true",
-      "path": "./vsomeip.log"
-    }
+    "console": "true"
   },
   "applications": [
     {
