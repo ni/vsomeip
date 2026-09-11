@@ -94,12 +94,12 @@ int main() {
         return 1;
     }
 
-    app->offer_service(SAMPLE_SERVICE_ID, SAMPLE_INSTANCE_ID);
-
     // offer the event
     std::set<vsomeip::eventgroup_t> its_groups;
     its_groups.insert(SAMPLE_EVENTGROUP_ID);
     app->offer_event(SAMPLE_SERVICE_ID, SAMPLE_INSTANCE_ID, SAMPLE_EVENT_ID, its_groups);
+
+    app->offer_service(SAMPLE_SERVICE_ID, SAMPLE_INSTANCE_ID);
 
     // Register signal handler for clean shutdown
     std::signal(SIGINT, stop_application);
