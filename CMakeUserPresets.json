@@ -1,0 +1,65 @@
+{
+    "version": 3,
+    "cmakeMinimumRequired": {
+        "major": 3,
+        "minor": 13
+    },
+    "configurePresets": [
+        {
+            "name": "xnet-base",
+            "hidden": true,
+            "description": "Common XNET settings (MRM + XNET backend)",
+            "generator": "Visual Studio 17 2022",
+            "binaryDir": "${sourceDir}/build",
+			"installDir": "C:/local/vsomeip",
+            "cacheVariables": {
+                "ENABLE_MULTIPLE_ROUTING_MANAGERS": {
+                    "type": "BOOL",
+                    "value": "OFF"
+                }
+            }
+        },
+        {
+            "name": "RelWithDebInfo",
+            "displayName": "RelWithDebInfo",
+            "description": "RelWithDebInfo build for x64 with MRM and XNET backend enabled",
+            "inherits": "xnet-base",
+            "architecture": "x64",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": {
+                    "type": "STRING",
+                    "value": "RelWithDebInfo"
+                }
+            }
+        },		
+        {
+            "name": "Release",
+            "displayName": "Release",
+            "description": "Release build for x64 with MRM and XNET backend enabled",
+            "inherits": "xnet-base",
+            "architecture": "x64",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": {
+                    "type": "STRING",
+                    "value": "Release"
+                }
+            }
+        }
+    ],
+    "buildPresets": [
+		{
+            "name": "RelWithDebInfo",
+            "displayName": "RelWithDebInfo",
+            "description": "Builds all targets (x64 RelWithDebInfo)",
+            "configurePreset": "RelWithDebInfo",
+            "configuration": "RelWithDebInfo"
+        },
+        {
+            "name": "Release",
+            "displayName": "Release",
+            "description": "Builds all targets (x64 Release)",
+            "configurePreset": "Release",
+            "configuration": "Release"
+        }
+    ]
+}

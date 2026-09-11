@@ -1,9 +1,7 @@
 #ifndef XNET_API_HPP_
 #define XNET_API_HPP_
 
-#include "xnet_types.hpp"
-
-#if defined(VSOMEIP_ENABLE_XNET)
+#include "nxsocket.h"
 
 namespace vsomeip_v3::xnet_api {
 
@@ -98,7 +96,5 @@ inline int nxselect(int _nfds, nxfd_set* _readfds, nxfd_set* _writefds, nxfd_set
 }
 
 } // namespace vsomeip_v3::xnet_api
-
-#endif // VSOMEIP_ENABLE_XNET
 
 #endif // XNET_API_HPP_
