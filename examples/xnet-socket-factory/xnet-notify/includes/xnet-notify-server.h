@@ -5,6 +5,8 @@
 #define SAMPLE_EVENTGROUP_ID    0x4465
 #define SAMPLE_EVENT_ID         0x8778
 
+const char* xnet_interface_name = "ENET1";
+
 const char* xnet_ip_stack_config = R"(
 {
     "schema":  "file:///NIXNET_Documentation/xnetIpStackSchema-07.json",

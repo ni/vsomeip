@@ -12,7 +12,6 @@
 #include "xnet-notify-client.h"
 
 // Include the necessary headers for XNET and XNET socket factory
-
 #include "nxsocket.h"
 #include "nixnet.h"
 #include "xnet_socket_factory.hpp"
@@ -43,7 +42,7 @@ bool setup_xnet_stack() {
 
     // Wait for the interface to be ready
     std::cout << "Waiting for XNET IP stack to be ready..." << std::endl;
-    nxIpStackWaitForInterface(xnet_stack, "ENET1", 30000);
+    nxIpStackWaitForInterface(xnet_stack, xnet_interface_name, 30000);
 
     // Initialize the XNET socket factory
     try {
@@ -104,7 +103,7 @@ bool setup_application() {
 
 int main() {
     // Setup the XNET IP stack and socket factory
-    if (setup_xnet_stack()) {
+    if (!setup_xnet_stack()) {
         return 1;
     }
 

@@ -49,7 +49,7 @@ bool setup_xnet_stack() {
 
     // Wait for the interface to be ready
     std::cout << "Waiting for XNET IP stack to be ready..." << std::endl;
-    nxIpStackWaitForInterface(xnet_stack, "ENET1", 30000);
+    nxIpStackWaitForInterface(xnet_stack, xnet_interface_name, 30000);
 
     // Initialize the XNET socket factory
     try {
@@ -100,13 +100,13 @@ void notify() {
 
         std::cout << "Notifying: " << counter++ << std::endl;
         
-        std::this_thread::sleep_for(std::chrono::seconds(5));
+        std::this_thread::sleep_for(std::chrono::seconds(1));
     }
 }
 
 int main() {
     // Setup the XNET IP stack and socket factory
-    if (setup_xnet_stack()) {
+    if (!setup_xnet_stack()) {
         return 1;
     }
 

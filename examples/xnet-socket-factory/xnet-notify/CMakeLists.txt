@@ -47,7 +47,7 @@ foreach(sample ${SAMPLES})
     add_executable(${sample} ${CMAKE_CURRENT_SOURCE_DIR}/src/${sample}.cpp)
     target_link_libraries(${sample} PRIVATE ${VSOMEIP_NAME} ${NIXNET_LIBRARY})
     set_target_properties(${sample} PROPERTIES
-        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/${sample}"
+        RUNTIME_OUTPUT_DIRECTORY "$<1:${CMAKE_CURRENT_BINARY_DIR}/${sample}>"
     )
 
     # make the matching configuration available next to the executable
