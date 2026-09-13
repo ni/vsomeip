@@ -1,18 +1,17 @@
 {
   "unicast": "10.0.0.3",
-  "network": "xnet-notify-tp-client",
+  "network": "xnet-request-responce-client",
   "logging": {
     "level": "debug",
     "console": "true"
   },
   "applications": [
     {
-      "name": "xnet-notify-tp-client",
+      "name": "xnet-request-responce-client",
       "id": "0x1313"
     }
   ],
-  "services": [],
-  "routing": "xnet-notify-tp-client",
+  "routing": "xnet-request-responce-client",
   "service-discovery": {
     "enable": "true",
     "multicast": "224.224.224.245",

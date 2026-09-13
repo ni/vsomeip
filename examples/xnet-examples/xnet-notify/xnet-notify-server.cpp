@@ -6,13 +6,15 @@
 #include <memory>
 #include <set>
 #include <thread>
-#include <vsomeip/vsomeip.hpp>
-#include "xnet-notify-server.h"
 
-// Include the necessary headers for XNET and XNET socket factory
+#include <vsomeip/vsomeip.hpp>
+
+// Include headers for XNET and XNET socket factory
 #include "nxsocket.h"
 #include "nixnet.h"
 #include "xnet_socket_factory.hpp"
+
+#include "xnet-stack-configuration.h"
 
 std::shared_ptr<vsomeip::application> app;
 std::atomic_bool running{true};
@@ -41,7 +43,7 @@ bool setup_xnet_stack() {
 
     // Initialize the xnet IP stack with the provided configuration
     nxStatus_t status{};
-    status = nxIpStackCreate("xnet-notify-server", xnet_ip_stack_config, &xnet_stack);
+    status = nxIpStackCreate("xnet-notify-server", server::xnet_ip_stack_config, &xnet_stack);
     if (status != 0) {
         std::cerr << "Failed to create XNET IP stack. Status code: " << status << std::endl;
         return false;
@@ -49,7 +51,7 @@ bool setup_xnet_stack() {
 
     // Wait for the interface to be ready
     std::cout << "Waiting for XNET IP stack to be ready..." << std::endl;
-    nxIpStackWaitForInterface(xnet_stack, xnet_interface_name, 30000);
+    nxIpStackWaitForInterface(xnet_stack, server::xnet_interface_name, 30000);
 
     // Initialize the XNET socket factory
     try {
@@ -92,7 +94,7 @@ void notify() {
     std::shared_ptr<vsomeip::payload> payload = vsomeip::runtime::get()->create_payload();
 
     while (running) {
-        // Initialize the payload with the current counter value
+        // Initialize the payload with the counter value
         payload->set_data(reinterpret_cast<const vsomeip::byte_t*>(&counter), sizeof(counter));
 
         // Send the notification
@@ -125,6 +127,5 @@ int main() {
     // Start the application and wait for incoming messages
     app->start();
 
-    // Clean up and exit
-    stop_application(0);
+    return (0);
 }

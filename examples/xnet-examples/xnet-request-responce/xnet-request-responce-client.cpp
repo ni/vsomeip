@@ -1,27 +1,24 @@
 #include <csignal>
-#include <csignal>
-#include <cstdint>
-#include <cstring>
 #include <iomanip>
 #include <iostream>
-#include <memory>
-#include <set>
 #include <string>
 #include <vector>
-#include <vsomeip/vsomeip.hpp>
-#include "xnet-notify-client.h"
 
-// Include the necessary headers for XNET and XNET socket factory
+#include <vsomeip/vsomeip.hpp>
+
+// Include headers for XNET and XNET socket factory
 #include "nxsocket.h"
 #include "nixnet.h"
 #include "xnet_socket_factory.hpp"
+
+#include "xnet-stack-configuration.h"
 
 std::shared_ptr<vsomeip::application> app;
 
 void stop_application(int exit_code) {
     std::cout << "\nShutting down application..." << std::endl;
-   
-    // Stop the application and release the service
+
+    // Release the service and stop the application
     if (app) {
         app->release_service(SAMPLE_SERVICE_ID, SAMPLE_INSTANCE_ID);
         app->stop();
@@ -34,7 +31,7 @@ bool setup_xnet_stack() {
 
     // Initialize the xnet IP stack with the provided configuration
     nxStatus_t status{};
-    status = nxIpStackCreate("xnet-notify-client", xnet_ip_stack_config, &xnet_stack);
+    status = nxIpStackCreate("xnet-request-responce-client", client::xnet_ip_stack_config, &xnet_stack);
     if (status != 0) {
         std::cerr << "Failed to create XNET IP stack. Status code: " << status << std::endl;
         return false;
@@ -42,7 +39,7 @@ bool setup_xnet_stack() {
 
     // Wait for the interface to be ready
     std::cout << "Waiting for XNET IP stack to be ready..." << std::endl;
-    nxIpStackWaitForInterface(xnet_stack, xnet_interface_name, 30000);
+    nxIpStackWaitForInterface(xnet_stack, client::xnet_interface_name, 30000);
 
     // Initialize the XNET socket factory
     try {
@@ -58,30 +55,44 @@ bool setup_xnet_stack() {
 }
 
 void on_availability(vsomeip::service_t _service, vsomeip::instance_t _instance, bool _is_available) {
-    if (_is_available) {
-        std::set<vsomeip::eventgroup_t> groups;
-        groups.insert(SAMPLE_EVENTGROUP_ID);
+    if (_service == SAMPLE_SERVICE_ID && _instance == SAMPLE_INSTANCE_ID && _is_available) {
+        // Send a request to the server when it becomes available
+        const std::string request_text = "XNET Request";
 
-        // Request the event
-        app->request_event(SAMPLE_SERVICE_ID, SAMPLE_INSTANCE_ID, SAMPLE_EVENT_ID, groups, vsomeip::event_type_e::ET_FIELD);
-        
-        // Subscribe to the event group
-        app->subscribe(SAMPLE_SERVICE_ID, SAMPLE_INSTANCE_ID, SAMPLE_EVENTGROUP_ID);
+        // Create a payload for the request
+        std::shared_ptr<vsomeip::payload> payload = vsomeip::runtime::get()->create_payload();
+        std::vector<vsomeip::byte_t> payload_data(request_text.begin(), request_text.end());
+        payload->set_data(payload_data);
+
+        // Create a request message
+        std::shared_ptr<vsomeip::message> request = vsomeip::runtime::get()->create_request();
+        request->set_service(SAMPLE_SERVICE_ID);
+        request->set_instance(SAMPLE_INSTANCE_ID);
+        request->set_method(SAMPLE_METHOD_ID);
+        request->set_payload(payload);
+
+        // Send the request
+        app->send(request);
+
+        std::cout << "Sending: " << request_text << std::endl;
     }
 }
 
 void on_message(const std::shared_ptr<vsomeip::message>& _response) {
-    // Extract the payload from the received message
-    std::uint32_t data;
-    std::shared_ptr<vsomeip::payload> payload = _response->get_payload();
-    std::memcpy(&data, payload->get_data(), sizeof(data));
-    
-    std::cout << "Received: " << data << std::endl;
+    // Parse the received message
+    std::shared_ptr<vsomeip::payload> response_payload = _response->get_payload();
+
+    std::string received_text(reinterpret_cast<const char*>(response_payload->get_data()), response_payload->get_length());
+
+    std::cout << "Received: " << received_text << std::endl;
+
+    // Stop the application
+    stop_application(0);
 }
 
 bool setup_application() {
     // Create a vsomeip application
-    app = vsomeip::runtime::get()->create_application("xnet-notify-client");
+    app = vsomeip::runtime::get()->create_application("xnet-request-responce-client");
 
     // Initialize the application
     if (!app->init()) {
@@ -89,15 +100,15 @@ bool setup_application() {
         return false;
     }
 
+    // Register a message handler callback for the received messages
+    app->register_message_handler(SAMPLE_SERVICE_ID, SAMPLE_INSTANCE_ID, SAMPLE_METHOD_ID, on_message);
+
     // Register a callback which is called as soon as the service is available
     app->register_availability_handler(SAMPLE_SERVICE_ID, SAMPLE_INSTANCE_ID, on_availability);
 
-    // Request the service to trigger
+    // Request the remote service
     app->request_service(SAMPLE_SERVICE_ID, SAMPLE_INSTANCE_ID);
 
-    // register a message handler callback for received notifications
-    app->register_message_handler(SAMPLE_SERVICE_ID, SAMPLE_INSTANCE_ID, SAMPLE_EVENT_ID, on_message);
-    
     return true;
 }
 
@@ -116,6 +127,8 @@ int main() {
     std::signal(SIGINT, stop_application);
     std::signal(SIGTERM, stop_application);
 
-    // start the application
+    // Start the application and wait for incoming messages
     app->start();
+
+    return 0;
 }

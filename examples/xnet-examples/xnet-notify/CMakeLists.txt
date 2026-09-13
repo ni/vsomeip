@@ -1,25 +1,23 @@
 cmake_minimum_required(VERSION 3.13)
 
-project(xnet-notify-tp)
+project(xnet-notify)
 
 set(CMAKE_CXX_STANDARD 20)
 
 set(VSOMEIP_NAME "vsomeip3")
 
 find_package(${VSOMEIP_NAME} REQUIRED)
-
-# vsomeip headers include Boost.Asio, and the exported vsomeip3 target links
-# Boost PRIVATE, so its include directories must be added explicitly here.
 find_package(Boost COMPONENTS filesystem REQUIRED)
 
-include_directories (${VSOMEIP_INCLUDE_DIRS}
-                     ${CMAKE_CURRENT_SOURCE_DIR}/includes
-                     ${CMAKE_CURRENT_SOURCE_DIR}/../../../implementation/endpoints/include)
+include_directories (
+    ${VSOMEIP_INCLUDE_DIRS}
+    ${CMAKE_CURRENT_SOURCE_DIR}/../common/includes
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../../implementation/endpoints/include
+)
+
 include_directories (SYSTEM ${Boost_INCLUDE_DIRS})
 
-################################################################################
-# NI-XNET (nixntipstack) library    
-################################################################################
+# NI-XNET library    
 if(NOT DEFINED ENV{NIEXTCCOMPILERSUPP})
     message(FATAL_ERROR "NIEXTCCOMPILERSUPP is not set. Cannot locate nxsocket.h/nixntipstack.")
 endif()
@@ -30,26 +28,37 @@ set(NIXNET_LIBRARY "${NIXNET_LIBRARY_DIR}/nixntipstack.lib")
 
 include_directories (${NIXNET_INCLUDE_DIR})
 
-set(CONFIG_DIR "${CMAKE_CURRENT_SOURCE_DIR}/configurations")
+# Select the configurations to use (UDP by default, TCP when USE_TCP is ON)
+option(USE_TCP "Use the TCP configuration instead of UDP" OFF)
+if(USE_TCP)
+    set(CONFIG_PREFIX "xnet-notify-tcp")
+else()
+    set(CONFIG_PREFIX "xnet-notify-udp")
+endif()
 
-# sample name -> configuration suffix (client/server)
+set(CONFIG_DIR "${CMAKE_CURRENT_SOURCE_DIR}/configurations")
+set(xnet-notify-client_CONFIG "${CONFIG_DIR}/xnet-notify-client.json")
+set(xnet-notify-server_CONFIG "${CONFIG_DIR}/${CONFIG_PREFIX}-server.json")
+
 set(SAMPLES
-    xnet-notify-tp-client
-    xnet-notify-tp-server
+    xnet-notify-client
+    xnet-notify-server
 )
 
-set(xnet-notify-tp-client_CONFIG "${CONFIG_DIR}/xnet-notify-tp-client.json")
-set(xnet-notify-tp-server_CONFIG "${CONFIG_DIR}/xnet-notify-tp-server.json")
-
 foreach(sample ${SAMPLES})
-    add_executable(${sample} ${CMAKE_CURRENT_SOURCE_DIR}/src/${sample}.cpp)
+    add_executable(${sample} ${CMAKE_CURRENT_SOURCE_DIR}/${sample}.cpp)
     target_link_libraries(${sample} PRIVATE ${VSOMEIP_NAME} ${NIXNET_LIBRARY})
+    set_target_properties(${sample} PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "$<1:${CMAKE_CURRENT_BINARY_DIR}/${sample}>"
+    )
 
     # make the matching configuration available next to the executable
     add_custom_command(TARGET ${sample} POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E rm -rf
+                "$<TARGET_FILE_DIR:${sample}>/vsomeip"
         COMMAND ${CMAKE_COMMAND} -E make_directory
                 "$<TARGET_FILE_DIR:${sample}>/vsomeip"
-        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        COMMAND ${CMAKE_COMMAND} -E copy
                 "${${sample}_CONFIG}" "$<TARGET_FILE_DIR:${sample}>/vsomeip/"
         COMMENT "Copying XNET configuration for ${sample}"
     )
