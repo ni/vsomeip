@@ -742,7 +742,9 @@ add_subdirectory( examples/hello_world )
 endif()
 
 add_subdirectory( examples/wait-until-available )
-add_subdirectory( examples/xnet-examples )
+add_subdirectory( examples/xnet-examples/xnet-notify )
+add_subdirectory( examples/xnet-examples/xnet-notify-tp )
+add_subdirectory( examples/xnet-examples/xnet-request-responce )
 
 # build tools
 add_custom_target( tools )
