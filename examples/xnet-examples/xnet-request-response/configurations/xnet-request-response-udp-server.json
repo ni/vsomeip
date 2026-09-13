@@ -1,13 +1,13 @@
 {
   "unicast": "10.0.0.2",
-  "network": "xnet-request-responce-server",
+  "network": "xnet-request-response-server",
   "logging": {
     "level": "debug",
     "console": "true"
   },
   "applications": [
     {
-      "name": "xnet-request-responce-server",
+      "name": "xnet-request-response-server",
       "id": "0x1212"
     }
   ],
@@ -15,10 +15,10 @@
     {
       "service": "0x1234",
       "instance": "0x5678",
-      "reliable": "30509"
+      "unreliable": "30509"
     }
   ],
-  "routing": "xnet-request-responce-server",
+  "routing": "xnet-request-response-server",
   "service-discovery": {
     "enable": "true",
     "multicast": "224.224.224.245",

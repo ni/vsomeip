@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.13)
 
-project(xnet-request-responce)
+project(xnet-request-response)
 
 set(CMAKE_CXX_STANDARD 20)
 
@@ -31,18 +31,18 @@ include_directories (${NIXNET_INCLUDE_DIR})
 # Select the configurations to use (UDP by default, TCP when USE_TCP is ON)
 option(USE_TCP "Use the TCP configuration instead of UDP" OFF)
 if(USE_TCP)
-    set(CONFIG_PREFIX "xnet-request-responce-tcp")
+    set(CONFIG_PREFIX "xnet-request-response-tcp")
 else()
-    set(CONFIG_PREFIX "xnet-request-responce-udp")
+    set(CONFIG_PREFIX "xnet-request-response-udp")
 endif()
 
 set(CONFIG_DIR "${CMAKE_CURRENT_SOURCE_DIR}/configurations")
-set(xnet-request-responce-client_CONFIG "${CONFIG_DIR}/xnet-request-responce-client.json")
-set(xnet-request-responce-server_CONFIG "${CONFIG_DIR}/${CONFIG_PREFIX}-server.json")
+set(xnet-request-response-client_CONFIG "${CONFIG_DIR}/xnet-request-response-client.json")
+set(xnet-request-response-server_CONFIG "${CONFIG_DIR}/${CONFIG_PREFIX}-server.json")
 
 set(SAMPLES
-    xnet-request-responce-client
-    xnet-request-responce-server
+    xnet-request-response-client
+    xnet-request-response-server
 )
 
 foreach(sample ${SAMPLES})

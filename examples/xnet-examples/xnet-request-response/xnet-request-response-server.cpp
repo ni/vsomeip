@@ -32,7 +32,7 @@ bool setup_xnet_stack() {
 
     // Initialize the xnet IP stack with the provided configuration
     nxStatus_t status{};
-    status = nxIpStackCreate("xnet-request-responce-server", server::xnet_ip_stack_config, &xnet_stack);
+    status = nxIpStackCreate("xnet-request-response-server", server::xnet_ip_stack_config, &xnet_stack);
     if (status != 0) {
         std::cerr << "Failed to create XNET IP stack. Status code: " << status << std::endl;
         return false;
@@ -81,7 +81,7 @@ void on_message(const std::shared_ptr<vsomeip::message>& _request) {
 
 bool setup_application() {
     // Create a vsomeip application
-    app = vsomeip::runtime::get()->create_application("xnet-request-responce-server");
+    app = vsomeip::runtime::get()->create_application("xnet-request-response-server");
 
     // Initialize the application
     if (!app->init()) {

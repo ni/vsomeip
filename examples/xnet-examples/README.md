@@ -11,7 +11,7 @@ Available examples:
 |---|---|
 | `xnet-notify` | Server offers a field/event, client subscribes and receives cyclic notifications. |
 | `xnet-notify-tp` | Same as `xnet-notify`, but with a large payload that is segmented by SOME/IP-TP. |
-| `xnet-request-responce` | Client sends a request, server answers with a response. |
+| `xnet-request-response` | Client sends a request, server answers with a response. |
 
 ## Hardware and software requirements
 
@@ -96,7 +96,7 @@ Initializing XNET socket factory with XNET driver enabled...
   Notifying 4000 bytes data: 0         Received 4000 bytes data: 0
   ```
 
-`xnet-request-responce` - request/response ping-pong:
+`xnet-request-response` - request/response ping-pong:
 
   ```
   # client              # server
