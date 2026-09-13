@@ -138,7 +138,8 @@ bool endpoint_to_native(boost::asio::ip::udp::endpoint const& _endpoint, nxsocka
         auto* its_addr = reinterpret_cast<nxsockaddr_in*>(&_storage);
         its_addr->sin_family = nxAF_INET;
         its_addr->sin_port = boost::endian::native_to_big(_endpoint.port());
-        its_addr->sin_addr.addr = boost::endian::native_to_big(_endpoint.address().to_v4().to_uint());
+        const auto its_v4 = boost::endian::native_to_big(_endpoint.address().to_v4().to_uint());
+        std::memcpy(&its_addr->sin_addr, &its_v4, sizeof(its_v4));
         _len = static_cast<nxsocklen_t>(sizeof(nxsockaddr_in));
         _ec.clear();
         return true;
@@ -151,7 +152,7 @@ bool endpoint_to_native(boost::asio::ip::udp::endpoint const& _endpoint, nxsocka
         its_addr->sin6_flowinfo = 0;
         its_addr->sin6_scope_id = _endpoint.address().to_v6().scope_id();
         const auto its_bytes = _endpoint.address().to_v6().to_bytes();
-        std::memcpy(its_addr->sin6_addr.addr, its_bytes.data(), its_bytes.size());
+        std::memcpy(&its_addr->sin6_addr, its_bytes.data(), its_bytes.size());
         _len = static_cast<nxsocklen_t>(sizeof(nxsockaddr_in6));
         _ec.clear();
         return true;
@@ -166,7 +167,9 @@ bool native_to_endpoint(nxsockaddr_storage const& _storage, nxsocklen_t _len, bo
     const auto* its_sockaddr = reinterpret_cast<const nxsockaddr*>(&_storage);
     if (its_sockaddr->sa_family == nxAF_INET && static_cast<std::size_t>(_len) >= sizeof(nxsockaddr_in)) {
         const auto* its_addr = reinterpret_cast<const nxsockaddr_in*>(&_storage);
-        const auto its_ip = boost::asio::ip::address_v4(boost::endian::big_to_native(its_addr->sin_addr.addr));
+        std::uint32_t its_raw_v4 = 0;
+        std::memcpy(&its_raw_v4, &its_addr->sin_addr, sizeof(its_raw_v4));
+        const auto its_ip = boost::asio::ip::address_v4(boost::endian::big_to_native(its_raw_v4));
         const auto its_port = boost::endian::big_to_native(its_addr->sin_port);
         _endpoint = boost::asio::ip::udp::endpoint(its_ip, its_port);
         _ec.clear();
@@ -176,7 +179,7 @@ bool native_to_endpoint(nxsockaddr_storage const& _storage, nxsocklen_t _len, bo
     if (its_sockaddr->sa_family == nxAF_INET6 && static_cast<std::size_t>(_len) >= sizeof(nxsockaddr_in6)) {
         const auto* its_addr = reinterpret_cast<const nxsockaddr_in6*>(&_storage);
         boost::asio::ip::address_v6::bytes_type its_bytes{};
-        std::memcpy(its_bytes.data(), its_addr->sin6_addr.addr, its_bytes.size());
+        std::memcpy(its_bytes.data(), &its_addr->sin6_addr, its_bytes.size());
         const auto its_ip = boost::asio::ip::address_v6(its_bytes, its_addr->sin6_scope_id);
         const auto its_port = boost::endian::big_to_native(its_addr->sin6_port);
         _endpoint = boost::asio::ip::udp::endpoint(its_ip, its_port);
@@ -438,10 +441,10 @@ void xnet_udp_socket::bind(boost::asio::ip::udp::endpoint const& ep, boost::syst
 
         if (ep.address().is_v6()) {
             auto ipv6_bytes = ep.address().to_v6().to_bytes();
-            std::memcpy(addr.sin6_addr.addr, ipv6_bytes.data(), ipv6_bytes.size());
+            std::memcpy(&addr.sin6_addr, ipv6_bytes.data(), ipv6_bytes.size());
         } else {
             const auto any_v6 = boost::asio::ip::address_v6::any().to_bytes();
-            std::memcpy(addr.sin6_addr.addr, any_v6.data(), any_v6.size());
+            std::memcpy(&addr.sin6_addr, any_v6.data(), any_v6.size());
         }
 
         if (xnet_api::nxbind(socket_, reinterpret_cast<nxsockaddr*>(&addr), sizeof(addr)) == SOCKET_ERROR_VALUE) {
@@ -454,11 +457,10 @@ void xnet_udp_socket::bind(boost::asio::ip::udp::endpoint const& ep, boost::syst
         nxsockaddr_in addr{};
         addr.sin_family = nxAF_INET;
         addr.sin_port = boost::endian::native_to_big(ep.port());
-        if (ep.address().is_v4()) {
-            addr.sin_addr.addr = boost::endian::native_to_big(ep.address().to_v4().to_uint());
-        } else {
-            addr.sin_addr.addr = boost::endian::native_to_big(boost::asio::ip::address_v4::any().to_uint());
-        }
+        const auto its_v4 = ep.address().is_v4()
+                                    ? boost::endian::native_to_big(ep.address().to_v4().to_uint())
+                                    : boost::endian::native_to_big(boost::asio::ip::address_v4::any().to_uint());
+        std::memcpy(&addr.sin_addr, &its_v4, sizeof(its_v4));
 
         if (xnet_api::nxbind(socket_, reinterpret_cast<nxsockaddr*>(&addr), sizeof(addr)) == SOCKET_ERROR_VALUE) {
             ec = make_xnet_error("bind");

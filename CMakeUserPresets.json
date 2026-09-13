@@ -13,15 +13,7 @@
             "binaryDir": "${sourceDir}/build",
 			"installDir": "C:/local/vsomeip",
             "cacheVariables": {
-                "GTEST_ROOT": {
-                    "type": "PATH",
-                    "value": "C:/local/googletest"
-                },
                 "ENABLE_MULTIPLE_ROUTING_MANAGERS": {
-                    "type": "BOOL",
-                    "value": "OFF"
-                },
-                "ENABLE_XNET_BACKEND": {
                     "type": "BOOL",
                     "value": "OFF"
                 }

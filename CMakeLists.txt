@@ -742,6 +742,7 @@ add_subdirectory( examples/hello_world )
 endif()
 
 add_subdirectory( examples/wait-until-available )
+add_subdirectory( examples/xnet-examples )
 
 # build tools
 add_custom_target( tools )
