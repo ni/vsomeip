@@ -68,11 +68,11 @@ void on_availability(vsomeip::service_t _service, vsomeip::instance_t _instance,
 
 void on_message(const std::shared_ptr<vsomeip::message>& _response) {
     // Extract the payload from the received message
-    std::uint32_t counter;
+    std::uint8_t counter;
     std::shared_ptr<vsomeip::payload> payload = _response->get_payload();
     std::memcpy(&counter, payload->get_data(), sizeof(counter));
 
-    std::cout << "Received " << payload->get_length() << " bytes data: " << counter << std::endl;
+    std::cout << "Received " << payload->get_length() << " bytes data: " << static_cast<unsigned int>(counter) << std::endl;
 }
 
 bool setup_application() {

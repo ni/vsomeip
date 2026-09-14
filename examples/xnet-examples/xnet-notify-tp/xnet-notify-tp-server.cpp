@@ -89,9 +89,9 @@ bool setup_application() {
 }
 
 void notify() {
-    // Initialize a vector of uint32_t with 40000 bytes of data
-    std::vector<uint32_t> data(1000, 0);
-    
+    // Initialize a vector of uint8_t with 4000 bytes of data
+    std::vector<uint8_t> data(4000, 0);
+
     // Create a payload for the notification
     std::shared_ptr<vsomeip::payload> payload = vsomeip::runtime::get()->create_payload();
 
@@ -100,9 +100,9 @@ void notify() {
         payload->set_data(reinterpret_cast<const vsomeip::byte_t*>(data.data()),
                           static_cast<vsomeip::length_t>(data.size() * sizeof(data[0])));
         app->notify(SAMPLE_SERVICE_ID, SAMPLE_INSTANCE_ID, SAMPLE_EVENT_ID, payload);
-        
-        std::cout << "Notifying " << data.size() * sizeof(data[0]) << " bytes data: " << data[0] << std::endl;
-        
+
+        std::cout << "Notifying " << data.size() * sizeof(data[0]) << " bytes data: " << static_cast<unsigned int>(data[0]) << std::endl;
+
         // Increment the first element (counter)
         ++data[0];
 
