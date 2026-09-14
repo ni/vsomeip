@@ -6,9 +6,12 @@
 #include "../include/abstract_socket_factory.hpp"
 #include "../include/asio_socket_factory.hpp"
 
-#include <iostream>
+#include "logger_ext.hpp"
+
 #include <mutex>
 #include <stdexcept>
+
+#define VSOMEIP_LOG_PREFIX "asf"
 
 namespace vsomeip_v3 {
 
@@ -48,10 +51,10 @@ static std::mutex _factory_mutex;
 static std::shared_ptr<abstract_socket_factory> init() {
     std::scoped_lock its_lock{_factory_mutex};
     if (!_factory) {
-        std::cerr << "[vsomeip] socket_factory_freeze=default_asio" << std::endl;
+        VSOMEIP_INFO_P << "socket_factory_freeze=default_asio";
         _factory = std::make_shared<asio_socket_factory>();
     } else {
-        std::cerr << "[vsomeip] socket_factory_freeze=preinjected" << std::endl;
+        VSOMEIP_INFO_P << "socket_factory_freeze=preinjected";
     }
     _factory_finalized = true;
     return _factory;
@@ -61,8 +64,7 @@ void set_abstract_factory(std::shared_ptr<abstract_socket_factory> ptr) {
     std::scoped_lock its_lock{_factory_mutex};
     if (_factory_finalized) {
         _late_injection_detected = true;
-        std::cerr << "[vsomeip] late socket factory injection detected after factory freeze."
-                  << std::endl;
+        VSOMEIP_ERROR_P << "late socket factory injection detected after factory freeze.";
         throw std::runtime_error("Late socket factory injection detected after factory freeze.");
     }
     _factory = ptr;
@@ -75,10 +77,10 @@ void freeze_abstract_factory() {
     }
 
     if (!_factory) {
-        std::cerr << "[vsomeip] socket_factory_freeze=default_asio" << std::endl;
+        VSOMEIP_INFO_P << "socket_factory_freeze=default_asio";
         _factory = std::make_shared<asio_socket_factory>();
     } else {
-        std::cerr << "[vsomeip] socket_factory_freeze=preinjected" << std::endl;
+        VSOMEIP_INFO_P << "socket_factory_freeze=preinjected";
     }
 
     _factory_finalized = true;

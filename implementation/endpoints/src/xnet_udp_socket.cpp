@@ -1,4 +1,3 @@
-#include <iostream>
 #include <cstring>
 #include <algorithm>
 #include <condition_variable>
@@ -211,10 +210,6 @@ boost::system::error_code make_unsupported_option_error(char const* _option, cha
                     << " failure_class=option_translation"
                     << " detail=unsupported"
                     << " reason=" << _reason;
-    std::cerr << "[vsomeip] [XNET][udp][" << _option << "] " << k_xnet_backend_tag
-              << " failure_class=option_translation"
-              << " detail=unsupported"
-              << " reason=" << _reason << std::endl;
     return boost::asio::error::make_error_code(boost::asio::error::operation_not_supported);
 }
 
