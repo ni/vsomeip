@@ -1,28 +1,17 @@
 {
-  "unicast": "10.0.0.2",
+  "unicast": "10.0.0.3",
+  "network": "xnet-notify-client",
   "logging": {
     "level": "debug",
-    "console": "false",
-    "file": {
-      "enable": "true",
-      "path": "./vsomeip.log"
-    },
-    "dlt": "false"
+    "console": "true"
   },
   "applications": [
     {
-      "name": "XnetExampleApp",
-      "id": "0x1212"
+      "name": "xnet-notify-client",
+      "id": "0x1313"
     }
   ],
-  "services": [
-    {
-      "service": "0x1234",
-      "instance": "0x5678",
-      "unreliable": "30509"
-    }
-  ],
-  "routing": "XnetExampleApp",
+  "routing": "xnet-notify-client",
   "service-discovery": {
     "enable": "true",
     "multicast": "224.224.224.245",
