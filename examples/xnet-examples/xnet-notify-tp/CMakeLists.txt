@@ -39,6 +39,8 @@ set(SAMPLES
     xnet-notify-tp-server
 )
 
+set(INSTALL_DIR "examples/xnet-examples/${PROJECT_NAME}")
+
 foreach(sample ${SAMPLES})
     add_executable(${sample} ${CMAKE_CURRENT_SOURCE_DIR}/${sample}.cpp)
     target_link_libraries(${sample} PRIVATE ${VSOMEIP_NAME} ${NIXNET_LIBRARY})
@@ -55,5 +57,14 @@ foreach(sample ${SAMPLES})
         COMMAND ${CMAKE_COMMAND} -E copy
                 "${${sample}_CONFIG}" "$<TARGET_FILE_DIR:${sample}>/vsomeip/"
         COMMENT "Copying XNET configuration for ${sample}"
+    )
+
+    install(
+        TARGETS ${sample}
+        RUNTIME DESTINATION "${INSTALL_DIR}/${sample}" COMPONENT bin
+    )
+    install(
+        FILES "${${sample}_CONFIG}"
+        DESTINATION "${INSTALL_DIR}/${sample}/vsomeip" COMPONENT config
     )
 endforeach()
