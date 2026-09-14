@@ -6,8 +6,10 @@ set(CMAKE_CXX_STANDARD 20)
 
 set(VSOMEIP_NAME "vsomeip3")
 
-find_package(${VSOMEIP_NAME} REQUIRED)
-find_package(Boost COMPONENTS filesystem REQUIRED)
+if(NOT TARGET ${VSOMEIP_NAME})
+	find_package(${VSOMEIP_NAME} REQUIRED)
+	find_package(Boost COMPONENTS filesystem REQUIRED)
+endif()
 
 include_directories (
     ${VSOMEIP_INCLUDE_DIRS}
