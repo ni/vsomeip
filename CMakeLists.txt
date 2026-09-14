@@ -399,9 +399,6 @@ if (VSOMEIP_ENABLE_MULTIPLE_ROUTING_MANAGERS EQUAL 0)
         set_target_properties(${VSOMEIP_NAME}-cfg-internal PROPERTIES COMPILE_DEFINITIONS "VSOMEIP_DLL_COMPILATION_PLUGIN")
         set_target_properties(${VSOMEIP_NAME}-cfg PROPERTIES COMPILE_DEFINITIONS "VSOMEIP_DLL_COMPILATION_PLUGIN")
     endif()
-    target_compile_definitions(${VSOMEIP_NAME}-cfg-internal PUBLIC VSOMEIP_ENABLE_XNET)
-    target_compile_definitions(${VSOMEIP_NAME}-cfg PUBLIC VSOMEIP_ENABLE_XNET)
-
     target_link_libraries(${VSOMEIP_NAME}-cfg ${VSOMEIP_NAME} ${Boost_LIBRARIES} ${USE_RT} ${DL_LIBRARY} ${SystemD_LIBRARIES})
 endif ()
 
@@ -458,8 +455,6 @@ else ()
         set_target_properties(${VSOMEIP_NAME} PROPERTIES LINK_FLAGS "-Wl,-wrap,socket -Wl,-wrap,accept -Wl,-wrap,open -Wl,-wrap,close -Wl,-wrap,recvfrom -Wl,-wrap,recvmsg -Wl,-wrap,sendto -Wl,-wrap,sendmsg -Wl,-wrap,epoll_wait -Wl,-wrap,epoll_pwait")
     endif ()
 endif ()
-target_compile_definitions(${VSOMEIP_NAME}-internal PUBLIC VSOMEIP_ENABLE_XNET)
-target_compile_definitions(${VSOMEIP_NAME} PUBLIC VSOMEIP_ENABLE_XNET)
 target_include_directories(${VSOMEIP_NAME} INTERFACE
     $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/interface>
     $<BUILD_INTERFACE:${PROJECT_BINARY_DIR}>
@@ -494,9 +489,6 @@ if (MSVC)
     set_target_properties(${VSOMEIP_NAME}-sd-internal PROPERTIES COMPILE_DEFINITIONS "VSOMEIP_DLL_COMPILATION_PLUGIN")
     set_target_properties(${VSOMEIP_NAME}-sd PROPERTIES COMPILE_DEFINITIONS "VSOMEIP_DLL_COMPILATION_PLUGIN")
 endif ()
-target_compile_definitions(${VSOMEIP_NAME}-sd-internal PUBLIC VSOMEIP_ENABLE_XNET)
-target_compile_definitions(${VSOMEIP_NAME}-sd PUBLIC VSOMEIP_ENABLE_XNET)
-
 target_link_libraries(${VSOMEIP_NAME}-sd ${VSOMEIP_NAME} ${Boost_LIBRARIES} ${USE_RT} ${DL_LIBRARY} ${SystemD_LIBRARIES} ${CMAKE_THREAD_LIBS_INIT})
 
 
@@ -519,9 +511,6 @@ if (MSVC)
     set_target_properties(${VSOMEIP_NAME}-e2e-internal PROPERTIES COMPILE_DEFINITIONS "VSOMEIP_DLL_COMPILATION_PLUGIN")
     set_target_properties(${VSOMEIP_NAME}-e2e PROPERTIES COMPILE_DEFINITIONS "VSOMEIP_DLL_COMPILATION_PLUGIN")
 endif ()
-target_compile_definitions(${VSOMEIP_NAME}-e2e-internal PUBLIC VSOMEIP_ENABLE_XNET)
-target_compile_definitions(${VSOMEIP_NAME}-e2e PUBLIC VSOMEIP_ENABLE_XNET)
-
 target_link_libraries(${VSOMEIP_NAME}-e2e ${VSOMEIP_NAME} ${Boost_LIBRARIES} ${USE_RT} ${DL_LIBRARY} ${SystemD_LIBRARIES})
 
 if(${CMAKE_SYSTEM_NAME} MATCHES "QNX")
