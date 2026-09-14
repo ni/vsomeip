@@ -25,7 +25,6 @@ void stop_application(int exit_code) {
         app->release_service(SAMPLE_SERVICE_ID, SAMPLE_INSTANCE_ID);
         app->stop();
     }
-    std::exit(exit_code);
 }
 
 bool setup_xnet_stack() {

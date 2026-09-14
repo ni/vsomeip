@@ -35,7 +35,6 @@ void stop_application(int exit_code) {
         app->stop_offer_event(SAMPLE_SERVICE_ID, SAMPLE_INSTANCE_ID, SAMPLE_EVENT_ID);
         app->stop();
     }
-    std::exit(exit_code);
 }
 
 bool setup_xnet_stack() {
