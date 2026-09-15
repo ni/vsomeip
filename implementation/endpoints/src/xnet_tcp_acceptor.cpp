@@ -15,7 +15,7 @@
 
 #include "logger_ext.hpp"
 
-#define VSOMEIP_LOG_PREFIX "xna"
+#define VSOMEIP_LOG_PREFIX "[XNET][tcp-acceptor]"
 
 #define INVALID_SOCKET_VALUE nxINVALID_SOCKET
 #define SOCKET_ERROR_VALUE -1
@@ -30,10 +30,10 @@ boost::system::error_code make_xnet_error(char const* _operation) {
     if (its_mapped_error != boost::asio::error::would_block &&
         its_mapped_error != boost::asio::error::try_again &&
         its_mapped_error != boost::asio::error::in_progress) {
-        VSOMEIP_ERROR << "[XNET][tcp_acceptor][" << _operation << "] failed"
-                      << " raw_error=" << its_raw_error
-                      << " mapped_error=" << its_mapped_error.value()
-                      << " message=" << its_mapped_error.message();
+        VSOMEIP_ERROR_P << "operation=" << _operation << " failed"
+                        << " raw_error=" << its_raw_error
+                        << " mapped_error=" << its_mapped_error.value()
+                        << " message=" << its_mapped_error.message();
     }
     return its_mapped_error;
 }
@@ -155,7 +155,7 @@ bool wait_read_ready(nxSOCKET _socket, std::chrono::milliseconds _timeout,
 }
 
 boost::system::error_code make_unsupported_option_error(char const* _option, char const* _reason) {
-    VSOMEIP_WARNING << "[XNET][tcp_acceptor][" << _option << "] unsupported: " << _reason;
+    VSOMEIP_WARNING_P << "option=" << _option << " unsupported: " << _reason;
     return boost::asio::error::make_error_code(boost::asio::error::operation_not_supported);
 }
 
@@ -173,7 +173,7 @@ xnet_tcp_acceptor::xnet_tcp_acceptor(boost::asio::io_context& _io, nxIpStackRef_
       is_ipv6_(false),
       stop_requested_(false),
       cancel_epoch_(0) {
-    VSOMEIP_INFO << "[XNET][tcp_acceptor][ctor] acceptor created";
+    VSOMEIP_INFO_P << "acceptor created";
 }
 
 xnet_tcp_acceptor::~xnet_tcp_acceptor() {
@@ -356,7 +356,7 @@ void xnet_tcp_acceptor::set_option(boost::asio::ip::tcp::socket::reuse_address _
 
     int opt = _ra.value() ? 1 : 0;
 if (xnet_api::nxsetsockopt(acceptor_, nxSOL_SOCKET, nxSO_REUSEADDR, &opt, static_cast<nxsocklen_t>(sizeof(opt))) == SOCKET_ERROR_VALUE) {
-    _ec = make_xnet_error("set_option:reuse_address");
+    _ec = make_xnet_error("reuse_address");
     return;
 }
 

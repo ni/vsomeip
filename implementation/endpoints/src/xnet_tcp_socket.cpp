@@ -17,7 +17,7 @@
 
 #include "logger_ext.hpp"
 
-#define VSOMEIP_LOG_PREFIX "xnt"
+#define VSOMEIP_LOG_PREFIX "[XNET][tcp]"
 
 #define INVALID_SOCKET_VALUE nxINVALID_SOCKET
 #define SOCKET_ERROR_VALUE -1
@@ -44,10 +44,10 @@ boost::system::error_code make_xnet_error(char const* _operation) {
         its_mapped_error != boost::asio::error::in_progress &&
         its_mapped_error != boost::asio::error::bad_descriptor &&
         its_mapped_error != boost::asio::error::operation_aborted) {
-        VSOMEIP_ERROR << "[XNET][tcp][" << _operation << "] failed"
-                      << " raw_error=" << its_raw_error
-                      << " mapped_error=" << its_mapped_error.value()
-                      << " message=" << its_mapped_error.message();
+        VSOMEIP_ERROR_P << "operation=" << _operation << " failed"
+                        << " raw_error=" << its_raw_error
+                        << " mapped_error=" << its_mapped_error.value()
+                        << " message=" << its_mapped_error.message();
     }
     return its_mapped_error;
 }
@@ -182,7 +182,7 @@ bool native_to_endpoint(nxsockaddr_storage const& _storage, nxsocklen_t _len, bo
 }
 
 boost::system::error_code make_unsupported_option_error(char const* _option, char const* _reason) {
-    VSOMEIP_WARNING << "[XNET][tcp][" << _option << "] unsupported: " << _reason;
+    VSOMEIP_WARNING_P << "option=" << _option << " unsupported: " << _reason;
     return boost::asio::error::make_error_code(boost::asio::error::operation_not_supported);
 }
 
@@ -202,7 +202,7 @@ xnet_tcp_socket::xnet_tcp_socket(boost::asio::io_context& _io, nxIpStackRef_t _x
       rx_stop_requested_(false),
       tx_stop_requested_(false),
       cancel_epoch_(0) {
-    VSOMEIP_INFO << "[XNET][tcp][ctor] socket created";
+    VSOMEIP_INFO_P << "socket created";
 }
 
 xnet_tcp_socket::~xnet_tcp_socket() {
@@ -496,7 +496,7 @@ void xnet_tcp_socket::set_option(boost::asio::ip::tcp::no_delay _nd, boost::syst
 
     int opt = _nd.value() ? 1 : 0;
 if (xnet_api::nxsetsockopt(socket_, nxIPPROTO_TCP, nxTCP_NODELAY, &opt, static_cast<nxsocklen_t>(sizeof(opt))) == SOCKET_ERROR_VALUE) {
-    _ec = make_xnet_error("set_option:no_delay");
+    _ec = make_xnet_error("no_delay");
     return;
 }
 
@@ -509,7 +509,7 @@ void xnet_tcp_socket::set_option(boost::asio::ip::tcp::socket::keep_alive _ka, b
         return;
     }
 
-    _ec = make_unsupported_option_error("set_option:keep_alive",
+    _ec = make_unsupported_option_error("keep_alive",
                                         _ka.value() ? "enable keepalive is not supported by XNET socket API"
                                                     : "disable keepalive is not supported by XNET socket API");
 }
@@ -525,7 +525,7 @@ linger_opt.l_onoff = _l.enabled() ? 1 : 0;
 linger_opt.l_linger = _l.timeout();
 if (xnet_api::nxsetsockopt(socket_, nxSOL_SOCKET, nxSO_LINGER, &linger_opt, static_cast<nxsocklen_t>(sizeof(linger_opt)))
     == SOCKET_ERROR_VALUE) {
-    _ec = make_xnet_error("set_option:linger");
+    _ec = make_xnet_error("linger");
     return;
 }
 
@@ -540,7 +540,7 @@ void xnet_tcp_socket::set_option(boost::asio::ip::tcp::socket::reuse_address _ra
 
     int opt = _ra.value() ? 1 : 0;
 if (xnet_api::nxsetsockopt(socket_, nxSOL_SOCKET, nxSO_REUSEADDR, &opt, static_cast<nxsocklen_t>(sizeof(opt))) == SOCKET_ERROR_VALUE) {
-    _ec = make_xnet_error("set_option:reuse_address");
+    _ec = make_xnet_error("reuse_address");
     return;
 }
 
@@ -836,7 +836,7 @@ bool xnet_tcp_socket::set_user_timeout(unsigned int _timeout) {
         return false;
     }
 
-    VSOMEIP_WARNING << "[XNET][tcp][set_user_timeout] unsupported by XNET API, timeout=" << _timeout;
+    VSOMEIP_WARNING_P << "unsupported by XNET API, timeout=" << _timeout;
     errno = ENOTSUP;
     return false;
 }
@@ -847,7 +847,7 @@ bool xnet_tcp_socket::set_keepidle(uint32_t _idle) {
         return false;
     }
 
-    VSOMEIP_WARNING << "[XNET][tcp][set_keepidle] unsupported by XNET API, idle=" << _idle;
+    VSOMEIP_WARNING_P << "unsupported by XNET API, idle=" << _idle;
     errno = ENOTSUP;
     return false;
 }
@@ -858,7 +858,7 @@ bool xnet_tcp_socket::set_keepintvl(uint32_t _interval) {
         return false;
     }
 
-    VSOMEIP_WARNING << "[XNET][tcp][set_keepintvl] unsupported by XNET API, interval=" << _interval;
+    VSOMEIP_WARNING_P << "unsupported by XNET API, interval=" << _interval;
     errno = ENOTSUP;
     return false;
 }
@@ -869,7 +869,7 @@ bool xnet_tcp_socket::set_keepcnt(uint32_t _count) {
         return false;
     }
 
-    VSOMEIP_WARNING << "[XNET][tcp][set_keepcnt] unsupported by XNET API, count=" << _count;
+    VSOMEIP_WARNING_P << "unsupported by XNET API, count=" << _count;
     errno = ENOTSUP;
     return false;
 }
@@ -880,7 +880,7 @@ bool xnet_tcp_socket::set_quick_ack() {
         return false;
     }
 
-    VSOMEIP_WARNING << "[XNET][tcp][set_quick_ack] unsupported by XNET API";
+    VSOMEIP_WARNING_P << "unsupported by XNET API";
     errno = ENOTSUP;
     return false;
 }
