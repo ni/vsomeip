@@ -356,7 +356,7 @@ void xnet_tcp_acceptor::set_option(boost::asio::ip::tcp::socket::reuse_address _
 
     int opt = _ra.value() ? 1 : 0;
 if (xnet_api::nxsetsockopt(acceptor_, nxSOL_SOCKET, nxSO_REUSEADDR, &opt, static_cast<nxsocklen_t>(sizeof(opt))) == SOCKET_ERROR_VALUE) {
-    _ec = make_xnet_error("set_option:reuse_address");
+    _ec = make_xnet_error("reuse_address");
     return;
 }
 

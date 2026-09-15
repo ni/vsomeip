@@ -496,7 +496,7 @@ void xnet_tcp_socket::set_option(boost::asio::ip::tcp::no_delay _nd, boost::syst
 
     int opt = _nd.value() ? 1 : 0;
 if (xnet_api::nxsetsockopt(socket_, nxIPPROTO_TCP, nxTCP_NODELAY, &opt, static_cast<nxsocklen_t>(sizeof(opt))) == SOCKET_ERROR_VALUE) {
-    _ec = make_xnet_error("set_option:no_delay");
+    _ec = make_xnet_error("no_delay");
     return;
 }
 
@@ -509,7 +509,7 @@ void xnet_tcp_socket::set_option(boost::asio::ip::tcp::socket::keep_alive _ka, b
         return;
     }
 
-    _ec = make_unsupported_option_error("set_option:keep_alive",
+    _ec = make_unsupported_option_error("keep_alive",
                                         _ka.value() ? "enable keepalive is not supported by XNET socket API"
                                                     : "disable keepalive is not supported by XNET socket API");
 }
@@ -525,7 +525,7 @@ linger_opt.l_onoff = _l.enabled() ? 1 : 0;
 linger_opt.l_linger = _l.timeout();
 if (xnet_api::nxsetsockopt(socket_, nxSOL_SOCKET, nxSO_LINGER, &linger_opt, static_cast<nxsocklen_t>(sizeof(linger_opt)))
     == SOCKET_ERROR_VALUE) {
-    _ec = make_xnet_error("set_option:linger");
+    _ec = make_xnet_error("linger");
     return;
 }
 
@@ -540,7 +540,7 @@ void xnet_tcp_socket::set_option(boost::asio::ip::tcp::socket::reuse_address _ra
 
     int opt = _ra.value() ? 1 : 0;
 if (xnet_api::nxsetsockopt(socket_, nxSOL_SOCKET, nxSO_REUSEADDR, &opt, static_cast<nxsocklen_t>(sizeof(opt))) == SOCKET_ERROR_VALUE) {
-    _ec = make_xnet_error("set_option:reuse_address");
+    _ec = make_xnet_error("reuse_address");
     return;
 }
 
