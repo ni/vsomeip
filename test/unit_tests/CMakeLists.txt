@@ -19,6 +19,11 @@ add_subdirectory(utility_utility_tests)
 add_subdirectory(in_memory_json_api_tests)
 # --- NI modification: END ---
 
+# --- NI modification: BEGIN ---
+# Unit tests for the XNET TCP/UDP socket wrappers.
+add_subdirectory(xnet_tests)
+# --- NI modification: END ---
+
 if (NOT WIN32)
 add_subdirectory(netlink_tests)
 add_subdirectory(usei_tests)
