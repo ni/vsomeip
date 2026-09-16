@@ -53,6 +53,19 @@ public:
     void async_receive(boost::asio::mutable_buffer, rw_handler _handler) override { _handler({}, 0); }
     void async_write(std::vector<boost::asio::const_buffer> const&, rw_handler _handler) override { _handler({}, 0); }
     void async_write(boost::asio::const_buffer const&, completion_condition, rw_handler _handler) override { _handler({}, 0); }
+
+#if defined(__linux__)
+    [[nodiscard]] bool set_user_timeout(unsigned int _timeout) override { return true };
+    [[nodiscard]] bool set_keepidle(uint32_t _idle) override { return true };
+    [[nodiscard]] bool set_keepintvl(uint32_t _interval) override { return true };
+    [[nodiscard]] bool set_keepcnt(uint32_t _count) override { return true };
+    [[nodiscard]] bool set_quick_ack() override { return true };
+#endif
+
+#if defined(__linux__) || defined(__QNX__)
+    [[nodiscard]] bool bind_to_device(std::string const& _device) override { return true };
+    [[nodiscard]] bool can_read_fd_flags() override { return true };
+#endif
 };
 
 }

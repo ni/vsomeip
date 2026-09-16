@@ -10,7 +10,7 @@
 
 #if defined(__linux__) || defined(__QNX__)
 #include "asio_uds_acceptor.hpp"
-#include asio_uds_socket.hpp"
+#include "asio_uds_socket.hpp"
 #endif
 
 TEST(xnet_socket_factory_policy_test, create_timer_uses_asio_timer_in_all_modes) {
