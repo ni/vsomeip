@@ -71,11 +71,6 @@ xnet_socket_factory::xnet_socket_factory(nxIpStackRef_t xnet_stack)
         log_startup_report(xnet_stack_);
 }
 
-// Always provide the default constructor because it is always declared in the header.
-xnet_socket_factory::xnet_socket_factory() {
-    log_startup_report(xnet_stack_);
-}
-
 #if defined(__linux__)
     std::shared_ptr<abstract_netlink_connector>
         xnet_socket_factory::create_netlink_connector(boost::asio::io_context& _io, const boost::asio::ip::address& _address,
@@ -88,33 +83,18 @@ xnet_socket_factory::xnet_socket_factory() {
 #endif
 
     std::unique_ptr<udp_socket> xnet_socket_factory::create_udp_socket(boost::asio::io_context& _io) {
-        if (!is_xnet_enabled()) {
-            VSOMEIP_ERROR_P << k_xnet_backend_tag
-                          << " failure_class=stack_init stack_ref=null";
-            throw std::runtime_error("xnet_socket_factory: XNET backend selected but stack is null (udp_socket)");
-        }
         VSOMEIP_INFO_P << k_xnet_backend_tag
                      << " stack_ref=" << xnet_stack_;
         return std::make_unique<xnet_udp_socket>(_io, xnet_stack_);
     }
 
     std::unique_ptr<tcp_socket> xnet_socket_factory::create_tcp_socket(boost::asio::io_context& _io) {
-        if (!is_xnet_enabled()) {
-            VSOMEIP_ERROR_P << k_xnet_backend_tag
-                          << " failure_class=stack_init stack_ref=null";
-            throw std::runtime_error("xnet_socket_factory: XNET backend selected but stack is null (tcp_socket)");
-        }
         VSOMEIP_INFO_P << k_xnet_backend_tag
                      << " stack_ref=" << xnet_stack_;
         return std::make_unique<xnet_tcp_socket>(_io, xnet_stack_);
     }
 
     std::unique_ptr<tcp_acceptor> xnet_socket_factory::create_tcp_acceptor(boost::asio::io_context& _io) {
-        if (!is_xnet_enabled()) {
-            VSOMEIP_ERROR_P << k_xnet_backend_tag
-                          << " failure_class=stack_init stack_ref=null";
-            throw std::runtime_error("xnet_socket_factory: XNET backend selected but stack is null (tcp_acceptor)");
-        }
         VSOMEIP_INFO_P << k_xnet_backend_tag
                      << " stack_ref=" << xnet_stack_;
         return std::make_unique<xnet_tcp_acceptor>(_io, xnet_stack_);
@@ -126,7 +106,7 @@ xnet_socket_factory::xnet_socket_factory() {
     }
 
     bool xnet_socket_factory::is_xnet_backend() const {
-        return is_xnet_enabled();
+        return true;
     }
 
 #if defined(__linux__) || defined(__QNX__)
