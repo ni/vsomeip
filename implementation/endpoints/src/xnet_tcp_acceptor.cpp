@@ -17,7 +17,6 @@
 
 #define VSOMEIP_LOG_PREFIX "[XNET][tcp-acceptor]"
 
-#define INVALID_SOCKET_VALUE nxINVALID_SOCKET
 #define SOCKET_ERROR_VALUE -1
 
 namespace vsomeip_v3 {
@@ -161,15 +160,10 @@ boost::system::error_code make_unsupported_option_error(char const* _option, cha
 
 } // namespace
 
-xnet_tcp_acceptor::xnet_tcp_acceptor(boost::asio::io_context& _io, nxIpStackRef_t _xnet_stack) :
-    xnet_tcp_acceptor(_io, _xnet_stack, {}) {
-}
-
-xnet_tcp_acceptor::xnet_tcp_acceptor(boost::asio::io_context& _io, nxIpStackRef_t _xnet_stack, std::shared_ptr<void> _stack_lifetime)
-    : acceptor_(INVALID_SOCKET_VALUE),
+xnet_tcp_acceptor::xnet_tcp_acceptor(boost::asio::io_context& _io, nxIpStackRef_t _xnet_stack)
+    : acceptor_(nxINVALID_SOCKET),
       io_context_(_io),
       xnet_stack_(_xnet_stack),
-      stack_lifetime_(std::move(_stack_lifetime)),
       is_ipv6_(false),
       stop_requested_(false),
       cancel_epoch_(0) {
@@ -243,7 +237,7 @@ void xnet_tcp_acceptor::worker_loop() {
 }
 
 bool xnet_tcp_acceptor::is_open() const {
-    return acceptor_ != INVALID_SOCKET_VALUE;
+    return acceptor_ != nxINVALID_SOCKET;
 }
 
 int xnet_tcp_acceptor::native_handle() {
@@ -260,11 +254,11 @@ void xnet_tcp_acceptor::open(boost::asio::ip::tcp::endpoint::protocol_type _pt, 
 
     is_ipv6_ = (_pt == boost::asio::ip::tcp::v6());
 
-acceptor_ = xnet_api::nxsocket(xnet_stack_, is_ipv6_ ? nxAF_INET6 : nxAF_INET, nxSOCK_STREAM, nxIPPROTO_TCP);
-const bool is_invalid_socket = (acceptor_ == nxINVALID_SOCKET);
+    acceptor_ = xnet_api::nxsocket(xnet_stack_, is_ipv6_ ? nxAF_INET6 : nxAF_INET, nxSOCK_STREAM, nxIPPROTO_TCP);
+    const bool is_invalid_socket = (acceptor_ == nxINVALID_SOCKET);
 
-if (is_invalid_socket) {
-        acceptor_ = INVALID_SOCKET_VALUE;
+    if (is_invalid_socket) {
+        acceptor_ = nxINVALID_SOCKET;
         _ec = make_xnet_error("open");
         return;
     }
@@ -293,10 +287,10 @@ void xnet_tcp_acceptor::bind(boost::asio::ip::tcp::endpoint const& _ep, boost::s
         return;
     }
 
-if (xnet_api::nxbind(acceptor_, reinterpret_cast<nxsockaddr*>(&its_storage), its_len) == SOCKET_ERROR_VALUE) {
-    _ec = make_xnet_error("bind");
-    return;
-}
+    if (xnet_api::nxbind(acceptor_, reinterpret_cast<nxsockaddr*>(&its_storage), its_len) == SOCKET_ERROR_VALUE) {
+        _ec = make_xnet_error("bind");
+        return;
+    }
 
     _ec.clear();
 }
@@ -304,27 +298,17 @@ if (xnet_api::nxbind(acceptor_, reinterpret_cast<nxsockaddr*>(&its_storage), its
 void xnet_tcp_acceptor::close(boost::system::error_code& _ec) {
     cancel_epoch_.fetch_add(1, std::memory_order_relaxed);
 
-    // Guarantee that the worker thread is always stopped and joined, even if
-    // the backend close call below fails and the function returns early. A
-    // joinable std::thread destroyed during acceptor teardown would otherwise
-    // call std::terminate().
-    struct worker_stop_guard {
-        xnet_tcp_acceptor* self;
-        ~worker_stop_guard() { self->stop_worker_thread(); }
-    } its_worker_stop_guard{this};
-
-    if (!is_open()) {
-        _ec.clear();
-        return;
+    if (is_open()) {
+        if (xnet_api::nxclose(acceptor_) == SOCKET_ERROR_VALUE) {
+            _ec = make_xnet_error("close");
+            stop_worker_thread();
+            return;
+        }
+        acceptor_ = nxINVALID_SOCKET;
+        VSOMEIP_INFO_P << "socket closed";
     }
-
-if (xnet_api::nxclose(acceptor_) == SOCKET_ERROR_VALUE) {
-    _ec = make_xnet_error("close");
-    return;
-}
-
-acceptor_ = INVALID_SOCKET_VALUE;
     _ec.clear();
+    stop_worker_thread();
 }
 
 void xnet_tcp_acceptor::cancel(boost::system::error_code& _ec) {
@@ -340,10 +324,10 @@ void xnet_tcp_acceptor::listen(int _backlog, boost::system::error_code& _ec) {
     }
 
     const auto its_backlog = std::min(_backlog, static_cast<int>(std::numeric_limits<int16_t>::max()));
-if (xnet_api::nxlisten(acceptor_, its_backlog) == SOCKET_ERROR_VALUE) {
-    _ec = make_xnet_error("listen");
-    return;
-}
+    if (xnet_api::nxlisten(acceptor_, its_backlog) == SOCKET_ERROR_VALUE) {
+        _ec = make_xnet_error("listen");
+        return;
+    }
 
     _ec.clear();
 }
@@ -355,10 +339,10 @@ void xnet_tcp_acceptor::set_option(boost::asio::ip::tcp::socket::reuse_address _
     }
 
     int opt = _ra.value() ? 1 : 0;
-if (xnet_api::nxsetsockopt(acceptor_, nxSOL_SOCKET, nxSO_REUSEADDR, &opt, static_cast<nxsocklen_t>(sizeof(opt))) == SOCKET_ERROR_VALUE) {
-    _ec = make_xnet_error("reuse_address");
-    return;
-}
+    if (xnet_api::nxsetsockopt(acceptor_, nxSOL_SOCKET, nxSO_REUSEADDR, &opt, static_cast<nxsocklen_t>(sizeof(opt))) == SOCKET_ERROR_VALUE) {
+        _ec = make_xnet_error("reuse_address");
+        return;
+    }
 
     _ec.clear();
 }
@@ -423,7 +407,7 @@ void xnet_tcp_acceptor::async_accept(tcp_socket& _socket, boost::asio::ip::tcp::
         boost::system::error_code its_error;
         nxsockaddr_storage its_peer_storage{};
         nxsocklen_t its_peer_len = static_cast<nxsocklen_t>(sizeof(its_peer_storage));
-        nxSOCKET its_client_socket = INVALID_SOCKET_VALUE;
+        nxSOCKET its_client_socket = nxINVALID_SOCKET;
 
         for (;;) {
             if (is_canceled(its_epoch)) {
@@ -441,11 +425,11 @@ void xnet_tcp_acceptor::async_accept(tcp_socket& _socket, boost::asio::ip::tcp::
                 continue;
             }
 
-its_client_socket = xnet_api::nxaccept(its_acceptor, reinterpret_cast<nxsockaddr*>(&its_peer_storage), &its_peer_len);
+            its_client_socket = xnet_api::nxaccept(its_acceptor, reinterpret_cast<nxsockaddr*>(&its_peer_storage), &its_peer_len);
 
-const bool is_accept_failed = (its_client_socket == nxINVALID_SOCKET);
+            const bool is_accept_failed = (its_client_socket == nxINVALID_SOCKET);
 
-if (is_accept_failed) {
+            if (is_accept_failed) {
                 its_error = make_xnet_error("async_accept");
                 if (its_error == boost::asio::error::would_block || its_error == boost::asio::error::try_again
                     || its_error == boost::asio::error::interrupted || its_error == boost::asio::error::in_progress) {
@@ -456,14 +440,14 @@ if (is_accept_failed) {
 
             if (!native_to_endpoint(its_peer_storage, its_peer_len, peer_ep.get(), its_error)) {
                 (void)xnet_api::nxclose(its_client_socket);
-                its_client_socket = INVALID_SOCKET_VALUE;
+                its_client_socket = nxINVALID_SOCKET;
                 break;
             }
 
             its_socket->assign_accepted_socket(its_client_socket, peer_ep.get().protocol() == boost::asio::ip::tcp::v6(), its_error);
             if (its_error) {
                 (void)xnet_api::nxclose(its_client_socket);
-                its_client_socket = INVALID_SOCKET_VALUE;
+                its_client_socket = nxINVALID_SOCKET;
             }
             break;
         }

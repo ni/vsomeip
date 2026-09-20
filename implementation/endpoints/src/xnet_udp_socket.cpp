@@ -413,35 +413,17 @@ void xnet_udp_socket::bind(boost::asio::ip::udp::endpoint const& ep, boost::syst
         return;
     }
 
-    if (is_ipv6_) {
-        nxsockaddr_in6 addr{};
-        addr.sin6_family = nxAF_INET6;
-        addr.sin6_port = boost::endian::native_to_big(ep.port());
-        addr.sin6_flowinfo = 0;
-        addr.sin6_scope_id = ep.address().to_v6().scope_id();
+    nxsockaddr_storage its_storage{};
+    nxsocklen_t its_length = 0;
+    if (!endpoint_to_native(ep, its_storage, its_length, ec)) {
+        return;
+    }
 
-        auto ipv6_bytes = ep.address().to_v6().to_bytes();
-        std::memcpy(&addr.sin6_addr, ipv6_bytes.data(), ipv6_bytes.size());
-
-        if (xnet_api::nxbind(socket_, reinterpret_cast<nxsockaddr*>(&addr), sizeof(addr)) == SOCKET_ERROR_VALUE) {
-            ec = make_xnet_error("bind");
-        } else {
-            VSOMEIP_INFO_P << "bound to " << ep.address().to_string() << ":" << ep.port();
-            ec.clear();
-        }
+    if (xnet_api::nxbind(socket_, reinterpret_cast<nxsockaddr*>(&its_storage), its_length) == SOCKET_ERROR_VALUE) {
+        ec = make_xnet_error("bind");
     } else {
-        nxsockaddr_in addr{};
-        addr.sin_family = nxAF_INET;
-        addr.sin_port = boost::endian::native_to_big(ep.port());
-        const auto its_v4 = boost::endian::native_to_big(ep.address().to_v4().to_uint());
-        std::memcpy(&addr.sin_addr, &its_v4, sizeof(its_v4));
-
-        if (xnet_api::nxbind(socket_, reinterpret_cast<nxsockaddr*>(&addr), sizeof(addr)) == SOCKET_ERROR_VALUE) {
-            ec = make_xnet_error("bind");
-        } else {
-            VSOMEIP_INFO_P << "bound to " << ep.address().to_string() << ":" << ep.port();
-            ec.clear();
-        }
+        VSOMEIP_INFO_P << "bound to " << ep.address().to_string() << ":" << ep.port();
+        ec.clear();
     }
 }
 

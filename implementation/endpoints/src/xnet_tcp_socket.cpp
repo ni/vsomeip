@@ -19,7 +19,6 @@
 
 #define VSOMEIP_LOG_PREFIX "[XNET][tcp]"
 
-#define INVALID_SOCKET_VALUE nxINVALID_SOCKET
 #define SOCKET_ERROR_VALUE -1
 
 namespace vsomeip_v3 {
@@ -90,17 +89,6 @@ bool wait_socket_ready(nxSOCKET _socket, boost::asio::ip::tcp::socket::wait_type
         const auto its_result = xnet_api::nxselect(static_cast<int32_t>(_socket + 1), &read_fds, &write_fds, &except_fds, &timeout);
 
         if (its_result > 0) {
-            bool is_ready = false;
-            if (_wait == boost::asio::ip::tcp::socket::wait_read) {
-                is_ready = (nxFD_ISSET(_socket, &read_fds) != 0);
-            } else if (_wait == boost::asio::ip::tcp::socket::wait_write) {
-                is_ready = (nxFD_ISSET(_socket, &write_fds) != 0);
-            } else {
-                is_ready = (nxFD_ISSET(_socket, &except_fds) != 0);
-            }
-            if (!is_ready) {
-                continue;
-            }
             _ec.clear();
             return true;
         }
@@ -188,17 +176,11 @@ boost::system::error_code make_unsupported_option_error(char const* _option, cha
 
 } // namespace
 
-xnet_tcp_socket::xnet_tcp_socket(boost::asio::io_context& _io, nxIpStackRef_t _xnet_stack) :
-    xnet_tcp_socket(_io, _xnet_stack, {}) {
-}
-
-xnet_tcp_socket::xnet_tcp_socket(boost::asio::io_context& _io, nxIpStackRef_t _xnet_stack, std::shared_ptr<void> _stack_lifetime)
-    : socket_(INVALID_SOCKET_VALUE),
+xnet_tcp_socket::xnet_tcp_socket(boost::asio::io_context& _io, nxIpStackRef_t _xnet_stack)
+    : socket_(nxINVALID_SOCKET),
       io_context_(_io),
       xnet_stack_(_xnet_stack),
-      stack_lifetime_(std::move(_stack_lifetime)),
       is_ipv6_(false),
-      non_blocking_mode_(false),
       rx_stop_requested_(false),
       tx_stop_requested_(false),
       cancel_epoch_(0) {
@@ -333,7 +315,7 @@ void xnet_tcp_socket::tx_worker_loop() {
 }
 
 bool xnet_tcp_socket::is_open() const {
-    return socket_ != INVALID_SOCKET_VALUE;
+    return socket_ != nxINVALID_SOCKET;
 }
 
 int xnet_tcp_socket::native_handle() {
@@ -350,15 +332,14 @@ void xnet_tcp_socket::assign_accepted_socket(nxSOCKET _socket, bool _is_ipv6, bo
 
     auto its_socket = _socket;
 
-int opt = 0;
-if (xnet_api::nxsetsockopt(its_socket, nxSOL_SOCKET, nxSO_NONBLOCK, &opt, static_cast<nxsocklen_t>(sizeof(opt))) == SOCKET_ERROR_VALUE) {
-    _ec = make_xnet_error("assign_accepted_socket:non_blocking");
-    return;
-}
+    int opt = 0;
+    if (xnet_api::nxsetsockopt(its_socket, nxSOL_SOCKET, nxSO_NONBLOCK, &opt, static_cast<nxsocklen_t>(sizeof(opt))) == SOCKET_ERROR_VALUE) {
+        _ec = make_xnet_error("assign_accepted_socket:non_blocking");
+        return;
+    }
 
-socket_ = its_socket;
+    socket_ = its_socket;
     is_ipv6_ = _is_ipv6;
-    non_blocking_mode_ = false;
     cancel_epoch_.fetch_add(1, std::memory_order_relaxed);
     _ec.clear();
 }
@@ -373,26 +354,25 @@ void xnet_tcp_socket::open(boost::asio::ip::tcp::endpoint::protocol_type _pt, bo
 
     is_ipv6_ = (_pt == boost::asio::ip::tcp::v6());
 
-socket_ = xnet_api::nxsocket(xnet_stack_, is_ipv6_ ? nxAF_INET6 : nxAF_INET, nxSOCK_STREAM, nxIPPROTO_TCP);
-const bool is_invalid_socket = (socket_ == nxINVALID_SOCKET);
+    socket_ = xnet_api::nxsocket(xnet_stack_, is_ipv6_ ? nxAF_INET6 : nxAF_INET, nxSOCK_STREAM, nxIPPROTO_TCP);
+    const bool is_invalid_socket = (socket_ == nxINVALID_SOCKET);
 
-if (is_invalid_socket) {
-    socket_ = INVALID_SOCKET_VALUE;
-    _ec = make_xnet_error("open");
-    return;
-}
+    if (is_invalid_socket) {
+        socket_ = nxINVALID_SOCKET;
+        _ec = make_xnet_error("open");
+        return;
+    }
 
-int opt = 0;
-if (xnet_api::nxsetsockopt(socket_, nxSOL_SOCKET, nxSO_NONBLOCK, &opt, static_cast<nxsocklen_t>(sizeof(opt))) == SOCKET_ERROR_VALUE) {
-    const auto its_non_blocking_error = make_xnet_error("open:non_blocking");
-    boost::system::error_code its_close_error;
-    close(its_close_error);
-    _ec = its_non_blocking_error;
-    return;
-}
+    int opt = 0;
+    if (xnet_api::nxsetsockopt(socket_, nxSOL_SOCKET, nxSO_NONBLOCK, &opt, static_cast<nxsocklen_t>(sizeof(opt))) == SOCKET_ERROR_VALUE) {
+        const auto its_non_blocking_error = make_xnet_error("open:non_blocking");
+        boost::system::error_code its_close_error;
+        close(its_close_error);
+        _ec = its_non_blocking_error;
+        return;
+    }
 
-cancel_epoch_.fetch_add(1, std::memory_order_relaxed);
-    non_blocking_mode_ = false;
+    cancel_epoch_.fetch_add(1, std::memory_order_relaxed);
     _ec.clear();
 }
 
@@ -408,10 +388,10 @@ void xnet_tcp_socket::bind(boost::asio::ip::tcp::endpoint const& _ep, boost::sys
         return;
     }
 
-if (xnet_api::nxbind(socket_, reinterpret_cast<nxsockaddr*>(&its_storage), its_len) == SOCKET_ERROR_VALUE) {
-    _ec = make_xnet_error("bind");
-    return;
-}
+    if (xnet_api::nxbind(socket_, reinterpret_cast<nxsockaddr*>(&its_storage), its_len) == SOCKET_ERROR_VALUE) {
+        _ec = make_xnet_error("bind");
+        return;
+    }
 
     _ec.clear();
 }
@@ -419,28 +399,17 @@ if (xnet_api::nxbind(socket_, reinterpret_cast<nxsockaddr*>(&its_storage), its_l
 void xnet_tcp_socket::close(boost::system::error_code& _ec) {
     cancel_epoch_.fetch_add(1, std::memory_order_relaxed);
 
-    // Guarantee that the worker threads are always stopped and joined, even if
-    // the backend close call below fails and the function returns early. A
-    // joinable std::thread destroyed during socket teardown would otherwise
-    // call std::terminate().
-    struct worker_stop_guard {
-        xnet_tcp_socket* self;
-        ~worker_stop_guard() { self->stop_worker_threads(); }
-    } its_worker_stop_guard{this};
-
-    if (!is_open()) {
-        _ec.clear();
-        return;
+    if (is_open()) {
+        if (xnet_api::nxclose(socket_) == SOCKET_ERROR_VALUE) {
+            _ec = make_xnet_error("close");
+            stop_worker_threads();
+            return;
+        }
+        VSOMEIP_INFO_P << "socket closed";
+        socket_ = nxINVALID_SOCKET;
     }
-
-if (xnet_api::nxclose(socket_) == SOCKET_ERROR_VALUE) {
-    _ec = make_xnet_error("close");
-    return;
-}
-
-socket_ = INVALID_SOCKET_VALUE;
-    non_blocking_mode_ = false;
     _ec.clear();
+    stop_worker_threads();
 }
 
 void xnet_tcp_socket::cancel(boost::system::error_code& _ec) {
@@ -457,10 +426,10 @@ boost::asio::ip::tcp::endpoint xnet_tcp_socket::local_endpoint(boost::system::er
     nxsockaddr_storage its_storage{};
     nxsocklen_t its_len = static_cast<nxsocklen_t>(sizeof(its_storage));
 
-if (xnet_api::nxgetsockname(socket_, reinterpret_cast<nxsockaddr*>(&its_storage), &its_len) == SOCKET_ERROR_VALUE) {
-    _ec = make_xnet_error("local_endpoint");
-    return {};
-}
+    if (xnet_api::nxgetsockname(socket_, reinterpret_cast<nxsockaddr*>(&its_storage), &its_len) == SOCKET_ERROR_VALUE) {
+        _ec = make_xnet_error("local_endpoint");
+        return {};
+    }
 
     boost::asio::ip::tcp::endpoint its_endpoint;
     if (!native_to_endpoint(its_storage, its_len, its_endpoint, _ec)) {
@@ -495,10 +464,10 @@ void xnet_tcp_socket::set_option(boost::asio::ip::tcp::no_delay _nd, boost::syst
     }
 
     int opt = _nd.value() ? 1 : 0;
-if (xnet_api::nxsetsockopt(socket_, nxIPPROTO_TCP, nxTCP_NODELAY, &opt, static_cast<nxsocklen_t>(sizeof(opt))) == SOCKET_ERROR_VALUE) {
-    _ec = make_xnet_error("no_delay");
-    return;
-}
+    if (xnet_api::nxsetsockopt(socket_, nxIPPROTO_TCP, nxTCP_NODELAY, &opt, static_cast<nxsocklen_t>(sizeof(opt))) == SOCKET_ERROR_VALUE) {
+        _ec = make_xnet_error("no_delay");
+        return;
+    }
 
     _ec.clear();
 }
@@ -520,14 +489,14 @@ void xnet_tcp_socket::set_option(boost::asio::ip::tcp::socket::linger _l, boost:
         return;
     }
 
-nxlinger linger_opt{};
-linger_opt.l_onoff = _l.enabled() ? 1 : 0;
-linger_opt.l_linger = _l.timeout();
-if (xnet_api::nxsetsockopt(socket_, nxSOL_SOCKET, nxSO_LINGER, &linger_opt, static_cast<nxsocklen_t>(sizeof(linger_opt)))
-    == SOCKET_ERROR_VALUE) {
-    _ec = make_xnet_error("linger");
-    return;
-}
+    nxlinger linger_opt{};
+    linger_opt.l_onoff = _l.enabled() ? 1 : 0;
+    linger_opt.l_linger = _l.timeout();
+    if (xnet_api::nxsetsockopt(socket_, nxSOL_SOCKET, nxSO_LINGER, &linger_opt, static_cast<nxsocklen_t>(sizeof(linger_opt)))
+        == SOCKET_ERROR_VALUE) {
+        _ec = make_xnet_error("linger");
+        return;
+    }
 
     _ec.clear();
 }
@@ -539,10 +508,10 @@ void xnet_tcp_socket::set_option(boost::asio::ip::tcp::socket::reuse_address _ra
     }
 
     int opt = _ra.value() ? 1 : 0;
-if (xnet_api::nxsetsockopt(socket_, nxSOL_SOCKET, nxSO_REUSEADDR, &opt, static_cast<nxsocklen_t>(sizeof(opt))) == SOCKET_ERROR_VALUE) {
-    _ec = make_xnet_error("reuse_address");
-    return;
-}
+    if (xnet_api::nxsetsockopt(socket_, nxSOL_SOCKET, nxSO_REUSEADDR, &opt, static_cast<nxsocklen_t>(sizeof(opt))) == SOCKET_ERROR_VALUE) {
+        _ec = make_xnet_error("reuse_address");
+        return;
+    }
 
     _ec.clear();
 }
@@ -566,29 +535,29 @@ void xnet_tcp_socket::async_connect(boost::asio::ip::tcp::endpoint const& _ep, c
             return;
         }
 
-const auto its_result = xnet_api::nxconnect(its_socket, reinterpret_cast<nxsockaddr*>(&its_storage), its_length);
+        const auto its_result = xnet_api::nxconnect(its_socket, reinterpret_cast<nxsockaddr*>(&its_storage), its_length);
 
-if (its_result == SOCKET_ERROR_VALUE) {
-    its_error = make_xnet_error("async_connect");
-    if (is_would_block_like(its_error)) {
-        boost::system::error_code its_wait_error;
-        if (wait_socket_ready(its_socket, boost::asio::ip::tcp::socket::wait_write,
-                              tx_stop_requested_, cancel_epoch_, its_epoch, its_wait_error)) {
-            int32_t its_so_error = 0;
-            nxsocklen_t its_so_error_len = static_cast<nxsocklen_t>(sizeof(its_so_error));
-            if (xnet_api::nxgetsockopt(its_socket, nxSOL_SOCKET, nxSO_ERROR, &its_so_error, &its_so_error_len) == SOCKET_ERROR_VALUE
-                || its_so_error_len < static_cast<nxsocklen_t>(sizeof(its_so_error))) {
-                its_error = make_xnet_error("async_connect:so_error_query");
-            } else if (its_so_error != 0) {
-                its_error = xnet_to_boost_error(static_cast<int>(its_so_error));
-            } else {
-                its_error.clear();
+        if (its_result == SOCKET_ERROR_VALUE) {
+            its_error = make_xnet_error("async_connect");
+            if (is_would_block_like(its_error)) {
+                boost::system::error_code its_wait_error;
+                if (wait_socket_ready(its_socket, boost::asio::ip::tcp::socket::wait_write,
+                                      tx_stop_requested_, cancel_epoch_, its_epoch, its_wait_error)) {
+                    int32_t its_so_error = 0;
+                    nxsocklen_t its_so_error_len = static_cast<nxsocklen_t>(sizeof(its_so_error));
+                    if (xnet_api::nxgetsockopt(its_socket, nxSOL_SOCKET, nxSO_ERROR, &its_so_error, &its_so_error_len) == SOCKET_ERROR_VALUE
+                        || its_so_error_len < static_cast<nxsocklen_t>(sizeof(its_so_error))) {
+                        its_error = make_xnet_error("async_connect:so_error_query");
+                    } else if (its_so_error != 0) {
+                        its_error = xnet_to_boost_error(static_cast<int>(its_so_error));
+                    } else {
+                        its_error.clear();
+                    }
+                } else {
+                    its_error = its_wait_error;
+                }
             }
-        } else {
-            its_error = its_wait_error;
         }
-    }
-}
 
         if (is_canceled(its_epoch)) {
             its_error = boost::asio::error::operation_aborted;
@@ -619,9 +588,9 @@ void xnet_tcp_socket::async_receive(boost::asio::mutable_buffer _b, rw_handler _
 
         for (;;) {
             auto* const its_buffer = receive_data->empty() ? nullptr : receive_data->data();
-const auto its_result = xnet_api::nxrecv(its_socket, its_buffer, its_buffer_size, 0);
+            const auto its_result = xnet_api::nxrecv(its_socket, its_buffer, its_buffer_size, 0);
 
-if (its_result > 0) {
+            if (its_result > 0) {
                 its_bytes_received = static_cast<std::size_t>(its_result);
                 its_error.clear();
                 break;
@@ -715,8 +684,8 @@ void xnet_tcp_socket::async_write(std::vector<boost::asio::const_buffer> const& 
                 const auto remaining = b.size() - sent_in_buffer;
                 const auto chunk = static_cast<int32_t>(clamp_size_to_int32(remaining));
 
-const auto result = xnet_api::nxsend(its_socket, data_ptr + sent_in_buffer, chunk, 0);
-if (result > 0) {
+                const auto result = xnet_api::nxsend(its_socket, data_ptr + sent_in_buffer, chunk, 0);
+                if (result > 0) {
                     const auto sent = static_cast<std::size_t>(result);
                     sent_in_buffer += sent;
                     total_sent += sent;
@@ -790,9 +759,9 @@ void xnet_tcp_socket::async_write(boost::asio::const_buffer const& _b, completio
             const auto its_remaining = data->size() - total_sent;
             const auto its_chunk = static_cast<int32_t>(clamp_size_to_int32(its_remaining));
 
-const auto its_result = xnet_api::nxsend(its_socket, data->data() + total_sent, its_chunk, 0);
+            const auto its_result = xnet_api::nxsend(its_socket, data->data() + total_sent, its_chunk, 0);
 
-if (its_result > 0) {
+            if (its_result > 0) {
                 total_sent += static_cast<std::size_t>(its_result);
                 auto next = cc(its_error, total_sent);
                 if (next == 0) {

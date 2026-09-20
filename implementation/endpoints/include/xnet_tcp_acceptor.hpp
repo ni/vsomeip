@@ -23,8 +23,7 @@ namespace vsomeip_v3 {
 
 class xnet_tcp_acceptor final : public tcp_acceptor {
 public:
-    explicit xnet_tcp_acceptor(boost::asio::io_context& _io, nxIpStackRef_t _xnet_stack);
-    xnet_tcp_acceptor(boost::asio::io_context& _io, nxIpStackRef_t _xnet_stack, std::shared_ptr<void> _stack_lifetime);
+    xnet_tcp_acceptor(boost::asio::io_context& _io, nxIpStackRef_t _xnet_stack);
     ~xnet_tcp_acceptor() override;
 
 private:
@@ -63,7 +62,6 @@ private:
     nxSOCKET acceptor_;
     boost::asio::io_context& io_context_;
     nxIpStackRef_t xnet_stack_;
-    std::shared_ptr<void> stack_lifetime_;
     bool is_ipv6_;
     std::thread worker_thread_;
     std::atomic<bool> stop_requested_;
