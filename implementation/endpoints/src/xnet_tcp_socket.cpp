@@ -86,7 +86,7 @@ bool wait_socket_ready(nxSOCKET _socket, boost::asio::ip::tcp::socket::wait_type
         nxtimeval timeout{};
         timeout.tv_sec = SELECT_POLL_TIMEOUT_MS / 1000;
         timeout.tv_usec = (SELECT_POLL_TIMEOUT_MS % 1000) * 1000;
-        const auto its_result = xnet_api::nxselect(static_cast<int32_t>(_socket + 1), &read_fds, &write_fds, &except_fds, &timeout);
+        const auto its_result = xnet_api::nxselect(0, &read_fds, &write_fds, &except_fds, &timeout);
 
         if (its_result > 0) {
             _ec.clear();

@@ -108,23 +108,23 @@ bool wait_socket_ready(nxSOCKET _socket, boost::asio::ip::udp::socket::wait_type
         timeout.tv_usec = (SELECT_POLL_TIMEOUT_MS % 1000) * 1000;
         const auto its_result = xnet_api::nxselect(0, &read_fds, &write_fds, &except_fds, &timeout);
 
-        // Check for cancellation or stop request before processing the result
-        if (_stop_requested.load(std::memory_order_relaxed) || _cancel_epoch.load(std::memory_order_relaxed) != _operation_epoch) {
-            _ec = boost::asio::error::operation_aborted;
-            return false;
-        }
-
         if (its_result > 0) {
             _ec.clear();
             return true;
         }
-
-        if (its_result == SOCKET_ERROR_VALUE) {
-            _ec = make_xnet_error("wait_socket_ready");
-            if (_ec != boost::asio::error::interrupted) {
+        if (its_result == 0) {
+            if (_stop_requested.load(std::memory_order_relaxed) || _cancel_epoch.load(std::memory_order_relaxed) != _operation_epoch) {
+                _ec = boost::asio::error::operation_aborted;
                 return false;
             }
+            continue;
         }
+
+        _ec = make_xnet_error("wait_socket_ready");
+        if (_ec == boost::asio::error::interrupted) {
+            continue;
+        }
+        return false;
     }
 }
 
@@ -767,11 +767,7 @@ void xnet_udp_socket::async_connect(boost::asio::ip::udp::endpoint const& remote
 
         const auto its_result = xnet_api::nxconnect(its_socket, reinterpret_cast<nxsockaddr*>(&its_storage), its_length);
 
-        // Check for cancellation before processing the result
-        if (is_canceled(its_epoch)) {
-            its_error = boost::asio::error::operation_aborted;
-        }
-        else if (its_result == SOCKET_ERROR_VALUE) {
+        if (its_result == SOCKET_ERROR_VALUE) {
             its_error = make_xnet_error("async_connect");
             if (is_would_block_like(its_error)) {
                 boost::system::error_code its_wait_error;
@@ -782,6 +778,10 @@ void xnet_udp_socket::async_connect(boost::asio::ip::udp::endpoint const& remote
                     its_error = its_wait_error;
                 }
             }
+        }
+
+        if (is_canceled(its_epoch)) {
+            its_error = boost::asio::error::operation_aborted;
         }
 
         post_completion(*its_io, std::move(handler), its_error);
@@ -816,12 +816,6 @@ void xnet_udp_socket::async_receive_from(boost::asio::mutable_buffer b, boost::a
 
             const auto its_result = xnet_api::nxrecvfrom(its_socket, its_receive_ptr, its_buffer_size, 0, reinterpret_cast<nxsockaddr*>(&its_from_storage), &its_from_len);
 
-            // Check for cancellation before processing the result
-            if (is_canceled(its_epoch)) {
-                its_error = boost::asio::error::operation_aborted;
-                break;
-            }
-
             if (its_result >= 0) {
                 its_bytes_received = static_cast<std::size_t>(its_result);
                 if (!native_to_endpoint(its_from_storage, its_from_len, *its_source_endpoint, its_error)) {
@@ -841,6 +835,10 @@ void xnet_udp_socket::async_receive_from(boost::asio::mutable_buffer b, boost::a
                 its_error = its_wait_error;
                 break;
             }
+        }
+
+        if (is_canceled(its_epoch)) {
+            its_error = boost::asio::error::operation_aborted;
         }
 
         post_receive_from_completion(*its_io, std::move(handler), its_error, its_bytes_received,
@@ -879,12 +877,6 @@ void xnet_udp_socket::async_send(boost::asio::const_buffer const& b, rw_handler 
         for (;;) {
             const auto its_result = xnet_api::nxsend(its_socket, its_buffer_data->data(), its_buffer_size, 0);
 
-            // Check for cancellation before processing the result
-            if (is_canceled(its_epoch)) {
-                its_error = boost::asio::error::operation_aborted;
-                break;
-            }
-
             if (its_result >= 0) {
                 its_bytes_sent = static_cast<std::size_t>(its_result);
                 its_error.clear();
@@ -902,6 +894,10 @@ void xnet_udp_socket::async_send(boost::asio::const_buffer const& b, rw_handler 
                 its_error = its_wait_error;
                 break;
             }
+        }
+
+        if (is_canceled(its_epoch)) {
+            its_error = boost::asio::error::operation_aborted;
         }
 
         post_rw_completion(*its_io, std::move(handler), its_error, its_bytes_sent);
@@ -948,12 +944,6 @@ void xnet_udp_socket::async_send_to(boost::asio::const_buffer const& b, boost::a
             const auto its_result = xnet_api::nxsendto(its_socket, its_buffer_data->data(), its_buffer_size, 0,
                                              reinterpret_cast<nxsockaddr*>(&its_destination_storage), its_destination_length);
 
-            // Check for cancellation before processing the result
-            if (is_canceled(its_epoch)) {
-                its_error = boost::asio::error::operation_aborted;
-                break;
-            }
-
             if (its_result >= 0) {
                 its_bytes_sent = static_cast<std::size_t>(its_result);
                 its_error.clear();
@@ -971,6 +961,10 @@ void xnet_udp_socket::async_send_to(boost::asio::const_buffer const& b, boost::a
                 its_error = its_wait_error;
                 break;
             }
+        }
+
+        if (is_canceled(its_epoch)) {
+            its_error = boost::asio::error::operation_aborted;
         }
 
         post_rw_completion(*its_io, std::move(handler), its_error, its_bytes_sent);
