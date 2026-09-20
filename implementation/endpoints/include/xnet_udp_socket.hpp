@@ -21,9 +21,7 @@ namespace vsomeip_v3 {
 
 class xnet_udp_socket final : public udp_socket {
 public:
-    // Constructor - store io_context reference for posting completions
-    explicit xnet_udp_socket(boost::asio::io_context& _io, nxIpStackRef_t xnet_stack);
-    xnet_udp_socket(boost::asio::io_context& _io, nxIpStackRef_t xnet_stack, std::shared_ptr<void> _stack_lifetime);
+    xnet_udp_socket(boost::asio::io_context& _io, nxIpStackRef_t xnet_stack);
     ~xnet_udp_socket();
 
 private:
@@ -34,10 +32,6 @@ private:
     void bind(boost::asio::ip::udp::endpoint const& ep, boost::system::error_code& ec) override;
 
     void close(boost::system::error_code& ec) override;
-    // Not part of udp_socket base interface; kept as helper API for xnet implementation only.
-    void cancel(boost::system::error_code& ec);
-    // Not part of udp_socket base interface; kept as helper API for xnet implementation only.
-    void shutdown(boost::asio::ip::udp::socket::shutdown_type st, boost::system::error_code& ec);
 
     bool native_non_blocking() const override;
     void native_non_blocking(bool mode, boost::system::error_code& ec) override;
@@ -79,13 +73,9 @@ private:
 
     // XNET IP stack reference
     nxIpStackRef_t xnet_stack_;
-    std::shared_ptr<void> stack_lifetime_;
 
     // Track if socket is IPv6 for correct socket creation and option handling
     bool is_ipv6_;
-
-    // Cached state for platforms/backends where querying non-blocking mode is limited.
-    bool non_blocking_mode_;
 
     using work_item_t = std::function<void()>;
 
