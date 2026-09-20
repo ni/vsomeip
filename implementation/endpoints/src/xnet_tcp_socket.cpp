@@ -35,14 +35,14 @@ inline bool is_would_block_like(boost::system::error_code const& _ec) {
     return _ec == boost::asio::error::would_block || _ec == boost::asio::error::try_again || _ec == boost::asio::error::in_progress;
 }
 
-boost::system::error_code make_xnet_error(char const* _operation) {
+boost::system::error_code make_xnet_error(char const* _operation, bool is_canceled = false) {
     const auto its_raw_error = xnet_get_last_error();
     auto its_mapped_error = xnet_to_boost_error(its_raw_error);
     if (its_mapped_error != boost::asio::error::would_block &&
         its_mapped_error != boost::asio::error::try_again &&
         its_mapped_error != boost::asio::error::in_progress &&
         its_mapped_error != boost::asio::error::bad_descriptor &&
-        its_mapped_error != boost::asio::error::operation_aborted) {
+        !(is_canceled && its_mapped_error == boost::asio::error::operation_aborted)) {
         VSOMEIP_ERROR_P << "operation=" << _operation << " failed"
                         << " raw_error=" << its_raw_error
                         << " mapped_error=" << its_mapped_error.value()
@@ -101,7 +101,7 @@ bool wait_socket_ready(nxSOCKET _socket, boost::asio::ip::tcp::socket::wait_type
             continue;
         }
 
-        _ec = make_xnet_error("wait_socket_ready");
+        _ec = make_xnet_error("wait_socket_ready", _cancel_epoch.load(std::memory_order_relaxed) != _operation_epoch);
         if (_ec == boost::asio::error::interrupted) {
             continue;
         }
@@ -538,7 +538,7 @@ void xnet_tcp_socket::async_connect(boost::asio::ip::tcp::endpoint const& _ep, c
         const auto its_result = xnet_api::nxconnect(its_socket, reinterpret_cast<nxsockaddr*>(&its_storage), its_length);
 
         if (its_result == SOCKET_ERROR_VALUE) {
-            its_error = make_xnet_error("async_connect");
+            its_error = make_xnet_error("async_connect", is_canceled(its_epoch));
             if (is_would_block_like(its_error)) {
                 boost::system::error_code its_wait_error;
                 if (wait_socket_ready(its_socket, boost::asio::ip::tcp::socket::wait_write,
@@ -547,7 +547,7 @@ void xnet_tcp_socket::async_connect(boost::asio::ip::tcp::endpoint const& _ep, c
                     nxsocklen_t its_so_error_len = static_cast<nxsocklen_t>(sizeof(its_so_error));
                     if (xnet_api::nxgetsockopt(its_socket, nxSOL_SOCKET, nxSO_ERROR, &its_so_error, &its_so_error_len) == SOCKET_ERROR_VALUE
                         || its_so_error_len < static_cast<nxsocklen_t>(sizeof(its_so_error))) {
-                        its_error = make_xnet_error("async_connect:so_error_query");
+                        its_error = make_xnet_error("async_connect:so_error_query", is_canceled(its_epoch));
                     } else if (its_so_error != 0) {
                         its_error = xnet_to_boost_error(static_cast<int>(its_so_error));
                     } else {
@@ -601,7 +601,7 @@ void xnet_tcp_socket::async_receive(boost::asio::mutable_buffer _b, rw_handler _
                 break;
             }
 
-            its_error = make_xnet_error("async_receive");
+            its_error = make_xnet_error("async_receive", is_canceled(its_epoch));
             if (its_error == boost::asio::error::not_connected) {
                 its_error = boost::asio::error::eof;
             }
@@ -698,7 +698,7 @@ void xnet_tcp_socket::async_write(std::vector<boost::asio::const_buffer> const& 
                     return;
                 }
 
-                its_error = make_xnet_error("async_write(sequence)");
+                its_error = make_xnet_error("async_write(sequence)", is_canceled(its_epoch));
                 if (!is_would_block_like(its_error)) {
                     post_rw_completion(*its_io, std::move(handler), its_error, is_canceled(its_epoch) ? 0 : total_sent);
                     return;
@@ -775,7 +775,7 @@ void xnet_tcp_socket::async_write(boost::asio::const_buffer const& _b, completio
                 break;
             }
 
-            its_error = make_xnet_error("async_write");
+            its_error = make_xnet_error("async_write", is_canceled(its_epoch));
             if (!is_would_block_like(its_error)) {
                 break;
             }

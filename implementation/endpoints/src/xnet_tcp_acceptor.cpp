@@ -23,12 +23,13 @@ namespace vsomeip_v3 {
 
 namespace {
 
-boost::system::error_code make_xnet_error(char const* _operation) {
+boost::system::error_code make_xnet_error(char const* _operation, bool is_canceled = false) {
     const auto its_raw_error = xnet_get_last_error();
     auto its_mapped_error = xnet_to_boost_error(its_raw_error);
     if (its_mapped_error != boost::asio::error::would_block &&
         its_mapped_error != boost::asio::error::try_again &&
-        its_mapped_error != boost::asio::error::in_progress) {
+        its_mapped_error != boost::asio::error::in_progress &&
+        !(is_canceled && its_mapped_error == boost::asio::error::operation_aborted)) {
         VSOMEIP_ERROR_P << "operation=" << _operation << " failed"
                         << " raw_error=" << its_raw_error
                         << " mapped_error=" << its_mapped_error.value()
@@ -145,7 +146,7 @@ bool wait_read_ready(nxSOCKET _socket, std::chrono::milliseconds _timeout,
             return false;
         }
 
-        _ec = make_xnet_error("wait_read_ready");
+        _ec = make_xnet_error("wait_read_ready", _cancel_epoch.load(std::memory_order_relaxed) != _operation_epoch);
         if (_ec == boost::asio::error::interrupted) {
             continue;
         }
@@ -430,7 +431,7 @@ void xnet_tcp_acceptor::async_accept(tcp_socket& _socket, boost::asio::ip::tcp::
             const bool is_accept_failed = (its_client_socket == nxINVALID_SOCKET);
 
             if (is_accept_failed) {
-                its_error = make_xnet_error("async_accept");
+                its_error = make_xnet_error("async_accept", is_canceled(its_epoch));
                 if (its_error == boost::asio::error::would_block || its_error == boost::asio::error::try_again
                     || its_error == boost::asio::error::interrupted || its_error == boost::asio::error::in_progress) {
                     continue;

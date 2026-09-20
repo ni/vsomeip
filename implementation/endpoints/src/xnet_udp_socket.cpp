@@ -29,9 +29,23 @@ namespace {
 
 constexpr char const* k_xnet_backend_tag = "backend=xnet";
 
-boost::system::error_code make_xnet_error(char const* _operation);
-
 constexpr int SELECT_POLL_TIMEOUT_MS = 200;
+
+boost::system::error_code make_xnet_error(char const* _operation, bool is_canceled = false) {
+    const auto its_raw_error = xnet_get_last_error();
+    auto its_mapped_error = xnet_to_boost_error(its_raw_error);
+    if (its_mapped_error != boost::asio::error::would_block &&
+        its_mapped_error != boost::asio::error::try_again &&
+        its_mapped_error != boost::asio::error::in_progress &&
+        !(is_canceled && its_mapped_error == boost::asio::error::operation_aborted)) {
+        VSOMEIP_ERROR_P << "operation=" << _operation << " " << k_xnet_backend_tag
+                      << " failure_class=stack_io"
+                      << " raw_error=" << its_raw_error
+                      << " mapped_error=" << its_mapped_error.value()
+                      << " message=" << its_mapped_error.message();
+    }
+    return its_mapped_error;
+}
 
 inline std::size_t clamp_size_to_int32(std::size_t _size) {
     return std::min(_size, static_cast<std::size_t>(std::numeric_limits<int32_t>::max()));
@@ -120,7 +134,7 @@ bool wait_socket_ready(nxSOCKET _socket, boost::asio::ip::udp::socket::wait_type
             continue;
         }
 
-        _ec = make_xnet_error("wait_socket_ready");
+        _ec = make_xnet_error("wait_socket_ready", _cancel_epoch.load(std::memory_order_relaxed) != _operation_epoch);
         if (_ec == boost::asio::error::interrupted) {
             continue;
         }
@@ -186,21 +200,6 @@ bool native_to_endpoint(nxsockaddr_storage const& _storage, nxsocklen_t _len, bo
 
     _ec = boost::asio::error::make_error_code(boost::asio::error::address_family_not_supported);
     return false;
-}
-
-boost::system::error_code make_xnet_error(char const* _operation) {
-    const auto its_raw_error = xnet_get_last_error();
-    auto its_mapped_error = xnet_to_boost_error(its_raw_error);
-    if (its_mapped_error != boost::asio::error::would_block &&
-        its_mapped_error != boost::asio::error::try_again &&
-        its_mapped_error != boost::asio::error::in_progress) {
-        VSOMEIP_ERROR_P << "operation=" << _operation << " " << k_xnet_backend_tag
-                      << " failure_class=stack_io"
-                      << " raw_error=" << its_raw_error
-                      << " mapped_error=" << its_mapped_error.value()
-                      << " message=" << its_mapped_error.message();
-    }
-    return its_mapped_error;
 }
 
 boost::system::error_code make_unsupported_option_error(char const* _option, char const* _reason) {
@@ -768,7 +767,7 @@ void xnet_udp_socket::async_connect(boost::asio::ip::udp::endpoint const& remote
         const auto its_result = xnet_api::nxconnect(its_socket, reinterpret_cast<nxsockaddr*>(&its_storage), its_length);
 
         if (its_result == SOCKET_ERROR_VALUE) {
-            its_error = make_xnet_error("async_connect");
+            its_error = make_xnet_error("async_connect", is_canceled(its_epoch));
             if (is_would_block_like(its_error)) {
                 boost::system::error_code its_wait_error;
                 if (wait_socket_ready(its_socket, boost::asio::ip::udp::socket::wait_write,
@@ -824,7 +823,7 @@ void xnet_udp_socket::async_receive_from(boost::asio::mutable_buffer b, boost::a
                 break;
             }
 
-            its_error = make_xnet_error("async_receive_from");
+            its_error = make_xnet_error("async_receive_from", is_canceled(its_epoch));
             if (!is_would_block_like(its_error)) {
                 break;
             }
@@ -883,7 +882,7 @@ void xnet_udp_socket::async_send(boost::asio::const_buffer const& b, rw_handler 
                 break;
             }
 
-            its_error = make_xnet_error("async_send");
+            its_error = make_xnet_error("async_send", is_canceled(its_epoch));
             if (!is_would_block_like(its_error)) {
                 break;
             }
@@ -950,7 +949,7 @@ void xnet_udp_socket::async_send_to(boost::asio::const_buffer const& b, boost::a
                 break;
             }
 
-            its_error = make_xnet_error("async_send_to");
+            its_error = make_xnet_error("async_send_to", is_canceled(its_epoch));
             if (!is_would_block_like(its_error)) {
                 break;
             }
