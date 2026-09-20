@@ -785,6 +785,7 @@ void xnet_udp_socket::async_connect(boost::asio::ip::udp::endpoint const& remote
 
         const auto its_result = xnet_api::nxconnect(its_socket, reinterpret_cast<nxsockaddr*>(&its_storage), its_length);
 
+        // Check for cancellation before processing the result
         if (is_canceled(its_epoch)) {
             its_error = boost::asio::error::operation_aborted;
         }
@@ -833,6 +834,7 @@ void xnet_udp_socket::async_receive_from(boost::asio::mutable_buffer b, boost::a
 
             const auto its_result = xnet_api::nxrecvfrom(its_socket, its_receive_ptr, its_buffer_size, 0, reinterpret_cast<nxsockaddr*>(&its_from_storage), &its_from_len);
 
+            // Check for cancellation before processing the result
             if (is_canceled(its_epoch)) {
                 its_error = boost::asio::error::operation_aborted;
                 break;
@@ -895,6 +897,7 @@ void xnet_udp_socket::async_send(boost::asio::const_buffer const& b, rw_handler 
         for (;;) {
             const auto its_result = xnet_api::nxsend(its_socket, its_buffer_data->data(), its_buffer_size, 0);
 
+            // Check for cancellation before processing the result
             if (is_canceled(its_epoch)) {
                 its_error = boost::asio::error::operation_aborted;
                 break;
@@ -963,6 +966,7 @@ void xnet_udp_socket::async_send_to(boost::asio::const_buffer const& b, boost::a
             const auto its_result = xnet_api::nxsendto(its_socket, its_buffer_data->data(), its_buffer_size, 0,
                                              reinterpret_cast<nxsockaddr*>(&its_destination_storage), its_destination_length);
 
+            // Check for cancellation before processing the result
             if (is_canceled(its_epoch)) {
                 its_error = boost::asio::error::operation_aborted;
                 break;
