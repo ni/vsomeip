@@ -62,6 +62,15 @@ static std::shared_ptr<abstract_socket_factory> init() {
 
 void set_abstract_factory(std::shared_ptr<abstract_socket_factory> ptr) {
     std::scoped_lock its_lock{_factory_mutex};
+    // --- NI modification: BEGIN ---
+    // Re-injecting the very same factory is a no-op and must stay tolerated: test fixtures
+    // inject from SetUpTestSuite(), which gtest runs once per test suite and not once per
+    // binary. Only a late injection of a *different* factory is a genuine error, as the
+    // already handed out abstract_socket_factory::get() pointer could no longer be replaced.
+    if (_factory_finalized && _factory == ptr) {
+        return;
+    }
+    // --- NI modification: END ---
     if (_factory_finalized) {
         _late_injection_detected = true;
         VSOMEIP_ERROR_P << "late socket factory injection detected after factory freeze.";
