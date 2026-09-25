@@ -224,6 +224,14 @@ private:
 
     virtual void listen(int, boost::system::error_code& _ec) override { _ec = boost::system::error_code(); }
 
+    // --- NI modification: BEGIN ---
+    // Implement the backend-neutral acceptor readiness API for the fake backend.
+    [[nodiscard]] bool wait_for_pending_connection(std::chrono::milliseconds, boost::system::error_code& _ec) override {
+        _ec = boost::system::error_code();
+        return false;
+    }
+    // --- NI modification: END ---
+
     // In the fake, the remote_ep_ is already set on the socket by the time the handler fires
     // (add_connection() runs synchronously before posting the handler), so reading it from
     // the socket handle is always valid — there is no real-network disconnect race to guard against.

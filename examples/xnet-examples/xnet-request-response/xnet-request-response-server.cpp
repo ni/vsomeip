@@ -16,10 +16,10 @@
 
 std::shared_ptr<vsomeip::application> app;
 
-void stop_application(int exit_code) {
-    std::cout << "\nShutting down application..." << std::endl;
+void stop_application([[maybe_unused]] int exit_code) {
+std::cout << "\nShutting down application..." << std::endl;
 
-    // Stop offering the service stop the application
+// Stop offering the service stop the application
     if (app) {
         app->stop_offer_service(SAMPLE_SERVICE_ID, SAMPLE_INSTANCE_ID);
         app->stop();

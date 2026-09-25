@@ -19,16 +19,36 @@ include_directories (
 
 include_directories (SYSTEM ${Boost_INCLUDE_DIRS})
 
-# NI-XNET library    
-if(NOT DEFINED ENV{NIEXTCCOMPILERSUPP})
-    message(FATAL_ERROR "NIEXTCCOMPILERSUPP is not set. Cannot locate nxsocket.h/nixntipstack.")
+# NI-XNET library
+# When built as part of the vsomeip tree, NIXNET_INCLUDE_DIR/NIXNET_LIBRARY are
+# already resolved by the top-level CMakeLists.txt. Only detect them here when
+# this example is configured standalone.
+if(NOT NIXNET_LIBRARY)
+    if(DEFINED ENV{NIEXTCCOMPILERSUPP} AND NOT "$ENV{NIEXTCCOMPILERSUPP}" STREQUAL "")
+        set(NIXNET_INCLUDE_DIR "$ENV{NIEXTCCOMPILERSUPP}/include")
+        if(MSVC)
+            set(NIXNET_LIBRARY_DIR "$ENV{NIEXTCCOMPILERSUPP}/lib64/msvc")
+        else()
+            set(NIXNET_LIBRARY_DIR "$ENV{NIEXTCCOMPILERSUPP}/lib64")
+        endif()
+    elseif(MSVC)
+        message(FATAL_ERROR "NIEXTCCOMPILERSUPP is not set. Cannot locate nxsocket.h/nixntipstack.")
+    endif()
+
+    if(MSVC)
+        set(NIXNET_LIBRARY "${NIXNET_LIBRARY_DIR}/nixntipstack.lib")
+    else()
+        # On Linux the headers and library may be system-installed
+        find_library(NIXNET_LIBRARY nixntipstack HINTS "${NIXNET_LIBRARY_DIR}")
+        if(NOT NIXNET_LIBRARY)
+            message(FATAL_ERROR "nixntipstack library was not found.")
+        endif()
+    endif()
 endif()
 
-set(NIXNET_INCLUDE_DIR "$ENV{NIEXTCCOMPILERSUPP}/include")
-set(NIXNET_LIBRARY_DIR "$ENV{NIEXTCCOMPILERSUPP}/lib64/msvc")
-set(NIXNET_LIBRARY "${NIXNET_LIBRARY_DIR}/nixntipstack.lib")
-
-include_directories (${NIXNET_INCLUDE_DIR})
+if(NIXNET_INCLUDE_DIR)
+    include_directories (SYSTEM ${NIXNET_INCLUDE_DIR})
+endif()
 
 # Select the configurations to use (UDP by default, TCP when USE_TCP is ON)
 option(USE_TCP "Use the TCP configuration instead of UDP" OFF)
