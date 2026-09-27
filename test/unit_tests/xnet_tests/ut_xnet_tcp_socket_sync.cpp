@@ -132,12 +132,12 @@ struct xnet_tcp_socket_sync_fixture : ::testing::Test {
         table.nxsetsockopt_fn = &fake_nxsetsockopt;
         table.nxgetsockopt_fn = &fake_nxgetsockopt;
         table.nxgetsockname_fn = &fake_nxgetsockname;
-        vsomeip_v3::xnet_api::set_api_table_for_test(table);
+        vsomeip_v3::xnet_api::set_api_table(table);
     }
 
     void TearDown() override {
         if (original_table_) {
-            vsomeip_v3::xnet_api::set_api_table_for_test(*original_table_);
+            vsomeip_v3::xnet_api::set_api_table(*original_table_);
         }
     }
 

@@ -1,5 +1,7 @@
 #include "../include/xnet_api.hpp"
 
+#ifdef ENABLE_XNET_TESTS
+
 #include <atomic>
 #include <memory>
 
@@ -24,12 +26,14 @@ api_table get_api_table() {
     return *api_table_slot().load(std::memory_order_acquire);
 }
 
-void set_api_table_for_test(const api_table& _table) {
+void set_api_table(const api_table& _table) {
     api_table_slot().store(std::make_shared<const api_table>(_table), std::memory_order_release);
 }
 
-void reset_api_table_for_test() {
+void reset_api_table() {
     api_table_slot().store(std::make_shared<const api_table>(), std::memory_order_release);
 }
 
 } // namespace vsomeip_v3::xnet_api
+
+#endif // ENABLE_XNET_TESTS

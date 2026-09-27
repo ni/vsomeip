@@ -146,12 +146,12 @@ struct xnet_tcp_acceptor_fixture : ::testing::Test {
         table.nxsetsockopt_fn = &fake_nxsetsockopt;
         table.nxselect_fn = &fake_nxselect;
         table.nxaccept_fn = &fake_nxaccept;
-        vsomeip_v3::xnet_api::set_api_table_for_test(table);
+        vsomeip_v3::xnet_api::set_api_table(table);
     }
 
     void TearDown() override {
         if (original_table_) {
-            vsomeip_v3::xnet_api::set_api_table_for_test(*original_table_);
+            vsomeip_v3::xnet_api::set_api_table(*original_table_);
         }
     }
 

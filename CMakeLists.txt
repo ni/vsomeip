@@ -23,6 +23,7 @@ set (CMAKE_VERBOSE_MAKEFILE off)
 option(ENABLE_THREAD_SANITIZER "Enable use of TSAN" OFF)
 option(ENABLE_SANITIZERS "Enable ASAN/LSAN/UBSAN, not compatible with ENABLE_THREAD_SANITIZER" OFF)
 option(ENABLE_SIGNAL_HANDLING "Enable signal handling support" ON) 
+option(ENABLE_XNET_TESTS "Enable XNET unit tests" ON)
 
 if (NOT GTEST_ROOT)
     if (DEFINED ENV{GTEST_ROOT})
@@ -263,6 +264,10 @@ endif ()
 #XNET Backend
 
 message(STATUS "XNET transport backend enabled")
+
+if (ENABLE_XNET_TESTS)
+    add_compile_definitions(ENABLE_XNET_TESTS)
+endif ()
 
 if(DEFINED ENV{NIEXTCCOMPILERSUPP} AND NOT "$ENV{NIEXTCCOMPILERSUPP}" STREQUAL "")
     set(NIXNET_INCLUDE_DIR "$ENV{NIEXTCCOMPILERSUPP}/include")

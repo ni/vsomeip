@@ -21,7 +21,9 @@ add_subdirectory(in_memory_json_api_tests)
 
 # --- NI modification: BEGIN ---
 # Unit tests for the XNET TCP/UDP socket wrappers.
-add_subdirectory(xnet_tests)
+if (ENABLE_XNET_TESTS)
+	add_subdirectory(xnet_tests)
+endif ()
 # --- NI modification: END ---
 
 if (NOT WIN32)
