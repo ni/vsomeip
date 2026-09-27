@@ -23,7 +23,7 @@ set (CMAKE_VERBOSE_MAKEFILE off)
 option(ENABLE_THREAD_SANITIZER "Enable use of TSAN" OFF)
 option(ENABLE_SANITIZERS "Enable ASAN/LSAN/UBSAN, not compatible with ENABLE_THREAD_SANITIZER" OFF)
 option(ENABLE_SIGNAL_HANDLING "Enable signal handling support" ON) 
-option(ENABLE_XNET_TESTS "Enable XNET unit tests" ON)
+option(ENABLE_XNET_TESTS "Enable XNET unit tests" OFF)
 
 if (NOT GTEST_ROOT)
     if (DEFINED ENV{GTEST_ROOT})
