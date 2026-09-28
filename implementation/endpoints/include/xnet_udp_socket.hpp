@@ -77,6 +77,9 @@ private:
     // Track if socket is IPv6 for correct socket creation and option handling
     bool is_ipv6_;
 
+    // Cached state for platforms/backends where querying non-blocking mode is limited.
+    bool non_blocking_mode_;
+
     using work_item_t = std::function<void()>;
 
     void ensure_general_worker_thread();

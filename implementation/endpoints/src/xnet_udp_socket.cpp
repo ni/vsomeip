@@ -227,6 +227,7 @@ xnet_udp_socket::xnet_udp_socket(boost::asio::io_context& _io, nxIpStackRef_t xn
       io_context_(_io),
       xnet_stack_(xnet_stack),
       is_ipv6_(false),
+      non_blocking_mode_(false),
       stop_requested_(false),
       cancel_epoch_(0) {
     VSOMEIP_INFO_P << k_xnet_backend_tag
@@ -435,10 +436,12 @@ void xnet_udp_socket::close(boost::system::error_code& ec) {
         if (xnet_api::nxclose(socket_) == SOCKET_ERROR_VALUE) {
             ec = make_xnet_error("close");
             socket_ = nxINVALID_SOCKET;
+            non_blocking_mode_ = false;
             stop_worker_threads();
             return;
         }
         socket_ = nxINVALID_SOCKET;
+        non_blocking_mode_ = false;
         VSOMEIP_INFO_P << "socket closed";
     }
     ec.clear();
@@ -456,7 +459,7 @@ bool xnet_udp_socket::native_non_blocking() const {
         && opt_len >= static_cast<nxsocklen_t>(sizeof(mode))) {
         return mode != 0;
     }
-    return false;
+    return non_blocking_mode_;
 }
 
 void xnet_udp_socket::native_non_blocking(bool mode, boost::system::error_code& ec) { 
@@ -471,7 +474,8 @@ void xnet_udp_socket::native_non_blocking(bool mode, boost::system::error_code& 
         ec = make_xnet_error("native_non_blocking");
         return;
     }
-
+    
+    non_blocking_mode_ = mode;
     ec.clear();
 }
 
