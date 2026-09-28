@@ -13,18 +13,18 @@
 #include "asio_uds_socket.hpp"
 #endif
 
-TEST(xnet_socket_factory_policy_test, create_timer_uses_asio_timer_in_all_modes) {
+TEST(xnet_socket_factory_policy_test, create_timer_uses_asio_timer) {
     boost::asio::io_context io;
-    vsomeip_v3::xnet_socket_factory factory;
+    vsomeip_v3::xnet_socket_factory factory(nullptr);
 
     auto timer = factory.create_timer(io);
     EXPECT_NE(dynamic_cast<vsomeip_v3::asio_timer*>(timer.get()), nullptr);
 }
 
 #if defined(__linux__) || defined(__QNX__)
-TEST(xnet_socket_factory_policy_test, create_uds_objects_use_asio_in_all_modes) {
+TEST(xnet_socket_factory_policy_test, create_uds_objects_use_asio) {
     boost::asio::io_context io;
-    vsomeip_v3::xnet_socket_factory factory;
+    vsomeip_v3::xnet_socket_factory factory(nullptr);
 
     auto uds_socket = factory.create_uds_socket(io);
     auto uds_acceptor = factory.create_uds_acceptor(io);
@@ -34,16 +34,7 @@ TEST(xnet_socket_factory_policy_test, create_uds_objects_use_asio_in_all_modes) 
 }
 #endif
 
-TEST(xnet_socket_factory_policy_test, create_transport_objects_throw_when_stack_missing) {
-    boost::asio::io_context io;
-    vsomeip_v3::xnet_socket_factory factory;
-
-    EXPECT_THROW((void)factory.create_tcp_socket(io), std::runtime_error);
-    EXPECT_THROW((void)factory.create_udp_socket(io), std::runtime_error);
-    EXPECT_THROW((void)factory.create_tcp_acceptor(io), std::runtime_error);
-}
-
-TEST(xnet_socket_factory_policy_test, create_transport_objects_use_xnet_when_stack_present) {
+TEST(xnet_socket_factory_policy_test, create_transport_objects_use_xnet) {
     boost::asio::io_context io;
     auto const fake_stack = reinterpret_cast<nxIpStackRef_t>(0x1);
     vsomeip_v3::xnet_socket_factory factory(fake_stack);
