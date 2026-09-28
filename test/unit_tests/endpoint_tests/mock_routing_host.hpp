@@ -6,8 +6,6 @@
 #pragma once
 
 #include "../../../implementation/routing/include/routing_host.hpp"
-#include "../../../implementation/security/include/policy_manager_impl.hpp"
-#include "../../../implementation/security/include/security.hpp"
 
 #include <gmock/gmock.h>
 
@@ -21,7 +19,5 @@ public:
     MOCK_METHOD(void, on_message, (const byte_t*, length_t, const local_client_data&), (override));
     MOCK_METHOD(client_t, get_client, (), (const, override));
     MOCK_METHOD(void, lazy_load, (const std::string&), (override));
-    MOCK_METHOD(std::shared_ptr<policy_manager_impl>, get_policy_manager, (), (const, override));
-    MOCK_METHOD(std::shared_ptr<security>, get_security, (), (const, override));
 };
 }

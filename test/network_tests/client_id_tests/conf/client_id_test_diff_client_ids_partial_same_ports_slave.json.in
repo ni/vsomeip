@@ -1,6 +1,5 @@
 {
     "unicast":"@TEST_IP_SLAVE@",
-    "diagnosis":"0x02",
     "logging":
     {
         "level":"trace",
@@ -13,13 +12,16 @@
     "applications":
     [
         {
-            "name":"client_id_test_service_four"
+            "name":"client_id_test_service_four",
+            "id":"0x4444"
         },
         {
-            "name":"client_id_test_service_five"
+            "name":"client_id_test_service_five",
+            "id":"0x5555"
         },
         {
-            "name":"client_id_test_service_six"
+            "name":"client_id_test_service_six",
+            "id":"0x6666"
         }
     ],
     "services":

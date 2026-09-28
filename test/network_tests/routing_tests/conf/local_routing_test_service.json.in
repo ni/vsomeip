@@ -13,7 +13,8 @@
    "applications" :
    [
       {
-         "name" : "local_routing_test_service"
+         "name" : "local_routing_test_service",
+         "id" : "0x1277"
       }
    ],
    "services" :

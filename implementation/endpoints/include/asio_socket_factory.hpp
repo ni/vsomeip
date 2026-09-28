@@ -30,8 +30,6 @@ public:
 #endif
 
     std::unique_ptr<abstract_timer> create_timer(boost::asio::io_context& _io) override;
-
-    std::shared_ptr<abstract_clock> get_clock() override;
 };
 
 }

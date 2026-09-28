@@ -15,38 +15,28 @@
 #include <thread>
 #include <mutex>
 #include <condition_variable>
-#include <atomic>
 
-class security_client {
+class security_test_service {
 public:
-    security_client(bool _test_external_communication, bool _is_remote_client_allowed, bool _is_offer_test, bool _offer_allowed);
+    security_test_service();
     bool init();
     void start();
     void stop();
-
+    void offer();
+    void stop_offer();
+    void join_offer_thread();
     void on_state(vsomeip::state_type_e _state);
-    void on_availability(vsomeip::service_t _service, vsomeip::instance_t _instance, bool _is_available);
-    void on_message(const std::shared_ptr<vsomeip::message>& _response);
-
+    void on_message(const std::shared_ptr<vsomeip::message>& _request);
+    void on_message_shutdown(const std::shared_ptr<vsomeip::message>& _request);
     void run();
-    void join_sender_thread();
 
 private:
-    void shutdown_service();
-
     std::shared_ptr<vsomeip::application> app_;
+    bool is_registered_;
 
     std::mutex mutex_;
     std::condition_variable condition_;
-    bool is_available_;
-
-    std::thread sender_;
-
-    std::atomic<uint32_t> received_responses_;
-    std::atomic<uint32_t> received_allowed_events_;
-
-    bool test_external_communication_;
-    bool is_remote_client_allowed_;
-    bool is_offer_test_;
-    bool offer_allowed_;
+    bool blocked_;
+    std::uint32_t number_of_received_messages_;
+    std::thread offer_thread_;
 };

@@ -1,6 +1,5 @@
 {
    "unicast" : "@TEST_IP_MASTER@",
-   "diagnosis" : "0x01",
    "netmask" : "255.255.255.0",
    "logging" :
    {
@@ -14,7 +13,8 @@
    "applications" :
    [
       {
-         "name" : "cpu_load_test_client"
+         "name" : "cpu_load_test_client",
+         "id" : "0x2222"
       }
    ],
     "npdu-default-timings" : {

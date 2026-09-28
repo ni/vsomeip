@@ -74,11 +74,10 @@ bool message_impl::get_reboot_flag() const {
 }
 
 void message_impl::set_reboot_flag(bool _is_set) {
-    if (_is_set) {
+    if (_is_set)
         flags_ |= flags_t(VSOMEIP_REBOOT_FLAG);
-    } else {
+    else
         flags_ &= flags_t(~VSOMEIP_REBOOT_FLAG);
-    }
 }
 
 #define VSOMEIP_UNICAST_FLAG 0x40
@@ -88,16 +87,15 @@ bool message_impl::get_unicast_flag() const {
 }
 
 void message_impl::set_unicast_flag(bool _is_set) {
-    if (_is_set) {
+    if (_is_set)
         flags_ |= flags_t(VSOMEIP_UNICAST_FLAG);
-    } else {
+    else
         flags_ &= flags_t(~VSOMEIP_UNICAST_FLAG);
-    }
 }
 
 bool message_impl::add_entry_data(const std::shared_ptr<entry_impl>& _entry, const std::vector<std::shared_ptr<option_impl>>& _options,
                                   const std::shared_ptr<entry_impl>& _other) {
-    uint32_t its_entry_size = VSOMEIP_SOMEIP_SD_ENTRY_SIZE;
+    std::uint32_t its_entry_size = VSOMEIP_SOMEIP_SD_ENTRY_SIZE;
     std::map<const std::shared_ptr<option_impl>, bool> its_options;
 
     if (_other) {
@@ -119,9 +117,8 @@ bool message_impl::add_entry_data(const std::shared_ptr<entry_impl>& _entry, con
         }
     }
 
-    if (current_message_size_ + its_entry_size > VSOMEIP_MAX_UDP_SD_PAYLOAD) {
+    if (current_message_size_ + its_entry_size > VSOMEIP_MAX_UDP_SD_PAYLOAD)
         return false;
-    }
 
     entries_.push_back(_entry);
     _entry->set_owning_message(this);
@@ -164,9 +161,8 @@ const message_impl::options_t& message_impl::get_options() const {
 
 std::shared_ptr<option_impl> message_impl::find_option(const std::shared_ptr<option_impl>& _option) const {
     for (auto its_option : options_) {
-        if (its_option->equals(*_option)) {
+        if (its_option->equals(*_option))
             return its_option;
-        }
     }
     return nullptr;
 }
@@ -175,9 +171,8 @@ int16_t message_impl::get_option_index(const std::shared_ptr<option_impl>& _opti
     int16_t i = 0;
 
     while (i < int16_t(options_.size())) {
-        if (options_[static_cast<options_t::size_type>(i)] == _option) {
+        if (options_[static_cast<options_t::size_type>(i)] == _option)
             return i;
-        }
         i++;
     }
     return -1;
@@ -186,9 +181,8 @@ int16_t message_impl::get_option_index(const std::shared_ptr<option_impl>& _opti
 std::shared_ptr<option_impl> message_impl::get_option(int16_t _index) const {
     if (_index > -1) {
         size_t its_index = static_cast<size_t>(_index);
-        if (its_index < options_.size()) {
+        if (its_index < options_.size())
             return options_[its_index];
-        }
     }
     return nullptr;
 }
@@ -224,19 +218,16 @@ bool message_impl::serialize(vsomeip_v3::serializer* _to) const {
     uint32_t entries_length = uint32_t(entries_.size() * VSOMEIP_SOMEIP_SD_ENTRY_SIZE);
     is_successful = is_successful && _to->serialize(entries_length);
 
-    for (const auto& its_entry : entries_) {
+    for (const auto& its_entry : entries_)
         is_successful = is_successful && its_entry && its_entry->serialize(_to);
-    }
 
     uint32_t options_length = 0;
-    for (const auto& its_option : options_) {
+    for (const auto& its_option : options_)
         options_length += its_option ? static_cast<uint32_t>(its_option->get_length() + VSOMEIP_SOMEIP_SD_OPTION_HEADER_SIZE) : 0;
-    }
     is_successful = is_successful && _to->serialize(options_length);
 
-    for (const auto& its_option : options_) {
+    for (const auto& its_option : options_)
         is_successful = is_successful && its_option && its_option->serialize(_to);
-    }
 
     return is_successful;
 }

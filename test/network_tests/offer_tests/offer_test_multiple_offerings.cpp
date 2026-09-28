@@ -19,6 +19,7 @@
 using namespace vsomeip;
 using namespace std::chrono_literals;
 
+constexpr auto TIMEOUT_RESPONSE = 1000ms;
 constexpr auto REQUESTS_NUMBER = 10;
 
 class common {

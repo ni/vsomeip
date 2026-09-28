@@ -45,10 +45,6 @@ export VSOMEIP_APPLICATION_NAME="client-2"
 ./offer_test_client SUBSCRIBE &
 CLIENT_PID_TWO=$!
 
-# wait for service-1
-export VSOMEIP_APPLICATION_NAME="wua"
-wait-until-available 0x1001 || FAIL=$(($FAIL+1))
-
 export VSOMEIP_APPLICATION_NAME="service-2"
 ./offer_test_service 2 &
 PID_SERVICE_TWO=$!
@@ -105,11 +101,6 @@ export VSOMEIP_APPLICATION_NAME="service-3"
 ./offer_test_service 3 &
 PID_SERVICE_THREE=$!
 
-# wait for service-2 and service-3, ensure they start before the later SIGUSR1
-export VSOMEIP_APPLICATION_NAME="wua"
-wait-until-available 0x1002 || FAIL=$(($FAIL+1))
-wait-until-available 0x1003 || FAIL=$(($FAIL+1))
-
 # Wait until all clients are finished
 # Fail gets incremented if a client exits with a non-zero exit code
 wait $CLIENT_PID_ONE || FAIL=$(($FAIL+1))
@@ -158,10 +149,6 @@ export VSOMEIP_APPLICATION_NAME="client-1"
 ./offer_test_client METHODCALL &
 CLIENT_PID_ONE=$!
 
-# ensure service-2 starts before SIGKILL
-export VSOMEIP_APPLICATION_NAME="wua"
-wait-until-available 0x1002 || FAIL=$(($FAIL+1))
-
 # Kill the service
 
 kill -KILL $PID_SERVICE_TWO
@@ -181,10 +168,6 @@ CLIENT_PID_TWO=$!
 # Fail gets incremented if a client exits with a non-zero exit code
 wait $CLIENT_PID_ONE || FAIL=$(($FAIL+1))
 wait $CLIENT_PID_TWO || FAIL=$(($FAIL+1))
-
-# ensure service-3 starts before SIGUSR1
-export VSOMEIP_APPLICATION_NAME="wua"
-wait-until-available 0x1003 || FAIL=$(($FAIL+1))
 
 # kill the services
 kill -USR1 $PID_SERVICE_THREE
@@ -248,10 +231,6 @@ CLIENT_PID_TWO=$!
 wait $CLIENT_PID_ONE || FAIL=$(($FAIL+1))
 wait $CLIENT_PID_TWO || FAIL=$(($FAIL+1))
 
-# ensure service-3 starts up before SIGUSR1
-export VSOMEIP_APPLICATION_NAME="wua"
-wait-until-available 0x1003 || FAIL=$(($FAIL+1))
-
 # kill the services
 kill -CONT $PID_SERVICE_TWO
 kill -USR1 $PID_SERVICE_TWO
@@ -297,6 +276,7 @@ export VSOMEIP_APPLICATION_NAME="client-1"
 ./offer_test_client METHODCALL &
 CLIENT_PID_ONE=$!
 
+
 # wait until service is available..
 export VSOMEIP_APPLICATION_NAME="wua"
 wait-until-available 0x1111 || FAIL=$(($FAIL+1))
@@ -323,12 +303,6 @@ CLIENT_PID_TWO=$!
 # Fail gets incremented if a client exits with a non-zero exit code
 wait $CLIENT_PID_ONE || FAIL=$(($FAIL+1))
 wait $CLIENT_PID_TWO || FAIL=$(($FAIL+1))
-
-# ensure service-3 and service-4 start up before SIGUSR1
-export VSOMEIP_APPLICATION_NAME="wua"
-wait-until-available 0x1003 || FAIL=$(($FAIL+1))
-wait-until-available 0x1004 || FAIL=$(($FAIL+1))
-
 
 # kill the services
 kill -CONT $PID_SERVICE_TWO

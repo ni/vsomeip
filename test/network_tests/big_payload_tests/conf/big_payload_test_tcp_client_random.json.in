@@ -15,6 +15,7 @@
     [
         {
             "name":"big_payload_test_client",
+            "id":"0x1343",
             "max_dispatchers" : "1",
             "max_dispatch_time" : "5000"
         }

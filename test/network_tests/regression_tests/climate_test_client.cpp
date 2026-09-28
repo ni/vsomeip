@@ -122,11 +122,9 @@ public:
                 // All expected notifications received, stop the client and send shutdown message to
                 // service
                 // due to double initial notifications, might be stopping a "bit" early, hence the different number of
-                // expected availability callbacks. The base count is one higher than before NTWALL-1083: the first
-                // request_release() cycle above always runs while the service is still genuinely offered, so its
-                // re-request now correctly re-fires AS_AVAILABLE instead of being silently suppressed.
+                // expected availability callbacks
                 VSOMEIP_INFO << "availability_handler_calls: " << static_cast<int>(availability_handler_calls);
-                EXPECT_TRUE(availability_handler_calls == 5 || availability_handler_calls == 7);
+                EXPECT_TRUE(availability_handler_calls == 4 || availability_handler_calls == 6);
                 lock.unlock();
 
                 std::shared_ptr<vsomeip::message> its_set = vsomeip::runtime::get()->create_message();
