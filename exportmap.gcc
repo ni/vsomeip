@@ -58,6 +58,22 @@ global:
         vsomeip_v3::udp_server_endpoint_impl::is_joined*;
         vsomeip_v3::udp_server_endpoint_impl::join*;
         vsomeip_v3::udp_server_endpoint_impl::leave*;
+
+        /* abstract socket factory API */
+        vsomeip_v3::set_abstract_factory*;
+        vsomeip_v3::freeze_abstract_factory*;
+        vsomeip_v3::is_abstract_factory_finalized*;
+        vsomeip_v3::was_abstract_factory_late_injection_detected*;
+        *vsomeip_v3::abstract_socket_factory*;
+        *vsomeip_v3::asio_socket_factory*;
+
+        /* XNET socket factory */
+        *vsomeip_v3::xnet_socket_factory*;
+        *vsomeip_v3::xnet_tcp_socket*;
+        *vsomeip_v3::xnet_tcp_acceptor*;
+        *vsomeip_v3::xnet_udp_socket*;
+
+        vsomeip_xnet::*;
     };
     vsomeip_plugin_init;
 local:

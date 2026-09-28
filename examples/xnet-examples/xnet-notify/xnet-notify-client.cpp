@@ -16,12 +16,12 @@
 
 std::shared_ptr<vsomeip::application> app;
 
-void stop_application(int exit_code) {
-    std::cout << "\nShutting down application..." << std::endl;
+void stop_application([[maybe_unused]] int exit_code) {
+std::cout << "\nShutting down application..." << std::endl;
 
-    // Stop the application and release the service and event
-    if (app) {
-        app->release_event(SAMPLE_SERVICE_ID, SAMPLE_INSTANCE_ID, SAMPLE_EVENT_ID);
+// Stop the application and release the service and event
+if (app) {
+    app->release_event(SAMPLE_SERVICE_ID, SAMPLE_INSTANCE_ID, SAMPLE_EVENT_ID);
         app->release_service(SAMPLE_SERVICE_ID, SAMPLE_INSTANCE_ID);
         app->stop();
     }
@@ -55,8 +55,8 @@ bool setup_xnet_stack() {
     return true;
 }
 
-void on_availability(vsomeip::service_t _service, vsomeip::instance_t _instance, bool _is_available) {
-    if (_is_available) {
+void on_availability([[maybe_unused]] vsomeip::service_t _service, [[maybe_unused]] vsomeip::instance_t _instance, bool _is_available) {
+if (_is_available) {
         // Request the event and subscribe to its eventgroup
         std::set<vsomeip::eventgroup_t> groups;
         groups.insert(SAMPLE_EVENTGROUP_ID);
