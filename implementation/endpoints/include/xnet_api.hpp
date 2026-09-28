@@ -46,8 +46,8 @@ struct api_table {
 };
 
 // Returns an immutable snapshot of the active api_table. The snapshot is taken
-// atomically, so it is safe to call concurrently with set_api_table_for_test /
-// reset_api_table_for_test (which atomically swap in a new table).
+// atomically, so it is safe to call concurrently with set_api_table /
+// reset_api_table (which atomically swap in a new table).
 api_table get_api_table();
 void set_api_table(const api_table& _table);
 void reset_api_table();
