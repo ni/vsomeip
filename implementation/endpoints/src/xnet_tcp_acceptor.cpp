@@ -29,7 +29,8 @@ boost::system::error_code make_xnet_error(char const* _operation) {
     if (its_mapped_error != boost::asio::error::would_block &&
         its_mapped_error != boost::asio::error::try_again &&
         its_mapped_error != boost::asio::error::in_progress &&
-        its_mapped_error != boost::asio::error::bad_descriptor) {
+        its_mapped_error != boost::asio::error::bad_descriptor &&
+        its_mapped_error != boost::asio::error::connection_reset) {
         VSOMEIP_ERROR_P << "operation=" << _operation << " failed"
                         << " raw_error=" << its_raw_error
                         << " mapped_error=" << its_mapped_error.value()
