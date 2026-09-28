@@ -31,13 +31,13 @@ constexpr char const* k_xnet_backend_tag = "backend=xnet";
 
 constexpr int SELECT_POLL_TIMEOUT_MS = 200;
 
-boost::system::error_code make_xnet_error(char const* _operation, bool is_canceled = false) {
+boost::system::error_code make_xnet_error(char const* _operation) {
     const auto its_raw_error = xnet_get_last_error();
     auto its_mapped_error = xnet_to_boost_error(its_raw_error);
     if (its_mapped_error != boost::asio::error::would_block &&
         its_mapped_error != boost::asio::error::try_again &&
         its_mapped_error != boost::asio::error::in_progress &&
-        !(is_canceled && its_mapped_error == boost::asio::error::bad_descriptor)) {
+        its_mapped_error != boost::asio::error::bad_descriptor) {
         VSOMEIP_ERROR_P << "operation=" << _operation << " " << k_xnet_backend_tag
                       << " failure_class=stack_io"
                       << " raw_error=" << its_raw_error
@@ -127,14 +127,15 @@ bool wait_socket_ready(nxSOCKET _socket, boost::asio::ip::udp::socket::wait_type
             return true;
         }
         if (its_result == 0) {
-            if (_stop_requested.load(std::memory_order_relaxed) || _cancel_epoch.load(std::memory_order_relaxed) != _operation_epoch) {
+            if (_stop_requested.load(std::memory_order_relaxed)
+                || _cancel_epoch.load(std::memory_order_relaxed) != _operation_epoch) {
                 _ec = boost::asio::error::operation_aborted;
                 return false;
             }
             continue;
         }
 
-        _ec = make_xnet_error("wait_socket_ready", _cancel_epoch.load(std::memory_order_relaxed) != _operation_epoch);
+        _ec = make_xnet_error("wait_socket_ready");
         if (_ec == boost::asio::error::interrupted) {
             continue;
         }
@@ -767,7 +768,7 @@ void xnet_udp_socket::async_connect(boost::asio::ip::udp::endpoint const& remote
         const auto its_result = xnet_api::nxconnect(its_socket, reinterpret_cast<nxsockaddr*>(&its_storage), its_length);
 
         if (its_result == SOCKET_ERROR_VALUE) {
-            its_error = make_xnet_error("async_connect", is_canceled(its_epoch));
+            its_error = make_xnet_error("async_connect");
             if (is_would_block_like(its_error)) {
                 boost::system::error_code its_wait_error;
                 if (wait_socket_ready(its_socket, boost::asio::ip::udp::socket::wait_write,
@@ -823,7 +824,7 @@ void xnet_udp_socket::async_receive_from(boost::asio::mutable_buffer b, boost::a
                 break;
             }
 
-            its_error = make_xnet_error("async_receive_from", is_canceled(its_epoch));
+            its_error = make_xnet_error("async_receive_from");
             if (!is_would_block_like(its_error)) {
                 break;
             }
@@ -838,6 +839,12 @@ void xnet_udp_socket::async_receive_from(boost::asio::mutable_buffer b, boost::a
 
         if (is_canceled(its_epoch)) {
             its_error = boost::asio::error::operation_aborted;
+            its_bytes_received = 0;
+        } else if (its_error == boost::asio::error::bad_descriptor) {
+            // Socket teardown race on close/rejoin can surface as invalid descriptor
+            // from nxrecvfrom/nxselect; treat it as a deterministic cancellation.
+            its_error = boost::asio::error::operation_aborted;
+            its_bytes_received = 0;
         }
 
         post_receive_from_completion(*its_io, std::move(handler), its_error, its_bytes_received,
@@ -882,7 +889,7 @@ void xnet_udp_socket::async_send(boost::asio::const_buffer const& b, rw_handler 
                 break;
             }
 
-            its_error = make_xnet_error("async_send", is_canceled(its_epoch));
+            its_error = make_xnet_error("async_send");
             if (!is_would_block_like(its_error)) {
                 break;
             }
@@ -897,6 +904,7 @@ void xnet_udp_socket::async_send(boost::asio::const_buffer const& b, rw_handler 
 
         if (is_canceled(its_epoch)) {
             its_error = boost::asio::error::operation_aborted;
+            its_bytes_sent = 0;
         }
 
         post_rw_completion(*its_io, std::move(handler), its_error, its_bytes_sent);
@@ -949,7 +957,7 @@ void xnet_udp_socket::async_send_to(boost::asio::const_buffer const& b, boost::a
                 break;
             }
 
-            its_error = make_xnet_error("async_send_to", is_canceled(its_epoch));
+            its_error = make_xnet_error("async_send_to");
             if (!is_would_block_like(its_error)) {
                 break;
             }
@@ -964,6 +972,7 @@ void xnet_udp_socket::async_send_to(boost::asio::const_buffer const& b, boost::a
 
         if (is_canceled(its_epoch)) {
             its_error = boost::asio::error::operation_aborted;
+            its_bytes_sent = 0;
         }
 
         post_rw_completion(*its_io, std::move(handler), its_error, its_bytes_sent);
