@@ -355,10 +355,8 @@ void xnet_tcp_socket::open(boost::asio::ip::tcp::endpoint::protocol_type _pt, bo
     is_ipv6_ = (_pt == boost::asio::ip::tcp::v6());
 
     socket_ = xnet_api::nxsocket(xnet_stack_, is_ipv6_ ? nxAF_INET6 : nxAF_INET, nxSOCK_STREAM, nxIPPROTO_TCP);
-    const bool is_invalid_socket = (socket_ == nxINVALID_SOCKET);
 
-    if (is_invalid_socket) {
-        socket_ = nxINVALID_SOCKET;
+    if (socket_ == nxINVALID_SOCKET) {
         _ec = make_xnet_error("open");
         return;
     }
@@ -402,6 +400,7 @@ void xnet_tcp_socket::close(boost::system::error_code& _ec) {
     if (is_open()) {
         if (xnet_api::nxclose(socket_) == SOCKET_ERROR_VALUE) {
             _ec = make_xnet_error("close");
+            socket_ = nxINVALID_SOCKET;
             stop_worker_threads();
             return;
         }

@@ -434,6 +434,7 @@ void xnet_udp_socket::close(boost::system::error_code& ec) {
     if (is_open()) {
         if (xnet_api::nxclose(socket_) == SOCKET_ERROR_VALUE) {
             ec = make_xnet_error("close");
+            socket_ = nxINVALID_SOCKET;
             stop_worker_threads();
             return;
         }
