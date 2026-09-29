@@ -5,10 +5,6 @@
 
 #pragma once
 
-// --- NI modification: BEGIN ---
-// Centralize platform-specific socket-option handling for the ASIO backend.
-#include "backend_socket_option_helpers.hpp"
-// --- NI modification: END ---
 #include "tcp_socket.hpp"
 
 #include <boost/asio/write.hpp>
@@ -49,34 +45,34 @@ private:
     void set_option(boost::asio::ip::tcp::socket::linger l, boost::system::error_code& ec) override { socket_->set_option(l, ec); }
     void set_option(boost::asio::ip::tcp::socket::reuse_address ra, boost::system::error_code& ec) override { socket_->set_option(ra, ec); }
 #if defined(__linux__)
-    // --- NI modification: BEGIN ---
-    // Route Linux TCP options through the shared backend helper layer.
     [[nodiscard]] bool set_user_timeout(unsigned int timeout) override {
-        return socket_option_helpers::set_tcp_user_timeout(socket_->native_handle(), timeout);
+        return setsockopt(socket_->native_handle(), IPPROTO_TCP, TCP_USER_TIMEOUT, &timeout, sizeof(timeout)) != -1;
     }
     [[nodiscard]] bool set_keepidle(uint32_t idle) override {
-        return socket_option_helpers::set_tcp_keepidle(socket_->native_handle(), idle);
+        auto opt = static_cast<int>(idle);
+        return setsockopt(socket_->native_handle(), IPPROTO_TCP, TCP_KEEPIDLE, &opt, sizeof(opt)) != -1;
     }
     [[nodiscard]] bool set_keepintvl(uint32_t interval) override {
-        return socket_option_helpers::set_tcp_keepintvl(socket_->native_handle(), interval);
+        auto opt = static_cast<int>(interval);
+        return setsockopt(socket_->native_handle(), IPPROTO_TCP, TCP_KEEPINTVL, &opt, sizeof(opt)) != -1;
     }
     [[nodiscard]] bool set_keepcnt(uint32_t count) override {
-        return socket_option_helpers::set_tcp_keepcnt(socket_->native_handle(), count);
+        auto opt = static_cast<int>(count);
+        return setsockopt(socket_->native_handle(), IPPROTO_TCP, TCP_KEEPCNT, &opt, sizeof(opt)) != -1;
     }
     [[nodiscard]] bool set_quick_ack() override {
-        return socket_option_helpers::set_tcp_quick_ack(socket_->native_handle());
+        int flag = 1;
+        return setsockopt(socket_->native_handle(), IPPROTO_TCP, TCP_QUICKACK, &flag, sizeof(flag)) != -1;
     }
-    // --- NI modification: END ---
 #endif
 #if defined(__linux__) || defined(__QNX__)
-    // --- NI modification: BEGIN ---
-    // Route device binding through the shared backend helper layer.
     [[nodiscard]] bool bind_to_device(std::string const& _device) override {
         // +1 since std::string.size does not take into account the null terminator
-        return socket_option_helpers::set_bind_to_device(socket_->native_handle(), _device);
+        return setsockopt(socket_->native_handle(), SOL_SOCKET, SO_BINDTODEVICE, _device.c_str(),
+                          static_cast<socklen_t>(_device.size() + 1))
+                != -1;
     }
     [[nodiscard]] bool can_read_fd_flags() override { return fcntl(socket_->native_handle(), F_GETFD) != -1; }
-    // --- NI modification: END ---
 #endif
     boost::asio::ip::tcp::endpoint local_endpoint(boost::system::error_code& ec) const override { return socket_->local_endpoint(ec); }
     void async_connect(boost::asio::ip::tcp::endpoint const& ep, connect_handler handler) override {
@@ -183,25 +179,23 @@ private:
     }
 
 #if defined(__linux__)
-    // --- NI modification: BEGIN ---
-    // Route Linux acceptor options through the shared backend helper layer.
     [[nodiscard]] bool set_reuse_port() override {
-        return socket_option_helpers::set_tcp_acceptor_reuse_port(acceptor_->native_handle());
+        int flag = 1;
+        return setsockopt(acceptor_->native_handle(), SOL_SOCKET, SO_REUSEPORT, &flag, sizeof(flag)) != -1;
     }
 
     [[nodiscard]] bool set_native_option_free_bind() override {
-        return socket_option_helpers::set_tcp_acceptor_free_bind(acceptor_->native_handle());
+        int opt = 1;
+        return setsockopt(acceptor_->native_handle(), IPPROTO_IP, IP_FREEBIND, &opt, sizeof(opt)) != -1;
     }
-    // --- NI modification: END ---
 #endif
 #if defined(__linux__) || defined(__QNX__)
-    // --- NI modification: BEGIN ---
-    // Route device binding through the shared backend helper layer.
     [[nodiscard]] bool bind_to_device(std::string const& _device) override {
         // +1 since std::string.size does not take into account the null terminator
-        return socket_option_helpers::set_bind_to_device(acceptor_->native_handle(), _device);
+        return setsockopt(acceptor_->native_handle(), SOL_SOCKET, SO_BINDTODEVICE, _device.c_str(),
+                          static_cast<socklen_t>(_device.size() + 1))
+                != -1;
     }
-    // --- NI modification: END ---
 #endif
     void async_accept(tcp_socket& _socket, boost::asio::ip::tcp::endpoint& _peer_ep, connect_handler _handler) override {
         auto* socket_impl = dynamic_cast<asio_tcp_socket*>(&_socket);
