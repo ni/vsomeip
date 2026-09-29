@@ -5,6 +5,27 @@
 
 namespace vsomeip_v3::xnet_api {
 
+#ifndef ENABLE_XNET_TESTS
+
+using ::nxgetlasterrornum;
+using ::nxsocket;
+using ::nxbind;
+using ::nxclose;
+using ::nxshutdown;
+using ::nxsetsockopt;
+using ::nxgetsockopt;
+using ::nxgetsockname;
+using ::nxconnect;
+using ::nxrecvfrom;
+using ::nxsend;
+using ::nxsendto;
+using ::nxrecv;
+using ::nxaccept;
+using ::nxlisten;
+using ::nxselect;
+
+#else
+
 struct api_table {
     decltype(&::nxgetlasterrornum) nxgetlasterrornum_fn{&::nxgetlasterrornum};
     decltype(&::nxsocket) nxsocket_fn{&::nxsocket};
@@ -25,11 +46,11 @@ struct api_table {
 };
 
 // Returns an immutable snapshot of the active api_table. The snapshot is taken
-// atomically, so it is safe to call concurrently with set_api_table_for_test /
-// reset_api_table_for_test (which atomically swap in a new table).
+// atomically, so it is safe to call concurrently with set_api_table /
+// reset_api_table (which atomically swap in a new table).
 api_table get_api_table();
-void set_api_table_for_test(const api_table& _table);
-void reset_api_table_for_test();
+void set_api_table(const api_table& _table);
+void reset_api_table();
 
 inline auto nxgetlasterrornum() {
     return get_api_table().nxgetlasterrornum_fn();
@@ -94,6 +115,8 @@ inline int nxlisten(nxSOCKET _socket, int _backlog) {
 inline int nxselect(int _nfds, nxfd_set* _readfds, nxfd_set* _writefds, nxfd_set* _exceptfds, nxtimeval* _timeout) {
     return get_api_table().nxselect_fn(_nfds, _readfds, _writefds, _exceptfds, _timeout);
 }
+
+#endif // ENABLE_XNET_TESTS
 
 } // namespace vsomeip_v3::xnet_api
 

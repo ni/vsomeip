@@ -16,11 +16,11 @@ TEST(xnet_api_seam_test, injected_last_error_is_used_by_xnet_get_last_error) {
     vsomeip_v3::xnet_api::api_table table = vsomeip_v3::xnet_api::get_api_table();
     table.nxgetlasterrornum_fn = &fake_last_error;
 
-    vsomeip_v3::xnet_api::set_api_table_for_test(table);
+    vsomeip_v3::xnet_api::set_api_table(table);
 
     EXPECT_EQ(vsomeip_v3::xnet_get_last_error(), 13850);
 
-    vsomeip_v3::xnet_api::reset_api_table_for_test();
+    vsomeip_v3::xnet_api::reset_api_table();
 }
 
 TEST(xnet_test_utils_test, async_completion_probe_waits_and_counts_signals) {
