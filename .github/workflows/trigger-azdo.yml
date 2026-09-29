@@ -1,0 +1,39 @@
+name: Trigger AzDo Hello World
+
+on:
+  workflow_dispatch:
+
+jobs:
+  trigger:
+    runs-on: ubuntu-latest
+    env:
+      PAT: ${{ secrets.AZURE_DEVOPS_PAT }}
+      ORG: ni
+      PROJECT: DevCentral
+      PIPELINE_ID: 33718
+    steps:
+      - name: Queue pipeline run
+        id: queue
+        run: |
+          RESPONSE=$(curl -sS --fail -X POST -u ":${PAT}" \
+            -H "Content-Type: application/json" \
+            "https://dev.azure.com/${ORG}/${PROJECT}/_apis/pipelines/${PIPELINE_ID}/runs?api-version=7.1" \
+            -d '{}')
+          RUN_ID=$(echo "$RESPONSE" | jq -r '.id')
+          echo "Queued run $RUN_ID: $(echo "$RESPONSE" | jq -r '._links.web.href')"
+          echo "run_id=$RUN_ID" >> "$GITHUB_OUTPUT"
+
+      - name: Wait for completion
+        run: |
+          URL="https://dev.azure.com/${ORG}/${PROJECT}/_apis/pipelines/${PIPELINE_ID}/runs/${{ steps.queue.outputs.run_id }}?api-version=7.1"
+          for i in $(seq 1 120); do            # up to ~20 min
+            RUN=$(curl -sS --fail -u ":${PAT}" "$URL")
+            STATE=$(echo "$RUN" | jq -r '.state')
+            RESULT=$(echo "$RUN" | jq -r '.result // empty')
+            echo "state=$STATE result=$RESULT"
+            if [ "$STATE" = "completed" ]; then
+              [ "$RESULT" = "succeeded" ] && exit 0 || exit 1
+            fi
+            sleep 10
+          done
+          echo "Timed out waiting for run"; exit 1
