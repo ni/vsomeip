@@ -6,7 +6,6 @@ on:
     branches:
       - users/ggrigory/Create_an_action_to_trigger_AzDo_pipline
 
-
 jobs:
   trigger:
     runs-on: ubuntu-latest
