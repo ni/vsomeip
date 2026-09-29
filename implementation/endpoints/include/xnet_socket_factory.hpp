@@ -10,13 +10,11 @@ namespace vsomeip_v3 {
 
 class xnet_socket_factory final : public abstract_socket_factory {
 public:
-xnet_socket_factory();
 explicit xnet_socket_factory(nxIpStackRef_t xnet_stack);
 ~xnet_socket_factory() override = default;
 
 // Get XNET stack reference
 nxIpStackRef_t get_xnet_stack() const { return xnet_stack_; }
-bool is_xnet_enabled() const { return xnet_stack_ != nullptr; }
 
 #if defined(__linux__)
     std::shared_ptr<abstract_netlink_connector> create_netlink_connector(boost::asio::io_context& _io,
@@ -39,7 +37,7 @@ bool is_xnet_enabled() const { return xnet_stack_ != nullptr; }
     bool is_xnet_backend() const override;
 
 private:
-    nxIpStackRef_t xnet_stack_ = nullptr; // XNET IP stack reference (always null on non-XNET builds)
+    nxIpStackRef_t xnet_stack_ = nullptr; // XNET IP stack reference
 };
 
 }

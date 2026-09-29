@@ -24,8 +24,7 @@ class xnet_tcp_acceptor;
 
 class xnet_tcp_socket final : public tcp_socket {
 public:
-    explicit xnet_tcp_socket(boost::asio::io_context& _io, nxIpStackRef_t _xnet_stack);
-    xnet_tcp_socket(boost::asio::io_context& _io, nxIpStackRef_t _xnet_stack, std::shared_ptr<void> _stack_lifetime);
+    xnet_tcp_socket(boost::asio::io_context& _io, nxIpStackRef_t _xnet_stack);
     ~xnet_tcp_socket() override;
 
 private:
@@ -84,9 +83,7 @@ private:
     nxSOCKET socket_;
     boost::asio::io_context& io_context_;
     nxIpStackRef_t xnet_stack_;
-    std::shared_ptr<void> stack_lifetime_;
     bool is_ipv6_;
-    bool non_blocking_mode_;
     std::thread rx_worker_thread_;
     std::thread tx_worker_thread_;
     std::atomic<bool> rx_stop_requested_;
