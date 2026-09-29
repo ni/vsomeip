@@ -18,15 +18,12 @@ jobs:
       - name: Queue pipeline run
         id: queue
         run: |
-          if [ -z "$PAT" ]; then echo "PAT secret is empty!"; exit 1; fi
-          HTTP_CODE=$(curl -sS -o response.json -w "%{http_code}" -X POST -u ":${PAT}" \
+          RESPONSE=$(curl -sS --fail -X POST -u ":${PAT}" \
             -H "Content-Type: application/json" \
             "https://dev.azure.com/${ORG}/${PROJECT}/_apis/pipelines/${PIPELINE_ID}/runs?api-version=7.1" \
-            -d '{}')
-          echo "HTTP $HTTP_CODE"
-          cat response.json; echo
-          [ "$HTTP_CODE" -ge 200 ] && [ "$HTTP_CODE" -lt 300 ] || exit 1
-          RUN_ID=$(jq -r '.id' response.json)
+            -d '{"resources": {"repositories": {"self": {"refName": "refs/heads/users/bsziksza/testPipeline"}}}}')
+          RUN_ID=$(echo "$RESPONSE" | jq -r '.id')
+          echo "Queued run $RUN_ID: $(echo "$RESPONSE" | jq -r '._links.web.href')"
           echo "run_id=$RUN_ID" >> "$GITHUB_OUTPUT"
 
       - name: Wait for completion
