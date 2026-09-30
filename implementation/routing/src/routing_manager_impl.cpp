@@ -1084,7 +1084,13 @@ void routing_manager_impl::on_message(const byte_t* _data, length_t _length, boa
 
     if (its_service == VSOMEIP_SD_SERVICE) {
         if (discovery_ && its_method == sd::method) {
-            if (configuration_->get_sd_port() == _remote_port) {
+            if (configuration_->get_sd_port() == _remote_port
+                // --- NI modification: BEGIN ---
+                // Also accept SD that arrives on one of our own endpoints from a
+                // peer using that same port (AUTOSAR service-endpoint SD, e.g. 42810).
+                || (_receiver && _remote_port == _receiver->get_local_port())
+                // --- NI modification: END ---
+            ) {
                 // ACL check SD message
                 if (!is_acl_message_allowed(_receiver, its_service, ANY_INSTANCE, _remote_address)) {
                     // Note: acl check already logs failure
