@@ -8,7 +8,6 @@
 #include <boost/endian/conversion.hpp>
 
 #include "../include/xnet_tcp_acceptor.hpp"
-#include "../include/backend_socket_option_helpers.hpp"
 #include "../include/xnet_tcp_socket.hpp"
 #include "../include/xnet_error.hpp"
 #include "../include/xnet_api.hpp"
@@ -23,20 +22,8 @@ namespace vsomeip_v3 {
 
 namespace {
 
-boost::system::error_code make_xnet_error(char const* _operation) {
-    const auto its_raw_error = xnet_get_last_error();
-    auto its_mapped_error = xnet_to_boost_error(its_raw_error);
-    if (its_mapped_error != boost::asio::error::would_block &&
-        its_mapped_error != boost::asio::error::try_again &&
-        its_mapped_error != boost::asio::error::in_progress &&
-        its_mapped_error != boost::asio::error::bad_descriptor &&
-        its_mapped_error != boost::asio::error::connection_reset) {
-        VSOMEIP_ERROR_P << "operation=" << _operation << " failed"
-                        << " raw_error=" << its_raw_error
-                        << " mapped_error=" << its_mapped_error.value()
-                        << " message=" << its_mapped_error.message();
-    }
-    return its_mapped_error;
+boost::system::error_code get_xnet_error() {
+    return xnet_to_boost_error(xnet_get_last_error());
 }
 
 void post_completion(boost::asio::io_context& _io, tcp_base_socket::connect_handler _handler, boost::system::error_code const& _ec) {
@@ -147,7 +134,7 @@ bool wait_read_ready(nxSOCKET _socket, std::chrono::milliseconds _timeout,
             return false;
         }
 
-        _ec = make_xnet_error("wait_read_ready");
+        _ec = get_xnet_error();
         if (_ec == boost::asio::error::interrupted) {
             continue;
         }
@@ -169,7 +156,6 @@ xnet_tcp_acceptor::xnet_tcp_acceptor(boost::asio::io_context& _io, nxIpStackRef_
       is_ipv6_(false),
       stop_requested_(false),
       cancel_epoch_(0) {
-    VSOMEIP_INFO_P << "acceptor created";
 }
 
 xnet_tcp_acceptor::~xnet_tcp_acceptor() {
@@ -259,7 +245,7 @@ void xnet_tcp_acceptor::open(boost::asio::ip::tcp::endpoint::protocol_type _pt, 
     acceptor_ = xnet_api::nxsocket(xnet_stack_, is_ipv6_ ? nxAF_INET6 : nxAF_INET, nxSOCK_STREAM, nxIPPROTO_TCP);
 
     if (acceptor_ == nxINVALID_SOCKET) {
-        _ec = make_xnet_error("open");
+        _ec = get_xnet_error();
         return;
     }
 
@@ -288,7 +274,7 @@ void xnet_tcp_acceptor::bind(boost::asio::ip::tcp::endpoint const& _ep, boost::s
     }
 
     if (xnet_api::nxbind(acceptor_, reinterpret_cast<nxsockaddr*>(&its_storage), its_len) == SOCKET_ERROR_VALUE) {
-        _ec = make_xnet_error("bind");
+        _ec = get_xnet_error();
         return;
     }
 
@@ -300,13 +286,12 @@ void xnet_tcp_acceptor::close(boost::system::error_code& _ec) {
 
     if (is_open()) {
         if (xnet_api::nxclose(acceptor_) == SOCKET_ERROR_VALUE) {
-            _ec = make_xnet_error("close");
+            _ec = get_xnet_error();
             acceptor_ = nxINVALID_SOCKET;
             stop_worker_thread();
             return;
         }
         acceptor_ = nxINVALID_SOCKET;
-        VSOMEIP_INFO_P << "socket closed";
     }
     _ec.clear();
     stop_worker_thread();
@@ -326,7 +311,7 @@ void xnet_tcp_acceptor::listen(int _backlog, boost::system::error_code& _ec) {
 
     const auto its_backlog = std::min(_backlog, static_cast<int>(std::numeric_limits<int16_t>::max()));
     if (xnet_api::nxlisten(acceptor_, its_backlog) == SOCKET_ERROR_VALUE) {
-        _ec = make_xnet_error("listen");
+        _ec = get_xnet_error();
         return;
     }
 
@@ -341,7 +326,7 @@ void xnet_tcp_acceptor::set_option(boost::asio::ip::tcp::socket::reuse_address _
 
     int opt = _ra.value() ? 1 : 0;
     if (xnet_api::nxsetsockopt(acceptor_, nxSOL_SOCKET, nxSO_REUSEADDR, &opt, static_cast<nxsocklen_t>(sizeof(opt))) == SOCKET_ERROR_VALUE) {
-        _ec = make_xnet_error("reuse_address");
+        _ec = get_xnet_error();
         return;
     }
 
@@ -381,7 +366,6 @@ bool xnet_tcp_acceptor::bind_to_device(std::string const& _device) {
 
     if (xnet_api::nxsetsockopt(acceptor_, nxSOL_SOCKET, nxSO_BINDTODEVICE, _device.c_str(), static_cast<nxsocklen_t>(_device.size()))
         == SOCKET_ERROR_VALUE) {
-        (void)make_xnet_error("bind_to_device");
         return false;
     }
     return true;
@@ -431,7 +415,7 @@ void xnet_tcp_acceptor::async_accept(tcp_socket& _socket, boost::asio::ip::tcp::
             const bool is_accept_failed = (its_client_socket == nxINVALID_SOCKET);
 
             if (is_accept_failed) {
-                its_error = make_xnet_error("async_accept");
+                its_error = get_xnet_error();
                 if (its_error == boost::asio::error::would_block || its_error == boost::asio::error::try_again
                     || its_error == boost::asio::error::interrupted || its_error == boost::asio::error::in_progress) {
                     continue;

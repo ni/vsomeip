@@ -27,25 +27,10 @@ namespace vsomeip_v3 {
 
 namespace {
 
-constexpr char const* k_xnet_backend_tag = "backend=xnet";
-
 constexpr int SELECT_POLL_TIMEOUT_MS = 200;
 
-boost::system::error_code make_xnet_error(char const* _operation) {
-    const auto its_raw_error = xnet_get_last_error();
-    auto its_mapped_error = xnet_to_boost_error(its_raw_error);
-    if (its_mapped_error != boost::asio::error::would_block &&
-        its_mapped_error != boost::asio::error::try_again &&
-        its_mapped_error != boost::asio::error::in_progress &&
-        its_mapped_error != boost::asio::error::bad_descriptor &&
-        its_mapped_error != boost::asio::error::connection_reset) {
-        VSOMEIP_ERROR_P << "operation=" << _operation << " " << k_xnet_backend_tag
-                      << " failure_class=stack_io"
-                      << " raw_error=" << its_raw_error
-                      << " mapped_error=" << its_mapped_error.value()
-                      << " message=" << its_mapped_error.message();
-    }
-    return its_mapped_error;
+boost::system::error_code get_xnet_error() {
+    return xnet_to_boost_error(xnet_get_last_error());
 }
 
 inline std::size_t clamp_size_to_int32(std::size_t _size) {
@@ -136,7 +121,7 @@ bool wait_socket_ready(nxSOCKET _socket, boost::asio::ip::udp::socket::wait_type
             continue;
         }
 
-        _ec = make_xnet_error("wait_socket_ready");
+        _ec = get_xnet_error();
         if (_ec == boost::asio::error::interrupted) {
             continue;
         }
@@ -205,18 +190,13 @@ bool native_to_endpoint(nxsockaddr_storage const& _storage, nxsocklen_t _len, bo
 }
 
 boost::system::error_code make_unsupported_option_error(char const* _option, char const* _reason) {
-    VSOMEIP_WARNING_P << "option=" << _option << " " << k_xnet_backend_tag
-                    << " failure_class=option_translation"
-                    << " detail=unsupported"
-                    << " reason=" << _reason;
+    VSOMEIP_WARNING_P << "option=" << _option << " unsupported: " << _reason;
     return boost::asio::error::make_error_code(boost::asio::error::operation_not_supported);
 }
 
 boost::system::error_code make_family_mismatch_error(char const* _option, bool _is_ipv6_socket) {
-    VSOMEIP_ERROR_P << "option=" << _option << " " << k_xnet_backend_tag
-                  << " failure_class=option_translation"
-                  << " detail=address_family_mismatch"
-                  << " socket_family=" << (_is_ipv6_socket ? "IPv6" : "IPv4");
+    VSOMEIP_ERROR_P << "option=" << _option << " address family mismatch: "
+                    << " socket_family=" << (_is_ipv6_socket ? "IPv6" : "IPv4");
     return boost::asio::error::make_error_code(boost::asio::error::address_family_not_supported);
 }
 
@@ -230,9 +210,6 @@ xnet_udp_socket::xnet_udp_socket(boost::asio::io_context& _io, nxIpStackRef_t xn
       non_blocking_mode_(false),
       stop_requested_(false),
       cancel_epoch_(0) {
-    VSOMEIP_INFO_P << k_xnet_backend_tag
-                 << " stack_ref=" << xnet_stack_
-                 << " stack_ready=" << (xnet_stack_ != nullptr ? "true" : "false");
 }
 
 xnet_udp_socket::~xnet_udp_socket() {
@@ -383,7 +360,7 @@ void xnet_udp_socket::open(boost::asio::ip::udp::endpoint::protocol_type pt, boo
     socket_ = xnet_api::nxsocket(xnet_stack_, is_ipv6_ ? nxAF_INET6 : nxAF_INET, nxSOCK_DGRAM, nxIPPROTO_UDP);
 
     if (socket_ == nxINVALID_SOCKET) {
-        ec = make_xnet_error("open");
+        ec = get_xnet_error();
         return;
     }
 
@@ -395,7 +372,6 @@ void xnet_udp_socket::open(boost::asio::ip::udp::endpoint::protocol_type pt, boo
         return;
     }
 
-    VSOMEIP_INFO_P << "socket opened protocol=" << (is_ipv6_ ? "IPv6" : "IPv4");
     ec.clear();
 }
 
@@ -405,16 +381,6 @@ void xnet_udp_socket::bind(boost::asio::ip::udp::endpoint const& ep, boost::syst
         return; 
     }
 
-    // Validate address family matches the opened socket; reject mismatches early
-    const bool ep_is_v6 = ep.address().is_v6();
-    if (ep_is_v6 != is_ipv6_) {
-        VSOMEIP_ERROR_P << "address family mismatch: socket="
-                      << (is_ipv6_ ? "IPv6" : "IPv4")
-                      << " endpoint=" << (ep_is_v6 ? "IPv6" : "IPv4");
-        ec = boost::asio::error::make_error_code(boost::asio::error::address_family_not_supported);
-        return;
-    }
-
     nxsockaddr_storage its_storage{};
     nxsocklen_t its_length = 0;
     if (!endpoint_to_native(ep, its_storage, its_length, ec)) {
@@ -422,11 +388,11 @@ void xnet_udp_socket::bind(boost::asio::ip::udp::endpoint const& ep, boost::syst
     }
 
     if (xnet_api::nxbind(socket_, reinterpret_cast<nxsockaddr*>(&its_storage), its_length) == SOCKET_ERROR_VALUE) {
-        ec = make_xnet_error("bind");
-    } else {
-        VSOMEIP_INFO_P << "bound to " << ep.address().to_string() << ":" << ep.port();
-        ec.clear();
+        ec = get_xnet_error();
+        return;
     }
+    
+    ec.clear();
 }
 
 void xnet_udp_socket::close(boost::system::error_code& ec) { 
@@ -434,7 +400,7 @@ void xnet_udp_socket::close(boost::system::error_code& ec) {
 
     if (is_open()) {
         if (xnet_api::nxclose(socket_) == SOCKET_ERROR_VALUE) {
-            ec = make_xnet_error("close");
+            ec = get_xnet_error();
             socket_ = nxINVALID_SOCKET;
             non_blocking_mode_ = false;
             stop_worker_threads();
@@ -442,7 +408,6 @@ void xnet_udp_socket::close(boost::system::error_code& ec) {
         }
         socket_ = nxINVALID_SOCKET;
         non_blocking_mode_ = false;
-        VSOMEIP_INFO_P << "socket closed";
     }
     ec.clear();
     stop_worker_threads();
@@ -468,10 +433,9 @@ void xnet_udp_socket::native_non_blocking(bool mode, boost::system::error_code& 
         return;
     }
 
-    VSOMEIP_INFO_P << "set mode=" << mode;
     int opt = mode ? 1 : 0;
     if (xnet_api::nxsetsockopt(socket_, nxSOL_SOCKET, nxSO_NONBLOCK, &opt, static_cast<nxsocklen_t>(sizeof(opt))) == SOCKET_ERROR_VALUE) {
-        ec = make_xnet_error("native_non_blocking");
+        ec = get_xnet_error();
         return;
     }
     
@@ -480,8 +444,6 @@ void xnet_udp_socket::native_non_blocking(bool mode, boost::system::error_code& 
 }
 
 void xnet_udp_socket::set_option(boost::asio::ip::udp::socket::reuse_address ra, boost::system::error_code& ec) { 
-    VSOMEIP_INFO_P << "reuse_address value=" << ra.value();
-
     if (!is_open()) {
         ec = boost::asio::error::bad_descriptor;
         return;
@@ -489,7 +451,7 @@ void xnet_udp_socket::set_option(boost::asio::ip::udp::socket::reuse_address ra,
 
     int opt = ra.value() ? 1 : 0;
     if (xnet_api::nxsetsockopt(socket_, nxSOL_SOCKET, nxSO_REUSEADDR, &opt, static_cast<nxsocklen_t>(sizeof(opt))) == SOCKET_ERROR_VALUE) {
-        ec = make_xnet_error("reuse_address");
+        ec = get_xnet_error();
         return;
     }
 
@@ -497,8 +459,6 @@ void xnet_udp_socket::set_option(boost::asio::ip::udp::socket::reuse_address ra,
 }
 
 void xnet_udp_socket::set_option(boost::asio::ip::udp::socket::broadcast broad, boost::system::error_code& ec) { 
-    VSOMEIP_INFO_P << "broadcast value=" << broad.value();
-
     if (!is_open()) {
         ec = boost::asio::error::bad_descriptor;
         return;
@@ -512,8 +472,6 @@ void xnet_udp_socket::set_option(boost::asio::ip::udp::socket::broadcast broad, 
 }
 
 void xnet_udp_socket::set_option(boost::asio::ip::udp::socket::receive_buffer_size rx_size, boost::system::error_code& ec) { 
-    VSOMEIP_INFO_P << "receive_buffer_size value=" << rx_size.value();
-
     if (!is_open()) {
         ec = boost::asio::error::bad_descriptor;
         return;
@@ -521,7 +479,7 @@ void xnet_udp_socket::set_option(boost::asio::ip::udp::socket::receive_buffer_si
 
     int opt = rx_size.value();
     if (xnet_api::nxsetsockopt(socket_, nxSOL_SOCKET, nxSO_RCVBUF, &opt, static_cast<nxsocklen_t>(sizeof(opt))) == SOCKET_ERROR_VALUE) {
-        ec = make_xnet_error("receive_buffer_size");
+        ec = get_xnet_error();
         return;
     }
 
@@ -529,8 +487,6 @@ void xnet_udp_socket::set_option(boost::asio::ip::udp::socket::receive_buffer_si
 }
 
 void xnet_udp_socket::set_option(boost::asio::ip::multicast::join_group join, boost::system::error_code& ec) { 
-    VSOMEIP_INFO_P << "join_group";
-
     if (!is_open()) {
         ec = boost::asio::error::bad_descriptor;
         return;
@@ -546,7 +502,7 @@ void xnet_udp_socket::set_option(boost::asio::ip::multicast::join_group join, bo
         }
         if (xnet_api::nxsetsockopt(socket_, nxIPPROTO_IPV6, nxIPV6_JOIN_GROUP, option_data, static_cast<nxsocklen_t>(option_size))
             == SOCKET_ERROR_VALUE) {
-            ec = make_xnet_error("join_group");
+            ec = get_xnet_error();
             return;
         }
     } else {
@@ -559,7 +515,7 @@ void xnet_udp_socket::set_option(boost::asio::ip::multicast::join_group join, bo
         }
         if (xnet_api::nxsetsockopt(socket_, nxIPPROTO_IP, nxIP_ADD_MEMBERSHIP, option_data, static_cast<nxsocklen_t>(option_size))
             == SOCKET_ERROR_VALUE) {
-            ec = make_xnet_error("join_group");
+            ec = get_xnet_error();
             return;
         }
     }
@@ -568,8 +524,6 @@ void xnet_udp_socket::set_option(boost::asio::ip::multicast::join_group join, bo
 }
 
 void xnet_udp_socket::set_option(boost::asio::ip::multicast::leave_group leave, boost::system::error_code& ec) { 
-    VSOMEIP_INFO_P << "leave_group";
-
     if (!is_open()) {
         ec = boost::asio::error::bad_descriptor;
         return;
@@ -585,7 +539,7 @@ void xnet_udp_socket::set_option(boost::asio::ip::multicast::leave_group leave, 
         }
         if (xnet_api::nxsetsockopt(socket_, nxIPPROTO_IPV6, nxIPV6_LEAVE_GROUP, option_data, static_cast<nxsocklen_t>(option_size))
             == SOCKET_ERROR_VALUE) {
-            ec = make_xnet_error("leave_group");
+            ec = get_xnet_error();
             return;
         }
     } else {
@@ -598,7 +552,7 @@ void xnet_udp_socket::set_option(boost::asio::ip::multicast::leave_group leave, 
         }
         if (xnet_api::nxsetsockopt(socket_, nxIPPROTO_IP, nxIP_DROP_MEMBERSHIP, option_data, static_cast<nxsocklen_t>(option_size))
             == SOCKET_ERROR_VALUE) {
-            ec = make_xnet_error("leave_group");
+            ec = get_xnet_error();
             return;
         }
     }
@@ -607,8 +561,6 @@ void xnet_udp_socket::set_option(boost::asio::ip::multicast::leave_group leave, 
 }
 
 void xnet_udp_socket::set_option(boost::asio::ip::multicast::outbound_interface outbound, boost::system::error_code& ec) { 
-    VSOMEIP_INFO_P << "outbound_interface";
-
     if (!is_open()) {
         ec = boost::asio::error::bad_descriptor;
         return;
@@ -637,7 +589,7 @@ void xnet_udp_socket::set_option(boost::asio::ip::multicast::outbound_interface 
         }
         if (xnet_api::nxsetsockopt(socket_, nxIPPROTO_IPV6, nxIPV6_MULTICAST_IF, &if_index, static_cast<nxsocklen_t>(sizeof(if_index)))
             == SOCKET_ERROR_VALUE) {
-            ec = make_xnet_error("outbound_interface");
+            ec = get_xnet_error();
             return;
         }
     } else {
@@ -649,7 +601,7 @@ void xnet_udp_socket::set_option(boost::asio::ip::multicast::outbound_interface 
         }
         if (xnet_api::nxsetsockopt(socket_, nxIPPROTO_IP, nxIP_MULTICAST_IF, outbound.data(protocol), static_cast<nxsocklen_t>(option_size))
             == SOCKET_ERROR_VALUE) {
-            ec = make_xnet_error("outbound_interface");
+            ec = get_xnet_error();
             return;
         }
     }
@@ -659,35 +611,30 @@ void xnet_udp_socket::set_option(boost::asio::ip::multicast::outbound_interface 
 
 #if defined(__linux__) || defined(__QNX__)
 void xnet_udp_socket::set_option([[maybe_unused]] udp_bind_to_device _opt, boost::system::error_code& _ec) {
-    VSOMEIP_INFO_P << "bind_to_device";
     if (!is_open()) { _ec = boost::asio::error::bad_descriptor; return; }
     // SO_BINDTODEVICE is not supported by the XNET stack
     _ec = boost::asio::error::operation_not_supported;
 }
 
 void xnet_udp_socket::set_option([[maybe_unused]] udp_packet_info_ip4 _opt, boost::system::error_code& _ec) {
-    VSOMEIP_INFO_P << "packet_info_ip4";
     if (!is_open()) { _ec = boost::asio::error::bad_descriptor; return; }
     // IP_PKTINFO is not supported by the XNET stack
     _ec = boost::asio::error::operation_not_supported;
 }
 
 void xnet_udp_socket::set_option([[maybe_unused]] udp_packet_info_ip6 _opt, boost::system::error_code& _ec) {
-    VSOMEIP_INFO_P << "packet_info_ip6";
     if (!is_open()) { _ec = boost::asio::error::bad_descriptor; return; }
     // IPV6_RECVPKTINFO is not supported by the XNET stack
     _ec = boost::asio::error::operation_not_supported;
 }
 
 void xnet_udp_socket::set_option([[maybe_unused]] udp_send_timeout _opt, boost::system::error_code& _ec) {
-    VSOMEIP_INFO_P << "send_timeout";
     if (!is_open()) { _ec = boost::asio::error::bad_descriptor; return; }
     // SO_SNDTIMEO is not supported by the XNET stack
     _ec = boost::asio::error::operation_not_supported;
 }
 
 void xnet_udp_socket::set_option([[maybe_unused]] udp_receive_timeout _opt, boost::system::error_code& _ec) {
-    VSOMEIP_INFO_P << "receive_timeout";
     if (!is_open()) { _ec = boost::asio::error::bad_descriptor; return; }
     // SO_RCVTIMEO is not supported by the XNET stack
     _ec = boost::asio::error::operation_not_supported;
@@ -700,7 +647,6 @@ bool xnet_udp_socket::can_read_fd_flags() {
 
 #ifdef __linux__
 void xnet_udp_socket::set_option([[maybe_unused]] udp_receive_buffer_force _opt, boost::system::error_code& _ec) {
-    VSOMEIP_INFO_P << "receive_buffer_force";
     if (!is_open()) { _ec = boost::asio::error::bad_descriptor; return; }
     // SO_RCVBUFFORCE is not supported by the XNET stack
     _ec = boost::asio::error::operation_not_supported;
@@ -708,8 +654,6 @@ void xnet_udp_socket::set_option([[maybe_unused]] udp_receive_buffer_force _opt,
 #endif // __linux__
 
 void xnet_udp_socket::get_option(boost::asio::ip::udp::socket::receive_buffer_size& rx_size, boost::system::error_code& ec) {
-    VSOMEIP_INFO_P << "receive_buffer_size";
-
     if (!is_open()) {
         ec = boost::asio::error::bad_descriptor;
         return;
@@ -718,7 +662,7 @@ void xnet_udp_socket::get_option(boost::asio::ip::udp::socket::receive_buffer_si
     int value = 0;
     nxsocklen_t opt_len = static_cast<nxsocklen_t>(sizeof(value));
     if (xnet_api::nxgetsockopt(socket_, nxSOL_SOCKET, nxSO_RCVBUF, &value, &opt_len) == SOCKET_ERROR_VALUE || opt_len < static_cast<nxsocklen_t>(sizeof(value))) {
-        ec = make_xnet_error("receive_buffer_size");
+        ec = get_xnet_error();
         return;
     }
 
@@ -727,7 +671,6 @@ void xnet_udp_socket::get_option(boost::asio::ip::udp::socket::receive_buffer_si
 }
 
 boost::asio::ip::udp::endpoint xnet_udp_socket::local_endpoint(boost::system::error_code& ec) const {
-    VSOMEIP_INFO_P << "query";
     if (!is_open()) {
         ec = boost::asio::error::bad_descriptor;
         return {};
@@ -737,7 +680,7 @@ boost::asio::ip::udp::endpoint xnet_udp_socket::local_endpoint(boost::system::er
     nxsocklen_t its_len = static_cast<nxsocklen_t>(sizeof(its_storage));
 
     if (xnet_api::nxgetsockname(socket_, reinterpret_cast<nxsockaddr*>(&its_storage), &its_len) == SOCKET_ERROR_VALUE) {
-        ec = make_xnet_error("local_endpoint");
+        ec = get_xnet_error();
         return {};
     }
 
@@ -751,8 +694,6 @@ boost::asio::ip::udp::endpoint xnet_udp_socket::local_endpoint(boost::system::er
 }
 
 void xnet_udp_socket::async_connect(boost::asio::ip::udp::endpoint const& remote, completion_handler handler) {
-    VSOMEIP_INFO_P << "remote=" << remote.address().to_string() << ":" << remote.port();
-
     if (!is_open()) {
         post_completion(io_context_, std::move(handler), boost::asio::error::bad_descriptor);
         return;
@@ -774,7 +715,7 @@ void xnet_udp_socket::async_connect(boost::asio::ip::udp::endpoint const& remote
         const auto its_result = xnet_api::nxconnect(its_socket, reinterpret_cast<nxsockaddr*>(&its_storage), its_length);
 
         if (its_result == SOCKET_ERROR_VALUE) {
-            its_error = make_xnet_error("async_connect");
+            its_error = get_xnet_error();
             if (is_would_block_like(its_error)) {
                 boost::system::error_code its_wait_error;
                 if (wait_socket_ready(its_socket, boost::asio::ip::udp::socket::wait_write,
@@ -830,7 +771,7 @@ void xnet_udp_socket::async_receive_from(boost::asio::mutable_buffer b, boost::a
                 break;
             }
 
-            its_error = make_xnet_error("async_receive_from");
+            its_error = get_xnet_error();
             if (!is_would_block_like(its_error)) {
                 break;
             }
@@ -861,8 +802,6 @@ void xnet_udp_socket::async_receive_from(boost::asio::mutable_buffer b, boost::a
 }
 
 void xnet_udp_socket::async_send(boost::asio::const_buffer const& b, rw_handler handler) {
-    VSOMEIP_INFO_P << "bytes=" << b.size();
-
     if (!is_open()) {
         post_rw_completion(io_context_, std::move(handler), boost::asio::error::bad_descriptor, 0);
         return;
@@ -895,7 +834,7 @@ void xnet_udp_socket::async_send(boost::asio::const_buffer const& b, rw_handler 
                 break;
             }
 
-            its_error = make_xnet_error("async_send");
+            its_error = get_xnet_error();
             if (!is_would_block_like(its_error)) {
                 break;
             }
@@ -920,9 +859,6 @@ void xnet_udp_socket::async_send(boost::asio::const_buffer const& b, rw_handler 
 }
 
 void xnet_udp_socket::async_send_to(boost::asio::const_buffer const& b, boost::asio::ip::udp::endpoint destination, rw_handler handler) {
-    VSOMEIP_INFO_P << "bytes=" << b.size()
-                 << " destination=" << destination.address().to_string() << ":" << destination.port();
-
     if (!is_open()) {
         post_rw_completion(io_context_, std::move(handler), boost::asio::error::bad_descriptor, 0);
         return;
@@ -963,7 +899,7 @@ void xnet_udp_socket::async_send_to(boost::asio::const_buffer const& b, boost::a
                 break;
             }
 
-            its_error = make_xnet_error("async_send_to");
+            its_error = get_xnet_error();
             if (!is_would_block_like(its_error)) {
                 break;
             }
@@ -988,10 +924,6 @@ void xnet_udp_socket::async_send_to(boost::asio::const_buffer const& b, boost::a
 }
 
 void xnet_udp_socket::async_wait(boost::asio::ip::udp::socket::wait_type wait, completion_handler handler) {
-    VSOMEIP_INFO_P << "wait="
-                 << (wait == boost::asio::ip::udp::socket::wait_read ? "read"
-                 : (wait == boost::asio::ip::udp::socket::wait_write ? "write" : "error"));
-
     if (!is_open()) {
         post_completion(io_context_, std::move(handler), boost::asio::error::bad_descriptor);
         return;
@@ -1018,4 +950,3 @@ bool xnet_udp_socket::is_canceled(std::uint64_t _epoch) const {
 }
 
 }
-
