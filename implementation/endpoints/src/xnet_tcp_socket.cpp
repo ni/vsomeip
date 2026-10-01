@@ -11,7 +11,6 @@
 #include <boost/endian/conversion.hpp>
 
 #include "../include/xnet_tcp_socket.hpp"
-#include "../include/backend_socket_option_helpers.hpp"
 #include "../include/xnet_error.hpp"
 #include "../include/xnet_api.hpp"
 
