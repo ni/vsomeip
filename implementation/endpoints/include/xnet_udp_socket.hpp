@@ -4,16 +4,12 @@
 #define XNET_UDP_SOCKET_HPP_
 
 #include "udp_socket.hpp"
+#include "xnet_socket_helper.hpp"
+
 #include <atomic>
 #include <boost/asio/ip/udp.hpp>
-#include <boost/asio/post.hpp>
-#include <condition_variable>
 #include <cstdint>
-#include <deque>
-#include <functional>
 #include <memory>
-#include <mutex>
-#include <thread>
 
 #include "nxsocket.h"
 
@@ -65,6 +61,10 @@ private:
     // Not part of udp_socket base interface; kept as helper API for xnet implementation only.
     void async_wait(boost::asio::ip::udp::socket::wait_type wait, completion_handler handler);
 
+    bool is_canceled(std::uint64_t _epoch) const;
+
+    void stop_worker_threads();
+
     // XNET socket handle
     nxSOCKET socket_;
 
@@ -80,27 +80,14 @@ private:
     // Cached state for platforms/backends where querying non-blocking mode is limited.
     bool non_blocking_mode_;
 
-    using work_item_t = std::function<void()>;
-
-    void ensure_general_worker_thread();
-    void ensure_receive_worker_thread();
-    void stop_worker_threads();
-    bool enqueue_work(work_item_t&& _item);
-    bool enqueue_receive_work(work_item_t&& _item);
-    void general_worker_loop();
-    void receive_worker_loop();
-    bool is_canceled(std::uint64_t _epoch) const;
-
-    std::thread general_worker_thread_;
-    std::thread receive_worker_thread_;
-    std::atomic<bool> stop_requested_;
+    // Epoch counter for cancellation; incremented on cancel() to signal ongoing operations to abort.
     std::atomic<std::uint64_t> cancel_epoch_;
-    std::mutex general_worker_mutex_;
-    std::condition_variable general_worker_cv_;
-    std::deque<work_item_t> general_work_queue_;
-    std::mutex receive_worker_mutex_;
-    std::condition_variable receive_worker_cv_;
-    std::deque<work_item_t> receive_work_queue_;
+
+    // Worker for connect/send operations
+    xnet_socket_helper::worker_thread general_worker_;
+
+    // worker for blocking receive operations
+    xnet_socket_helper::worker_thread receive_worker_;
 };
 
 } 

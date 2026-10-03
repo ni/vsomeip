@@ -4,18 +4,14 @@
 #define XNET_TCP_ACCEPTOR_HPP_
 
 #include "tcp_socket.hpp"
+#include "xnet_socket_helper.hpp"
 
 #include <atomic>
 #include <chrono>
 #include <boost/asio/io_context.hpp>
-#include <condition_variable>
 #include <cstdint>
-#include <deque>
-#include <functional>
 #include <memory>
-#include <mutex>
 #include <string>
-#include <thread>
 
 #include "nxsocket.h"
 
@@ -52,23 +48,25 @@ private:
 
     [[nodiscard]] bool is_canceled(std::uint64_t _epoch) const;
 
-    using work_item_t = std::function<void()>;
-
-    void ensure_worker_thread();
     void stop_worker_thread();
-    bool enqueue_work(work_item_t&& _item);
-    void worker_loop();
 
+    // XNET socket handle
     nxSOCKET acceptor_;
+
+    // Reference to io_context for posting completion handlers
     boost::asio::io_context& io_context_;
+
+    // XNET IP stack reference
     nxIpStackRef_t xnet_stack_;
+
+    // Track if socket is IPv6 for correct socket creation and option handling
     bool is_ipv6_;
-    std::thread worker_thread_;
-    std::atomic<bool> stop_requested_;
+
+    // Epoch counter for cancellation; incremented on cancel() to signal ongoing operations to abort.
     std::atomic<std::uint64_t> cancel_epoch_;
-    std::mutex worker_mutex_;
-    std::condition_variable worker_cv_;
-    std::deque<work_item_t> work_queue_;
+
+    // Worker for blocking send operations
+    xnet_socket_helper::worker_thread worker_;
 };
 
 } // namespace vsomeip_v3
