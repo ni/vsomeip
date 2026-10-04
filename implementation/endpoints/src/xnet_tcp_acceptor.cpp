@@ -206,23 +206,17 @@ void xnet_tcp_acceptor::async_accept(tcp_socket& _socket, boost::asio::ip::tcp::
             }
 
             boost::system::error_code its_wait_error;
-            if (!xnet_socket_helper::wait_socket_ready(its_acceptor, std::chrono::milliseconds(200), boost::asio::socket_base::wait_read,
+            if (!xnet_socket_helper::wait_socket_ready(its_acceptor, std::nullopt, boost::asio::socket_base::wait_read,
                                                        cancel_epoch_, its_epoch, its_wait_error)) {
-                if (its_wait_error) {
-                    its_error = its_wait_error;
-                    break;
-                }
-                continue;
+                its_error = its_wait_error;
+                break;
             }
 
             its_client_socket = xnet_api::nxaccept(its_acceptor, reinterpret_cast<nxsockaddr*>(&its_peer_storage), &its_peer_len);
 
-            const bool is_accept_failed = (its_client_socket == nxINVALID_SOCKET);
-
-            if (is_accept_failed) {
+            if (its_client_socket == nxINVALID_SOCKET) {
                 its_error = xnet_socket_helper::get_xnet_error();
-                if (its_error == boost::asio::error::would_block || its_error == boost::asio::error::try_again
-                    || its_error == boost::asio::error::interrupted || its_error == boost::asio::error::in_progress) {
+                if (xnet_socket_helper::is_would_block_like(its_error) || its_error == boost::asio::error::interrupted) {
                     continue;
                 }
                 break;

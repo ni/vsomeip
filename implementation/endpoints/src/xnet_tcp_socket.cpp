@@ -82,10 +82,9 @@ void xnet_tcp_socket::open(boost::asio::ip::tcp::endpoint::protocol_type _pt, bo
 
     int opt = 0;
     if (xnet_api::nxsetsockopt(socket_, nxSOL_SOCKET, nxSO_NONBLOCK, &opt, static_cast<nxsocklen_t>(sizeof(opt))) == SOCKET_ERROR_VALUE) {
-        const auto its_non_blocking_error = xnet_socket_helper::get_xnet_error();
+        _ec = xnet_socket_helper::get_xnet_error();
         boost::system::error_code its_close_error;
         close(its_close_error);
-        _ec = its_non_blocking_error;
         return;
     }
 
