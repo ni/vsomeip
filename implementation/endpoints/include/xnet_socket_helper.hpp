@@ -15,6 +15,7 @@
 
 #include <boost/asio/io_context.hpp>
 #include <boost/asio/ip/address.hpp>
+#include <boost/asio/ip/basic_endpoint.hpp>
 #include <boost/asio/socket_base.hpp>
 #include <boost/system/error_code.hpp>
 
