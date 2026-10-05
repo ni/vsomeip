@@ -223,7 +223,7 @@ void xnet_tcp_acceptor::async_accept(tcp_socket& _socket, boost::asio::ip::tcp::
             }
 
             boost::asio::ip::address endpoint_address;
-            boost::asio::ip::port_type endpoint_port;
+            unsigned short endpoint_port;
             if (!xnet_socket_helper::native_to_endpoint(its_peer_storage, its_peer_len, endpoint_address, endpoint_port, its_error)) {
                 (void)xnet_api::nxclose(its_client_socket);
                 its_client_socket = nxINVALID_SOCKET;

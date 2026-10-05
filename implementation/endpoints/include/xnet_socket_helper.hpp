@@ -15,7 +15,6 @@
 
 #include <boost/asio/io_context.hpp>
 #include <boost/asio/ip/address.hpp>
-#include <boost/asio/ip/basic_endpoint.hpp>
 #include <boost/asio/socket_base.hpp>
 #include <boost/system/error_code.hpp>
 
@@ -45,12 +44,12 @@ bool wait_socket_ready(nxSOCKET _socket, std::optional<std::chrono::milliseconds
                        std::atomic<std::uint64_t> const& _cancel_epoch, std::uint64_t _operation_epoch, boost::system::error_code& _ec);
 
 // Convert a Boost.Asio endpoint to a native sockaddr structure
-bool endpoint_to_native(const boost::asio::ip::address& endpoint_address, const boost::asio::ip::port_type& endpoint_port, nxsockaddr_storage& _storage,
+bool endpoint_to_native(const boost::asio::ip::address& endpoint_address, const unsigned short& endpoint_port, nxsockaddr_storage& _storage,
                         nxsocklen_t& _len, boost::system::error_code& _ec);
 
 // Convert a native sockaddr structure to a Boost.Asio endpoint
 bool native_to_endpoint(nxsockaddr_storage const& _storage, nxsocklen_t _len, boost::asio::ip::address& endpoint_address,
-                        boost::asio::ip::port_type& endpoint_port, boost::system::error_code& _ec);
+                        unsigned short& endpoint_port, boost::system::error_code& _ec);
 
 // Clamp a size value to the maximum value of int32_t
 inline std::size_t clamp_size_to_int32(std::size_t _size) {

@@ -418,7 +418,7 @@ boost::asio::ip::udp::endpoint xnet_udp_socket::local_endpoint(boost::system::er
     }
 
     boost::asio::ip::address endpoint_address;
-    boost::asio::ip::port_type endpoint_port;
+    unsigned short endpoint_port;
     if (!xnet_socket_helper::native_to_endpoint(its_storage, its_len, endpoint_address, endpoint_port, ec)) {
         return {};
     }
@@ -500,7 +500,7 @@ void xnet_udp_socket::async_receive_from(boost::asio::mutable_buffer b, boost::a
             if (its_result >= 0) {
                 its_bytes_received = static_cast<std::size_t>(its_result);
                 boost::asio::ip::address endpoint_address;
-                boost::asio::ip::port_type endpoint_port = 0;
+                unsigned short endpoint_port = 0;
                 if (!xnet_socket_helper::native_to_endpoint(its_from_storage, its_from_len, endpoint_address, endpoint_port, its_error)) {
                     its_bytes_received = 0;
                 }

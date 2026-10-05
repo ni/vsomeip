@@ -148,7 +148,7 @@ boost::asio::ip::tcp::endpoint xnet_tcp_socket::local_endpoint(boost::system::er
     }
 
     boost::asio::ip::address endpoint_address;
-    boost::asio::ip::port_type endpoint_port;
+    unsigned short endpoint_port;
     if (!xnet_socket_helper::native_to_endpoint(its_storage, its_len, endpoint_address, endpoint_port, _ec)) {
         return {};
     }

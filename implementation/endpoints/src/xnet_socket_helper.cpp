@@ -107,7 +107,7 @@ bool wait_socket_ready(nxSOCKET _socket, std::optional<std::chrono::milliseconds
     }
 }
 
-bool endpoint_to_native(const boost::asio::ip::address& endpoint_address, const boost::asio::ip::port_type& endpoint_port,
+bool endpoint_to_native(const boost::asio::ip::address& endpoint_address, const unsigned short& endpoint_port,
                         nxsockaddr_storage& _storage, nxsocklen_t& _len, boost::system::error_code& _ec) {
     std::memset(&_storage, 0, sizeof(_storage));
     if (endpoint_address.is_v4()) {
@@ -138,7 +138,7 @@ bool endpoint_to_native(const boost::asio::ip::address& endpoint_address, const 
 }
 
 bool native_to_endpoint(nxsockaddr_storage const& _storage, nxsocklen_t _len, boost::asio::ip::address& endpoint_address,
-                        boost::asio::ip::port_type& endpoint_port, boost::system::error_code& _ec) {
+                        unsigned short& endpoint_port, boost::system::error_code& _ec) {
     const auto* its_sockaddr = reinterpret_cast<const nxsockaddr*>(&_storage);
     if (its_sockaddr->sa_family == nxAF_INET && static_cast<std::size_t>(_len) >= sizeof(nxsockaddr_in)) {
         const auto* its_addr = reinterpret_cast<const nxsockaddr_in*>(&_storage);
