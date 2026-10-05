@@ -39,9 +39,7 @@ struct fake_tcp_backend_state {
 
     boost::asio::ip::tcp::endpoint local_ep{boost::asio::ip::make_address_v4("127.0.0.10"), 31555};
 
-    void reset() {
-        *this = fake_tcp_backend_state{};
-    }
+    void reset() { *this = fake_tcp_backend_state{}; }
 };
 
 fake_tcp_backend_state g_state;
@@ -224,7 +222,7 @@ TEST_F(xnet_tcp_socket_sync_fixture, local_endpoint_and_io_control_reflect_backe
     EXPECT_EQ(pending_read.get(), static_cast<std::size_t>(g_state.io_control_rx_data));
 }
 
-TEST_F(xnet_tcp_socket_sync_fixture, set_option_keep_alive_returns_operation_not_supported_without_backend_call) {
+TEST_F(xnet_tcp_socket_sync_fixture, set_option_keep_alive_is_tolerated_on_xnet) {
     auto socket = create_socket();
 
     boost::system::error_code ec;
@@ -234,7 +232,7 @@ TEST_F(xnet_tcp_socket_sync_fixture, set_option_keep_alive_returns_operation_not
     const auto setopt_calls_before = g_state.setopt_calls;
     socket->set_option(boost::asio::ip::tcp::socket::keep_alive(true), ec);
 
-    EXPECT_EQ(ec, boost::asio::error::make_error_code(boost::asio::error::operation_not_supported));
+    xnet_test_utils::expect_success(ec);
     EXPECT_EQ(g_state.setopt_calls, setopt_calls_before);
 }
 

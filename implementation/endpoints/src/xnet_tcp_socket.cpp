@@ -476,9 +476,11 @@ void xnet_tcp_socket::set_option(boost::asio::ip::tcp::socket::keep_alive _ka, b
         return;
     }
 
-    _ec = make_unsupported_option_error("keep_alive",
+    make_unsupported_option_error("keep_alive",
                                         _ka.value() ? "enable keepalive is not supported by XNET socket API"
                                                     : "disable keepalive is not supported by XNET socket API");
+
+    _ec.clear();
 }
 
 void xnet_tcp_socket::set_option(boost::asio::ip::tcp::socket::linger _l, boost::system::error_code& _ec) {

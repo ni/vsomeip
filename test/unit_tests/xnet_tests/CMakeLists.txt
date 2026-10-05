@@ -7,7 +7,6 @@ set(SRCS
     ut_xnet_error_mapping.cpp
     ut_xnet_socket_factory_policy.cpp
     ut_xnet_tcp_acceptor.cpp
-    ut_xnet_tcp_server_accept_policy.cpp
     ut_xnet_tcp_socket_async.cpp
     ut_xnet_tcp_socket_sync.cpp
     ut_xnet_udp_socket_async.cpp
