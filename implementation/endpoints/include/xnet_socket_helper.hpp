@@ -17,7 +17,6 @@
 #include <boost/asio/ip/address.hpp>
 #include <boost/asio/socket_base.hpp>
 #include <boost/system/error_code.hpp>
-#include <boost/asio/ip/basic_endpoint.hpp>
 
 #include "nxsocket.h"
 
@@ -77,7 +76,7 @@ public:
     // Signal the worker to stop
     void request_stop();
 
-    // Join the worker thread and drop pending work items
+    // Join the worker thread
     void join();
 
 private:

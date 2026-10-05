@@ -80,7 +80,7 @@ private:
     // Cached state for platforms/backends where querying non-blocking mode is limited.
     bool non_blocking_mode_;
 
-    // Epoch counter for cancellation; incremented on cancel() to signal ongoing operations to abort.
+    // Epoch counter for cancellation
     std::atomic<std::uint64_t> cancel_epoch_;
 
     // Worker for connect/send operations

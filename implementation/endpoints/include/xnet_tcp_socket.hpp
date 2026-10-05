@@ -80,7 +80,7 @@ private:
     // Track if socket is IPv6 for correct socket creation and option handling
     bool is_ipv6_;
 
-    // Epoch counter for cancellation; incremented on cancel() to signal ongoing operations to abort.
+    // Epoch counter for cancellation
     std::atomic<std::uint64_t> cancel_epoch_;
 
     // Worker for blocking send operations

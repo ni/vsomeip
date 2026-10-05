@@ -13,8 +13,6 @@
 
 #define VSOMEIP_LOG_PREFIX log_prefix
 
-#define SOCKET_ERROR_VALUE -1
-
 namespace vsomeip_v3 {
 
 namespace xnet_socket_helper {
@@ -44,7 +42,7 @@ void post_rw_completion(boost::asio::io_context& _io, rw_handler _handler, boost
 bool wait_socket_ready(nxSOCKET _socket, std::optional<std::chrono::milliseconds> _timeout, boost::asio::socket_base::wait_type _wait_type,
                        std::atomic<std::uint64_t> const& _cancel_epoch, std::uint64_t _operation_epoch, boost::system::error_code& _ec) {
     // Initialize timeout values
-    std::size_t timeout_ms;
+    auto timeout_ms;
     if (_timeout == std::nullopt) {
         timeout_ms = SELECT_POLL_TIMEOUT_MS;
     } else {
@@ -82,7 +80,7 @@ bool wait_socket_ready(nxSOCKET _socket, std::optional<std::chrono::milliseconds
         timeout.tv_usec = static_cast<int32_t>(timeout_usec);
 
         // Wait for the socket to be ready
-        const auto its_result = xnet_api::nxselect(0, &read_fds, &write_fds, nullptr, &timeout);
+        const auto its_result = xnet_api::nxselect(0, &read_fds, &write_fds, &except_fds, &timeout);
 
         if (its_result > 0) {
             // Socket is ready
