@@ -50,6 +50,12 @@ bool wait_socket_ready(nxSOCKET _socket, std::optional<std::chrono::milliseconds
     } else {
         timeout_ms = _timeout->count();
     }
+
+    if (timeout_ms < 0 || timeout_ms > std::numeric_limits<int>::max()) {
+        _ec = boost::asio::error::make_error_code(boost::asio::error::invalid_argument);
+        return false;
+    }
+
     const auto timeout_sec = static_cast<long>(timeout_ms / 1000);
     const auto timeout_usec = static_cast<long>((timeout_ms % 1000) * 1000);
 
