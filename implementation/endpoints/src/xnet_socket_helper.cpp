@@ -146,7 +146,7 @@ bool native_to_endpoint(nxsockaddr_storage const& _storage, nxsocklen_t _len, bo
         endpoint_address = boost::asio::ip::address_v4(boost::endian::big_to_native(its_raw_v4));
         endpoint_port = boost::endian::big_to_native(its_addr->sin_port);
     }
-    if (its_sockaddr->sa_family == nxAF_INET6 && static_cast<std::size_t>(_len) >= sizeof(nxsockaddr_in6)) {
+    else if (its_sockaddr->sa_family == nxAF_INET6 && static_cast<std::size_t>(_len) >= sizeof(nxsockaddr_in6)) {
         const auto* its_addr = reinterpret_cast<const nxsockaddr_in6*>(&_storage);
         boost::asio::ip::address_v6::bytes_type its_bytes{};
         std::memcpy(its_bytes.data(), &its_addr->sin6_addr, its_bytes.size());

@@ -28,49 +28,6 @@ namespace ip = boost::asio::ip;
 
 namespace vsomeip_v3 {
 
-// --- NI modification: BEGIN ---
-// Share TCP accept-option policy and tolerate unsupported backend options.
-boost::system::error_code apply_tcp_server_accept_socket_option_policy(tcp_socket& _socket, const std::string& _instance_name) {
-    boost::system::error_code its_error;
-    boost::system::error_code its_fatal_error;
-
-    _socket.set_option(boost::asio::ip::tcp::no_delay(true), its_error);
-    if (its_error) {
-        if (its_error == boost::asio::error::operation_not_supported) {
-            VSOMEIP_WARNING << _instance_name << "Set option TCP_NODELAY unsupported, " << its_error.message();
-            its_error.clear();
-        } else {
-            VSOMEIP_ERROR << _instance_name << "Set option TCP_NODELAY failed, " << its_error.message();
-            its_fatal_error = its_error;
-        }
-    }
-
-    _socket.set_option(boost::asio::socket_base::keep_alive(true), its_error);
-    if (its_error) {
-        if (its_error == boost::asio::error::operation_not_supported) {
-            VSOMEIP_WARNING << _instance_name << "Set option SO_KEEPALIVE unsupported, " << its_error.message();
-            its_error.clear();
-        } else {
-            VSOMEIP_ERROR << _instance_name << "Set option SO_KEEPALIVE failed, " << its_error.message();
-            its_fatal_error = its_error;
-        }
-    }
-
-    _socket.set_option(boost::asio::socket_base::linger(true, 0), its_error);
-    if (its_error) {
-        if (its_error == boost::asio::error::operation_not_supported) {
-            VSOMEIP_WARNING << _instance_name << "Set option SO_LINGER unsupported, " << its_error.message();
-            its_error.clear();
-        } else {
-            VSOMEIP_ERROR << _instance_name << "Set option SO_LINGER failed, " << its_error.message();
-            its_fatal_error = its_error;
-        }
-    }
-
-    return its_fatal_error;
-}
-// --- NI modification: END ---
-
 tcp_server_endpoint_impl::tcp_server_endpoint_impl(const std::shared_ptr<boardnet_endpoint_host>& _boardnet_endpoint_host,
                                                    const std::shared_ptr<boardnet_routing_host>& _routing_host,
                                                    boost::asio::io_context& _io, const std::shared_ptr<configuration>& _configuration,
@@ -391,16 +348,31 @@ void tcp_server_endpoint_impl::accept_cbk(connection::ptr _connection, std::shar
     if (!_error) {
         // Remote endpoint was captured by the kernel at accept() time via the peer-endpoint
         // overload of async_accept, so it is valid even if the client already disconnected.
-        // --- NI modification: BEGIN ---
-        // Distinguish unsupported TCP options from fatal socket setup failures.
-        boost::system::error_code its_fatal_error;
+        boost::system::error_code its_error;
         const endpoint_type remote(*_remote_ep);
         {
             std::unique_lock its_socket_lock(_connection->get_socket_lock());
             tcp_socket& connection_socket_ = _connection->get_socket();
             _connection->set_remote_info(remote);
-            its_fatal_error = apply_tcp_server_accept_socket_option_policy(connection_socket_, instance_name_);
+            // Nagle algorithm off
+            connection_socket_.set_option(ip::tcp::no_delay(true), its_error);
+            if (its_error) {
+                VSOMEIP_ERROR_P << instance_name_ << "Set option TCP_NODELAY failed, " << its_error.message();
+            }
 
+            connection_socket_.set_option(boost::asio::socket_base::keep_alive(true), its_error);
+            if (its_error) {
+                VSOMEIP_ERROR_P << instance_name_ << "Set option SO_KEEPALIVE failed, " << its_error.message();
+            }
+
+            // force always TCP RST on close/shutdown, in order to:
+            // 1) avoid issues with TIME_WAIT, which otherwise lasts for 120 secs with a
+            // non-responding endpoint (see also 4396812d2)
+            // 2) handle by default what needs to happen at suspend/shutdown
+            connection_socket_.set_option(boost::asio::socket_base::linger(true, 0), its_error);
+            if (its_error) {
+                VSOMEIP_ERROR_P << instance_name_ << "Set option SO_LINGER failed, " << its_error.message();
+            }
 #if defined(__linux__)
             // set a user timeout
             // along the keep alives, this ensures connection closes if endpoint is unreachable
@@ -422,14 +394,14 @@ void tcp_server_endpoint_impl::accept_cbk(connection::ptr _connection, std::shar
             }
 #endif
         }
-        if (!its_fatal_error) {
+        if (!its_error) {
             {
                 std::scoped_lock its_lock(connections_mutex_);
                 connections_[remote] = _connection;
             }
             _connection->start();
         } else {
-            VSOMEIP_ERROR_P << instance_name_ << "Socket couldn't be started, " << its_fatal_error.message();
+            VSOMEIP_ERROR_P << instance_name_ << "Socket couldn't be started, " << its_error.message();
         }
         // --- NI modification: END ---
     } else {

@@ -145,7 +145,7 @@ bool xnet_tcp_acceptor::set_reuse_port() {
         return false;
     }
 
-    (void)make_unsupported_option_error(VSOMEIP_LOG_PREFIX, "set_reuse_port", "SO_REUSEPORT is not supported by XNET API");
+    (void)xnet_socket_helper::make_unsupported_option_warning(VSOMEIP_LOG_PREFIX, "set_reuse_port", "SO_REUSEPORT is not supported by XNET API");
     errno = ENOTSUP;
     return false;
 }
@@ -156,7 +156,7 @@ bool xnet_tcp_acceptor::set_native_option_free_bind() {
         return false;
     }
 
-    (void)make_unsupported_option_error(VSOMEIP_LOG_PREFIX, "set_native_option_free_bind", "IP_FREEBIND is not supported by XNET API");
+    (void)xnet_socket_helper::make_unsupported_option_warning(VSOMEIP_LOG_PREFIX, "set_native_option_free_bind", "IP_FREEBIND is not supported by XNET API");
     errno = ENOTSUP;
     return false;
 }
