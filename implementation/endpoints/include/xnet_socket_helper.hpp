@@ -30,8 +30,8 @@ using rw_handler = std::function<void(boost::system::error_code const&, size_t)>
 // Convert the last error from xnet to a Boost.Asio error code
 boost::system::error_code get_xnet_error();
 
-// Log a warning message for an unsupported option and return an appropriate error code
-boost::system::error_code make_unsupported_option_warning(char const* log_prefix, char const* _option, char const* _reason);
+// Log a warning message for an unsupported option
+void make_unsupported_option_warning(char const* log_prefix, char const* _option, char const* _reason);
 
 // Post completion handler to the associated executor of the handler
 void post_completion(boost::asio::io_context& _io, connect_handler _handler, boost::system::error_code const& _ec);

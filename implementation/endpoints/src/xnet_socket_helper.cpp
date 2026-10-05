@@ -24,9 +24,8 @@ boost::system::error_code get_xnet_error() {
     return xnet_to_boost_error(xnet_get_last_error());
 }
 
-boost::system::error_code make_unsupported_option_warning(char const* log_prefix, char const* _option, char const* _reason) {
+void make_unsupported_option_warning(char const* log_prefix, char const* _option, char const* _reason) {
     VSOMEIP_WARNING_P << "option=" << _option << " unsupported: " << _reason;
-    return boost::asio::error::make_error_code(boost::asio::error::operation_not_supported);
 }
 
 void post_completion(boost::asio::io_context& _io, connect_handler _handler, boost::system::error_code const& _ec) {
