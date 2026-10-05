@@ -4,17 +4,13 @@
 #define XNET_TCP_SOCKET_HPP_
 
 #include "tcp_socket.hpp"
+#include "xnet_socket_helper.hpp"
 
 #include <atomic>
 #include <boost/asio/io_context.hpp>
-#include <condition_variable>
 #include <cstdint>
-#include <deque>
-#include <functional>
 #include <memory>
-#include <mutex>
 #include <string>
-#include <thread>
 
 #include "nxsocket.h"
 
@@ -70,31 +66,28 @@ private:
 
     [[nodiscard]] bool is_canceled(std::uint64_t _epoch) const;
 
-    using work_item_t = std::function<void()>;
-
-    void ensure_rx_worker_thread();
-    void ensure_tx_worker_thread();
     void stop_worker_threads();
-    bool enqueue_rx_work(work_item_t&& _item);
-    bool enqueue_tx_work(work_item_t&& _item);
-    void rx_worker_loop();
-    void tx_worker_loop();
 
+    // XNET socket handle
     nxSOCKET socket_;
+
+    // Reference to io_context for posting completion handlers
     boost::asio::io_context& io_context_;
+
+    // XNET IP stack reference
     nxIpStackRef_t xnet_stack_;
+
+    // Track if socket is IPv6 for correct socket creation and option handling
     bool is_ipv6_;
-    std::thread rx_worker_thread_;
-    std::thread tx_worker_thread_;
-    std::atomic<bool> rx_stop_requested_;
-    std::atomic<bool> tx_stop_requested_;
+
+    // Epoch counter for cancellation
     std::atomic<std::uint64_t> cancel_epoch_;
-    std::mutex rx_worker_mutex_;
-    std::mutex tx_worker_mutex_;
-    std::condition_variable rx_worker_cv_;
-    std::condition_variable tx_worker_cv_;
-    std::deque<work_item_t> rx_work_queue_;
-    std::deque<work_item_t> tx_work_queue_;
+
+    // Worker for blocking send operations
+    xnet_socket_helper::worker_thread transmit_worker_;
+
+    // Worker for blocking receive operations
+    xnet_socket_helper::worker_thread receive_worker_;
 };
 
 }

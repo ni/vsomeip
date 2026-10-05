@@ -21,9 +21,9 @@ std::atomic_bool running{true};
 std::thread notify_thread;
 
 void stop_application([[maybe_unused]] int exit_code) {
-std::cout << "\nShutting down application..." << std::endl;
+    std::cout << "\nShutting down application..." << std::endl;
 
-// Stop the notification thread
+    // Stop the notification thread
     running = false;
     if (notify_thread.joinable()) {
         notify_thread.join();
