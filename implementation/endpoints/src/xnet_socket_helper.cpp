@@ -42,12 +42,7 @@ void post_rw_completion(boost::asio::io_context& _io, rw_handler _handler, boost
 bool wait_socket_ready(nxSOCKET _socket, std::optional<std::chrono::milliseconds> _timeout, boost::asio::socket_base::wait_type _wait_type,
                        std::atomic<std::uint64_t> const& _cancel_epoch, std::uint64_t _operation_epoch, boost::system::error_code& _ec) {
     // Initialize timeout values
-    auto timeout_ms;
-    if (_timeout == std::nullopt) {
-        timeout_ms = SELECT_POLL_TIMEOUT_MS;
-    } else {
-        timeout_ms = _timeout->count();
-    }
+    const std::chrono::milliseconds::rep timeout_ms = _timeout ? _timeout->count() : SELECT_POLL_TIMEOUT_MS;
 
     if (timeout_ms < 0 || timeout_ms > std::numeric_limits<int>::max()) {
         _ec = boost::asio::error::make_error_code(boost::asio::error::invalid_argument);
