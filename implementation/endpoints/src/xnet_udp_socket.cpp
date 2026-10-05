@@ -107,6 +107,13 @@ void xnet_udp_socket::bind(boost::asio::ip::udp::endpoint const& ep, boost::syst
         return; 
     }
 
+    // Validate address family matches the opened socket; reject mismatches early
+    const bool ep_is_v6 = ep.address().is_v6();
+    if (ep_is_v6 != is_ipv6_) {
+        ec = boost::asio::error::make_error_code(boost::asio::error::address_family_not_supported);
+        return;
+    }
+
     nxsockaddr_storage its_storage{};
     nxsocklen_t its_length = 0;
     if (!xnet_socket_helper::endpoint_to_native(ep.address(), ep.port(), its_storage, its_length, ec)) {
