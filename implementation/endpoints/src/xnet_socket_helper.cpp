@@ -153,8 +153,6 @@ bool native_to_endpoint(nxsockaddr_storage const& _storage, nxsocklen_t _len, bo
         std::memcpy(its_bytes.data(), &its_addr->sin6_addr, its_bytes.size());
         endpoint_address = boost::asio::ip::address_v6(its_bytes, its_addr->sin6_scope_id);
         endpoint_port = boost::endian::big_to_native(its_addr->sin6_port);
-        _ec.clear();
-        return true;
     }
     else {
         _ec = boost::asio::error::make_error_code(boost::asio::error::address_family_not_supported);
