@@ -55,18 +55,20 @@ bool wait_socket_ready(nxSOCKET _socket, std::optional<std::chrono::milliseconds
 
     nxfd_set read_fds{};
     nxfd_set write_fds{};
+    nxfd_set except_fds{};
 
     for (;;) {
         // Initialize file descriptor sets based on the wait type
         nxFD_ZERO(&read_fds);
         nxFD_ZERO(&write_fds);
+        nxFD_ZERO(&except_fds);
 
         if (_wait_type == boost::asio::socket_base::wait_read) {
             nxFD_SET(_socket, &read_fds);
         } else if (_wait_type == boost::asio::socket_base::wait_write) {
             nxFD_SET(_socket, &write_fds);
         } else {
-            return false;
+            nxFD_SET(_socket, &except_fds);
         }
 
         nxtimeval timeout{};
