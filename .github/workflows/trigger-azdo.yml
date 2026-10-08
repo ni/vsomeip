@@ -32,33 +32,21 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          [ -n "$AZDO_PIPELINE_ID" ] || { echo "::error::Repository variable AZDO_SOMEIP_PR_PIPELINE_ID is not set"; exit 1; }
-          [ -n "$AZDO_PAT" ] || { echo "::error::Repository secret AZDO_PAT is not set"; exit 1; }
           api="$AZDO_ORG_URL/$AZDO_PROJECT/_apis/pipelines/$AZDO_PIPELINE_ID/runs"
-
-          azdo() {
-            local code
-            code=$(curl -sS -o response.json -w '%{http_code}' -u ":$AZDO_PAT" -H "Content-Type: application/json" "$@")
-            if [ "$code" != "200" ]; then
-              echo "::error::Azure DevOps returned HTTP $code for $*" >&2
-              cat response.json >&2
-              return 1
-            fi
-            cat response.json
-          }
 
           body=$(jq -n --arg branch "$VSOMEIP_BRANCH" '{
             resources: { repositories: { self: { refName: "refs/heads/users/bsziksza/testPipeline" } } },
             templateParameters: { vsomeipBranch: $branch }
           }')
 
-          run=$(azdo -X POST "$api?api-version=7.1" -d "$body")
+          run=$(curl -sSf -u ":$AZDO_PAT" -H "Content-Type: application/json" \
+            -X POST "$api?api-version=7.1" -d "$body")
           run_id=$(jq -r '.id' <<< "$run")
           echo "Azure DevOps run: $(jq -r '._links.web.href' <<< "$run")" | tee -a "$GITHUB_STEP_SUMMARY"
 
           while true; do
             sleep 60
-            status=$(azdo "$api/$run_id?api-version=7.1")
+            status=$(curl -sSf -u ":$AZDO_PAT" "$api/$run_id?api-version=7.1")
             state=$(jq -r '.state' <<< "$status")
             if [ "$state" = "completed" ]; then
               result=$(jq -r '.result' <<< "$status")
