@@ -1,42 +1,58 @@
-name: Trigger AzDo Hello World
+# Queues the srd-tran-vehicle-networks someip PR pipeline in Azure DevOps for this PR's branch and mirrors its result.
+name: AzDO someip PR build
 
 on:
-  workflow_dispatch:
-  push:
+  pull_request:
     branches:
+      # TEMP for testing; revert to ni/main before merging
       - users/ggrigory/Create_an_action_to_trigger_AzDo_pipline
+    types: [opened, synchronize, reopened]
+
+concurrency:
+  group: azdo-pr-build-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
 
 jobs:
-  trigger:
+  azdo-build:
+    # Fork PRs have no access to secrets and their branch is not clonable from ni/vsomeip
+    if: github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
+    timeout-minutes: 240
     env:
-      PAT: ${{ secrets.AZURE_DEVOPS_PAT }}
-      ORG: ni
-      PROJECT: DevCentral
-      PIPELINE_ID: 33718
+      AZDO_ORG_URL: https://dev.azure.com/ni
+      AZDO_PROJECT: DevCentral
+      AZDO_PIPELINE_ID: ${{ vars.AZDO_SOMEIP_PR_PIPELINE_ID }}
+      AZDO_PAT: ${{ secrets.AZDO_PAT }}
+      VSOMEIP_BRANCH: ${{ github.event.pull_request.head.ref }}
     steps:
-      - name: Queue pipeline run
-        id: queue
+      - name: Queue and wait for Azure DevOps pipeline
+        shell: bash
         run: |
-          RESPONSE=$(curl -sS --fail -X POST -u ":${PAT}" \
-            -H "Content-Type: application/json" \
-            "https://dev.azure.com/${ORG}/${PROJECT}/_apis/pipelines/${PIPELINE_ID}/runs?api-version=7.1" \
-            -d '{"resources": {"repositories": {"self": {"refName": "refs/heads/users/bsziksza/testPipeline"}}}}')
-          RUN_ID=$(echo "$RESPONSE" | jq -r '.id')
-          echo "Queued run $RUN_ID: $(echo "$RESPONSE" | jq -r '._links.web.href')"
-          echo "run_id=$RUN_ID" >> "$GITHUB_OUTPUT"
+          set -euo pipefail
+          api="$AZDO_ORG_URL/$AZDO_PROJECT/_apis/pipelines/$AZDO_PIPELINE_ID/runs"
 
-      - name: Wait for completion
-        run: |
-          URL="https://dev.azure.com/${ORG}/${PROJECT}/_apis/pipelines/${PIPELINE_ID}/runs/${{ steps.queue.outputs.run_id }}?api-version=7.1"
-          for i in $(seq 1 120); do            # up to ~20 min
-            RUN=$(curl -sS --fail -u ":${PAT}" "$URL")
-            STATE=$(echo "$RUN" | jq -r '.state')
-            RESULT=$(echo "$RUN" | jq -r '.result // empty')
-            echo "state=$STATE result=$RESULT"
-            if [ "$STATE" = "completed" ]; then
-              [ "$RESULT" = "succeeded" ] && exit 0 || exit 1
+          body=$(jq -n --arg branch "$VSOMEIP_BRANCH" '{
+            resources: { repositories: { self: { refName: "refs/heads/main" } } },
+            templateParameters: { vsomeipBranch: $branch }
+          }')
+
+          run=$(curl -sSf -u ":$AZDO_PAT" -H "Content-Type: application/json" \
+            -X POST "$api?api-version=7.1" -d "$body")
+          run_id=$(jq -r '.id' <<< "$run")
+          echo "Azure DevOps run: $(jq -r '._links.web.href' <<< "$run")" | tee -a "$GITHUB_STEP_SUMMARY"
+
+          while true; do
+            sleep 60
+            status=$(curl -sSf -u ":$AZDO_PAT" "$api/$run_id?api-version=7.1")
+            state=$(jq -r '.state' <<< "$status")
+            if [ "$state" = "completed" ]; then
+              result=$(jq -r '.result' <<< "$status")
+              echo "Result: $result" | tee -a "$GITHUB_STEP_SUMMARY"
+              [ "$result" = "succeeded" ]
+              exit $?
             fi
-            sleep 10
+            echo "State: $state"
           done
-          echo "Timed out waiting for run"; exit 1
