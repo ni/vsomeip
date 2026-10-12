@@ -6,7 +6,8 @@ on:
     branches:
       # TEMP for testing; revert to ni/main before merging
       - users/ggrigory/Create_an_action_to_trigger_AzDo_pipline
-    types: [opened, synchronize, reopened]
+    # converted_to_draft only cancels an in-progress run via concurrency; the job itself is skipped
+    types: [opened, synchronize, reopened, ready_for_review, converted_to_draft]
 
 concurrency:
   group: azdo-pr-build-${{ github.event.pull_request.number }}
@@ -18,7 +19,7 @@ permissions:
 jobs:
   azdo-build:
     # Fork PRs have no access to secrets and their branch is not clonable from ni/vsomeip
-    if: github.event.pull_request.head.repo.full_name == github.repository
+    if: github.event.pull_request.head.repo.full_name == github.repository && !github.event.pull_request.draft
     runs-on: ubuntu-latest
     timeout-minutes: 240
     env:
@@ -33,6 +34,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          : "${AZDO_PIPELINE_ID:?Repository variable AZDO_SOMEIP_PR_PIPELINE_ID is not set}"
+          : "${AZDO_PAT:?Repository secret AZDO_PAT is not set}"
           api="$AZDO_ORG_URL/$AZDO_PROJECT/_apis/pipelines/$AZDO_PIPELINE_ID/runs"
 
           body=$(jq -n --arg branch "$VSOMEIP_BRANCH" --arg commit "$VSOMEIP_COMMIT" '{
