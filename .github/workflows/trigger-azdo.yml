@@ -27,26 +27,33 @@ jobs:
       AZDO_PIPELINE_ID: ${{ vars.AZDO_SOMEIP_PR_PIPELINE_ID }}
       AZDO_PAT: ${{ secrets.AZDO_PAT }}
       VSOMEIP_BRANCH: ${{ github.event.pull_request.head.ref }}
+      VSOMEIP_COMMIT: ${{ github.event.pull_request.head.sha }}
     steps:
-      - name: Queue and wait for Azure DevOps pipeline
+      - name: Queue Azure DevOps pipeline
         shell: bash
         run: |
           set -euo pipefail
           api="$AZDO_ORG_URL/$AZDO_PROJECT/_apis/pipelines/$AZDO_PIPELINE_ID/runs"
 
-          body=$(jq -n --arg branch "$VSOMEIP_BRANCH" '{
+          body=$(jq -n --arg branch "$VSOMEIP_BRANCH" --arg commit "$VSOMEIP_COMMIT" '{
             resources: { repositories: { self: { refName: "refs/heads/users/bsziksza/testPipeline" } } },
-            templateParameters: { vsomeipBranch: $branch }
+            templateParameters: { vsomeipBranch: $branch, vsomeipCommit: $commit }
           }')
 
           run=$(curl -sSf -u ":$AZDO_PAT" -H "Content-Type: application/json" \
             -X POST "$api?api-version=7.1" -d "$body")
-          run_id=$(jq -r '.id' <<< "$run")
+          echo "AZDO_RUN_ID=$(jq -r '.id' <<< "$run")" >> "$GITHUB_ENV"
           echo "Azure DevOps run: $(jq -r '._links.web.href' <<< "$run")" | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Wait for Azure DevOps pipeline
+        shell: bash
+        run: |
+          set -euo pipefail
+          api="$AZDO_ORG_URL/$AZDO_PROJECT/_apis/pipelines/$AZDO_PIPELINE_ID/runs"
 
           while true; do
             sleep 60
-            status=$(curl -sSf -u ":$AZDO_PAT" "$api/$run_id?api-version=7.1")
+            status=$(curl -sSf -u ":$AZDO_PAT" "$api/$AZDO_RUN_ID?api-version=7.1")
             state=$(jq -r '.state' <<< "$status")
             if [ "$state" = "completed" ]; then
               result=$(jq -r '.result' <<< "$status")
@@ -56,3 +63,17 @@ jobs:
             fi
             echo "State: $state"
           done
+
+      # Superseded pushes, manual cancels and timeouts would otherwise leave the AzDO run going
+      - name: Cancel Azure DevOps run
+        if: cancelled() && env.AZDO_RUN_ID != ''
+        shell: bash
+        run: |
+          set -euo pipefail
+          code=$(curl -sS -o response.json -w '%{http_code}' -u ":$AZDO_PAT" -H "Content-Type: application/json" -X PATCH \
+            "$AZDO_ORG_URL/$AZDO_PROJECT/_apis/build/builds/$AZDO_RUN_ID?api-version=7.1" \
+            -d '{"status":"cancelling"}')
+          # AzDO answers an unauthorized PAT with 203 + HTML sign-in page, so check the code explicitly
+          echo "HTTP $code: $(jq -c '{id, status, result}' response.json 2>/dev/null || head -c 500 response.json)"
+          [ "$code" = "200" ]
+          echo "Cancelled Azure DevOps run $AZDO_RUN_ID" | tee -a "$GITHUB_STEP_SUMMARY"
