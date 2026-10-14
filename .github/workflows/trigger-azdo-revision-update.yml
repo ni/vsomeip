@@ -27,4 +27,5 @@ jobs:
           body='{"resources":{"repositories":{"self":{"refName":"refs/heads/main"}}}}'
 
           run=$(curl -sSf -u ":$AZDO_PAT" -H "Content-Type: application/json" -X POST "$api" -d "$body")
-          echo "Azure DevOps run: $(jq -r '._links.web.href' <<< "$run")" | tee -a "$GITHUB_STEP_SUMMARY"
+          run_url=$(jq -er '._links.web.href' <<< "$run")
+          echo "Azure DevOps run: $run_url" | tee -a "$GITHUB_STEP_SUMMARY"
