@@ -4,8 +4,7 @@ name: AzDO someip PR build
 on:
   pull_request:
     branches:
-      # TEMP for testing; revert to ni/main before merging
-      - users/ggrigory/Create_an_action_to_trigger_AzDo_pipline
+      - ni/main
     # converted_to_draft only cancels an in-progress run via concurrency; the job itself is skipped
     types: [opened, synchronize, reopened, ready_for_review, converted_to_draft]
 
