@@ -60,15 +60,16 @@ jobs:
             if [ "$state" = "completed" ]; then
               result=$(jq -r '.result' <<< "$status")
               echo "Result: $result" | tee -a "$GITHUB_STEP_SUMMARY"
+              echo "AZDO_RUN_COMPLETED=true" >> "$GITHUB_ENV"
               [ "$result" = "succeeded" ]
               exit $?
             fi
             echo "State: $state"
           done
 
-      # Superseded pushes, manual cancels and timeouts would otherwise leave the AzDO run going
+      # Superseded pushes, manual cancels and unexpected wait failures would otherwise leave the AzDO run going
       - name: Cancel Azure DevOps run
-        if: cancelled() && env.AZDO_RUN_ID != ''
+        if: (failure() || cancelled()) && env.AZDO_RUN_ID != '' && env.AZDO_RUN_COMPLETED != 'true'
         shell: bash
         run: |
           set -euo pipefail
