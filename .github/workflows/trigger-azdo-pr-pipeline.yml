@@ -38,7 +38,7 @@ jobs:
           api="$AZDO_ORG_URL/$AZDO_PROJECT/_apis/pipelines/$AZDO_PIPELINE_ID/runs"
 
           body=$(jq -n --arg branch "$VSOMEIP_BRANCH" --arg commit "$VSOMEIP_COMMIT" '{
-            resources: { repositories: { self: { refName: "refs/heads/users/bsziksza/testPipeline" } } },
+            resources: { repositories: { self: { refName: "refs/heads/main" } } },
             templateParameters: { vsomeipBranch: $branch, vsomeipCommit: $commit }
           }')
 
