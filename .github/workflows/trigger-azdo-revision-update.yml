@@ -1,0 +1,30 @@
+# Queues the srd-tran-vehicle-networks update-vsomeip-revision pipeline so the someip revision bump PR (and then CI) starts right away
+name: AzDO someip revision update
+
+on:
+  push:
+    branches:
+      - ni/main
+
+permissions:
+  contents: read
+
+jobs:
+  queue-revision-update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      AZDO_ORG_URL: https://dev.azure.com/ni
+      AZDO_PROJECT: DevCentral
+      AZDO_PIPELINE_ID: ${{ vars.AZDO_SOMEIP_REVISION_PIPELINE_ID }}
+      AZDO_PAT: ${{ secrets.AZDO_PAT }}
+    steps:
+      - name: Queue Azure DevOps pipeline
+        shell: bash
+        run: |
+          set -euo pipefail
+          api="$AZDO_ORG_URL/$AZDO_PROJECT/_apis/pipelines/$AZDO_PIPELINE_ID/runs?api-version=7.1"
+          body='{"resources":{"repositories":{"self":{"refName":"refs/heads/main"}}}}'
+
+          run=$(curl -sSf -u ":$AZDO_PAT" -H "Content-Type: application/json" -X POST "$api" -d "$body")
+          echo "Azure DevOps run: $(jq -r '._links.web.href' <<< "$run")" | tee -a "$GITHUB_STEP_SUMMARY"
