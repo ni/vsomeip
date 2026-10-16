@@ -34,6 +34,8 @@ nxIpStackRef_t get_xnet_stack() const { return xnet_stack_; }
 
     std::unique_ptr<abstract_timer> create_timer(boost::asio::io_context& _io) override;
 
+    std::shared_ptr<abstract_clock> get_clock() override;
+
     bool is_xnet_backend() const override;
 
 private:
