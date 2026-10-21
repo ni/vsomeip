@@ -5,6 +5,7 @@
 
 #pragma once
 
+#include "abstract_clock.hpp"
 #include "abstract_netlink_connector.hpp"
 #include "abstract_timer.hpp"
 #include "tcp_socket.hpp"
@@ -48,6 +49,10 @@ public:
 #endif
 
     virtual std::unique_ptr<abstract_timer> create_timer(boost::asio::io_context& _io) = 0;
+
+    // Injectable current-time source. The returned reference is owned by the factory
+    // (a process-wide singleton) and stays valid for its lifetime.
+    virtual std::shared_ptr<abstract_clock> get_clock() = 0;
 
     // --- NI modification: BEGIN ---
     // Optional backend hooks for I/O-context registration and XNET identification.
