@@ -24,7 +24,7 @@
 #undef ALOGE
 #endif
 
-#define ALOGE(LOG_TAG, LOG_STR) ((void)__android_log_write(ANDROID_LOG_ERROR, LOG_TAG, LOG_STR))
+#define ALOGE(LOG_TAG, ...) ((void)__android_log_print(ANDROID_LOG_ERROR, LOG_TAG, __VA_ARGS__))
 #ifndef LOGE
 #define LOGE ALOGE
 #endif
@@ -33,7 +33,7 @@
 #undef ALOGW
 #endif
 
-#define ALOGW(LOG_TAG, LOG_STR) ((void)__android_log_write(ANDROID_LOG_WARN, LOG_TAG, LOG_STR))
+#define ALOGW(LOG_TAG, ...) ((void)__android_log_print(ANDROID_LOG_WARN, LOG_TAG, __VA_ARGS__))
 #ifndef LOGW
 #define LOGW ALOGW
 #endif
@@ -42,7 +42,7 @@
 #undef ALOGI
 #endif
 
-#define ALOGI(LOG_TAG, LOG_STR) ((void)__android_log_write(ANDROID_LOG_INFO, LOG_TAG, LOG_STR))
+#define ALOGI(LOG_TAG, ...) ((void)__android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__))
 #ifndef LOGI
 #define LOGI ALOGI
 #endif
@@ -51,7 +51,7 @@
 #undef ALOGD
 #endif
 
-#define ALOGD(LOG_TAG, LOG_STR) ((void)__android_log_write(ANDROID_LOG_DEBUG, LOG_TAG, LOG_STR))
+#define ALOGD(LOG_TAG, ...) ((void)__android_log_print(ANDROID_LOG_DEBUG, LOG_TAG, __VA_ARGS__))
 #ifndef LOGD
 #define LOGD ALOGD
 #endif
@@ -60,7 +60,7 @@
 #undef ALOGV
 #endif
 
-#define ALOGV(LOG_TAG, LOG_STR) ((void)__android_log_write(ANDROID_LOG_VERBOSE, LOG_TAG, LOG_STR))
+#define ALOGV(LOG_TAG, ...) ((void)__android_log_print(ANDROID_LOG_VERBOSE, LOG_TAG, __VA_ARGS__))
 #ifndef LOGV
 #define LOGV ALOGV
 #endif
@@ -71,6 +71,7 @@
 #include <vsomeip/runtime.hpp>
 
 #include "../include/logger_impl.hpp"
+#include "../../runtime/include/runtime_impl.hpp"
 
 namespace vsomeip_v3 {
 namespace logger {
@@ -134,13 +135,12 @@ message::~message() try {
         std::cout.flush();
 
 #else
-        // Intentional "leak" to deal with log-after-main scenarios
-        static std::string const* const app = new std::string{runtime::get_property("LogApplication")}; // NOSONAR
+        static std::string app = runtime::get_property("LogApplication");
 
         // Note: Adding this prefix is not really optimal in terms of memory allocation/copying.
         // Could we set the prefix as separate arg instead? This would change the current
         // message structure through, so leave it for now.
-        constexpr std::string_view prefix = "VSIP: ";
+        const static std::string prefix = "VSIP: ";
         const std::string_view view = buffer_as_view();
         std::string output;
         output.reserve(prefix.size() + view.size());
@@ -149,25 +149,25 @@ message::~message() try {
 
         switch (level_) {
         case level_e::LL_FATAL:
-            ALOGE(app->c_str(), output.c_str());
+            ALOGE(app.c_str(), output.c_str());
             break;
         case level_e::LL_ERROR:
-            ALOGE(app->c_str(), output.c_str());
+            ALOGE(app.c_str(), output.c_str());
             break;
         case level_e::LL_WARNING:
-            ALOGW(app->c_str(), output.c_str());
+            ALOGW(app.c_str(), output.c_str());
             break;
         case level_e::LL_INFO:
-            ALOGI(app->c_str(), output.c_str());
+            ALOGI(app.c_str(), output.c_str());
             break;
         case level_e::LL_DEBUG:
-            ALOGD(app->c_str(), output.c_str());
+            ALOGD(app.c_str(), output.c_str());
             break;
         case level_e::LL_VERBOSE:
-            ALOGV(app->c_str(), output.c_str());
+            ALOGV(app.c_str(), output.c_str());
             break;
         default:
-            ALOGI(app->c_str(), output.c_str());
+            ALOGI(app.c_str(), output.c_str());
         };
 #endif // !ANDROID
     }
@@ -237,14 +237,13 @@ std::string_view message::timestamp() const {
 }
 
 std::string_view message::app_name() const {
-    // Intentional "leak" to deal with log-after-main scenarios
-    static std::string const* const its_name = new std::string{[] { // NOSONAR
+    static std::string its_name = [] {
         // Only read the env var once, on first use. This is also threadsafe.
         // NOLINTNEXTLINE(concurrency-mt-unsafe): False positve since C++11
         const char* name = std::getenv(VSOMEIP_ENV_APPLICATION_NAME);
         return name ? std::string{" "} + name : "";
-    }()};
-    return *its_name;
+    }();
+    return its_name;
 }
 
 std::string_view message::level_as_view() const {
@@ -276,7 +275,7 @@ std::string_view message::buffer_as_view() const {
 // We would like to avoid unnecessary vector resizes, but at the same not allocate
 // too much upfront if not needed. Based on a preliminary analysis of the current
 // log messages, the majority of messages are around 80-95 chars.
-constexpr size_t RESERVED_BLOCK_SIZE = 128;
+static constexpr size_t RESERVED_BLOCK_SIZE = 128;
 
 void message::buffer::activate() {
     data_.reserve(RESERVED_BLOCK_SIZE);

@@ -11,7 +11,6 @@ RUN apt-get update;\
         > /etc/apt/sources.list.d/llvm-20.list;\
     apt-get update;\
     apt-get install --no-install-recommends --yes\
-        ccache\
         clang-16\
         clang-18\
         clang-20\
@@ -23,13 +22,11 @@ RUN apt-get update;\
         gcc-13\
         gcc-14\
         gcovr\
-        git\
         googletest\
         libbenchmark-dev\
         libboost-filesystem-dev\
         libboost-system-dev\
         make\
-        nginx\
         ;\
     apt-get autoremove --purge --yes;\
     apt-get clean

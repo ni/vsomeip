@@ -13,6 +13,7 @@
     [
         {
             "name":"availability_handler_test_service",
+            "id":"0x1234",
             "threads":"4"
         }
     ],

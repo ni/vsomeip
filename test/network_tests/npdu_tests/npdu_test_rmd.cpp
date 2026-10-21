@@ -9,7 +9,6 @@
 
 #include <vsomeip/internal/logger.hpp>
 #include "common/test_main.hpp"
-#include "common/timeout_scale.hpp"
 #include "npdu_test_globals.hpp"
 
 #include "../npdu_tests/npdu_test_globals.hpp"
@@ -66,7 +65,6 @@ void npdu_test_rmd::on_availability(vsomeip::service_t _service, vsomeip::instan
         app_->offer_service(npdu_test::RMD_SERVICE_ID_CLIENT_SIDE, npdu_test::RMD_INSTANCE_ID);
     } else if (!_is_available && is_available_) {
         is_available_ = false;
-        became_unavailable_ = true;
         condition_.notify_one();
     }
 }
@@ -92,7 +90,7 @@ void npdu_test_rmd::on_message_shutdown(const std::shared_ptr<vsomeip::message>&
         // message was received and processed before we tear down.
         {
             std::unique_lock its_lock(mutex_);
-            if (!condition_.wait_for(its_lock, common::scaled_timeout(std::chrono::seconds(5)), [this] { return became_unavailable_; })) {
+            if (!condition_.wait_for(its_lock, std::chrono::seconds(5), [this] { return !is_available_; })) {
                 GTEST_NONFATAL_FAILURE_("RMD service didn't become unavailable within time");
             }
         }

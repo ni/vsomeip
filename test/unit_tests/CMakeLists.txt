@@ -5,16 +5,14 @@
 
 project("unit_tests_bin" LANGUAGES CXX)
 
-add_subdirectory(logger_tests)
 add_subdirectory(message_payload_impl_tests)
 add_subdirectory(message_serializer_tests)
 add_subdirectory(message_deserializer_tests)
+add_subdirectory(routing_manager_tests)
 add_subdirectory(security_policy_manager_impl_tests)
 add_subdirectory(security_policy_tests)
 add_subdirectory(security_tests)
-add_subdirectory(tracing_tests)
 add_subdirectory(utility_utility_tests)
-add_subdirectory(configuration_tests)
 
 # --- NI modification: BEGIN ---
 # Unit tests for initializing an application from an in-memory JSON configuration.
@@ -33,5 +31,4 @@ add_subdirectory(netlink_tests)
 add_subdirectory(usei_tests)
 add_subdirectory(endpoint_tests)
 add_subdirectory(protocol_tests)
-add_subdirectory(routing_manager_tests)
 endif()

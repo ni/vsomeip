@@ -1,6 +1,5 @@
 {
     "unicast" : "@TEST_IP_SLAVE@",
-    "diagnosis" : "0x02",
     "logging" :
     {
         "level" : "trace",
@@ -13,10 +12,12 @@
     "applications" :
     [
         {
-            "name" : "service-sample"
+            "name" : "service-sample",
+            "id" : "0x1277"
         },
         {
-            "name" : "client-sample"
+            "name" : "client-sample",
+            "id" : "0x1344"
         }
     ],
     "services" :
@@ -77,6 +78,7 @@
         "repetitions_base_delay" : "200",
         "repetitions_max" : "3",
         "ttl" : "3",
-        "cyclic_offer_delay" : "2000"
+        "cyclic_offer_delay" : "2000",
+        "request_response_delay" : "1500"
     }
 }

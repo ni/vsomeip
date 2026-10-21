@@ -9,7 +9,7 @@
 namespace vsomeip_v3 {
 namespace trace {
 
-constexpr filter_id_t FILTER_ID_ERROR = 0;
+const filter_id_t FILTER_ID_ERROR(0);
 
 channel_impl::channel_impl(const std::string& _id, const std::string& _name) : id_(_id), name_(_name), current_filter_id_(1) { }
 
@@ -84,15 +84,12 @@ filter_id_t channel_impl::add_filter(const std::vector<match_t>& _matches, filte
     bool has_method(false);
 
     for (auto m : _matches) {
-        if (std::get<0>(m) != ANY_SERVICE) {
+        if (std::get<0>(m) != ANY_SERVICE)
             has_service = true;
-        }
-        if (std::get<1>(m) != ANY_INSTANCE) {
+        if (std::get<1>(m) != ANY_INSTANCE)
             has_instance = true;
-        }
-        if (std::get<2>(m) != ANY_METHOD) {
+        if (std::get<2>(m) != ANY_METHOD)
             has_method = true;
-        }
     }
 
     // Create a filter function
@@ -221,48 +218,43 @@ filter_id_t channel_impl::add_filter_intern(const filter_func_t& _func, filter_t
     case filter_type_e::NEGATIVE:
         negative_[its_id] = _func;
         break;
-    default: // POSITIVE, HEADER_ONLY, FULL_PAYLOAD
-        positive_[its_id] = trace_filter_entry{_func, _type};
+    case filter_type_e::HEADER_ONLY:
+        positive_[its_id] = std::make_pair(_func, false);
+        break;
+    default:
+        positive_[its_id] = std::make_pair(_func, true);
     }
 
     return its_id;
 }
 
-trace_result_e channel_impl::matches(service_t _service, instance_t _instance, method_t _method) {
+std::pair<bool, bool> channel_impl::matches(service_t _service, instance_t _instance, method_t _method) {
     std::scoped_lock its_lock(mutex_);
 
     // If a negative filter matches --> drop!
     for (auto& its_filter : negative_) {
-        if (its_filter.second(_service, _instance, _method)) {
-            return trace_result_e::DROP;
-        }
+        if (its_filter.second(_service, _instance, _method))
+            return std::make_pair(false, false);
     }
 
-    // If a positive/header-only/full-payload filter matches --> forward!
-    // POSITIVE and FULL_PAYLOAD log the full payload (POSITIVE_FILTER),
-    // HEADER_ONLY logs the header only.
+    // If a positive/header-only filter matches --> forward!
     bool has_positive(false);
     for (auto& its_filter : positive_) {
-        if (its_filter.second.func(_service, _instance, _method)) {
-            return its_filter.second.type == filter_type_e::HEADER_ONLY ? trace_result_e::HEADER_ONLY_FILTER
-                                                                        : trace_result_e::POSITIVE_FILTER;
-        }
+        if (its_filter.second.first(_service, _instance, _method))
+            return std::make_pair(true, its_filter.second.second);
 
-        // Only a POSITIVE filter restricts the channel to an allow-list;
-        // HEADER_ONLY and FULL_PAYLOAD leave other messages on the default path.
-        if (its_filter.second.type == filter_type_e::POSITIVE) {
+        // If we have a positive filter that is no header-only
+        // filter, set the flag
+        if (its_filter.second.second)
             has_positive = true;
-        }
     }
 
-    // If no positive filter is defined --> forward everything (subject to the
-    // full-logging threshold).
-    if (!has_positive) {
-        return trace_result_e::DEFAULT;
-    }
+    // If no positive filter is defined --> forward!
+    if (!has_positive)
+        return std::make_pair(true, true);
 
     // Default --> Drop!
-    return trace_result_e::DROP;
+    return std::make_pair(false, false);
 }
 
 } // namespace trace

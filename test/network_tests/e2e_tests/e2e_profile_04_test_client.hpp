@@ -13,7 +13,6 @@
 #include <mutex>
 #include <condition_variable>
 #include <atomic>
-#include <vector>
 
 class e2e_profile_04_test_client {
 public:
@@ -42,6 +41,4 @@ private:
     std::thread sender_;
 
     std::atomic<uint32_t> received_;
-
-    std::vector<vsomeip::byte_t> last_event_payload_;
 };
