@@ -6,7 +6,6 @@
 #include "../include/xnet_udp_socket.hpp"
 
 #include "../include/asio_timer.hpp"
-#include "../include/steady_clock.hpp"
 
 #include <stdexcept>  
 #include <string>
@@ -108,11 +107,6 @@ xnet_socket_factory::xnet_socket_factory(nxIpStackRef_t xnet_stack)
 
     bool xnet_socket_factory::is_xnet_backend() const {
         return true;
-    }
-
-    std::shared_ptr<abstract_clock> xnet_socket_factory::get_clock() {
-        static auto clock = std::make_shared<steady_clock>();
-        return clock;
     }
 
 #if defined(__linux__) || defined(__QNX__)

@@ -6,7 +6,6 @@
 #pragma once
 
 #include "data_pipe.hpp"
-#include "common/timeout_scale.hpp"
 
 #include <memory>
 #include <mutex>
@@ -58,7 +57,7 @@ public:
     void block(bool _block = false);
 
     /// Waits until the gate is in the BLOCKED state.
-    [[nodiscard]] bool wait_for_blocked(std::chrono::milliseconds _timeout = common::scaled_timeout(std::chrono::seconds(2))) const;
+    [[nodiscard]] bool wait_for_blocked(std::chrono::milliseconds _timeout = std::chrono::seconds(2)) const;
 
 private:
     std::shared_ptr<data_pipe> pipe_;

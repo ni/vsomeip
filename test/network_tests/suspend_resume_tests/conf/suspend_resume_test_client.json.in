@@ -14,7 +14,8 @@
     "applications" :
     [
         {
-            "name" : "suspend_resume_test_client"
+            "name" : "suspend_resume_test_client",
+            "id" : "0x4567"
         }
     ],
     "routing" : "suspend_resume_test_client",
