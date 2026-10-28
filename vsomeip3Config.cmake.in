@@ -19,6 +19,6 @@ endif ()
 set (VSOMEIP_LIBRARIES vsomeip3)
 
 # vsomeip/xnet.hpp (included by vsomeip.hpp) needs nxsocket.h from the NI-XNET SDK
-if (DEFINED ENV{NIEXTCCOMPILERSUPP} AND TARGET vsomeip3)
+if (DEFINED ENV{NIEXTCCOMPILERSUPP} AND NOT "$ENV{NIEXTCCOMPILERSUPP}" STREQUAL "" AND TARGET vsomeip3)
     set_property (TARGET vsomeip3 APPEND PROPERTY INTERFACE_INCLUDE_DIRECTORIES "$ENV{NIEXTCCOMPILERSUPP}/include")
 endif ()
