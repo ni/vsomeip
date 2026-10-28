@@ -17,4 +17,9 @@
 #include <vsomeip/runtime.hpp>
 #include <vsomeip/trace.hpp>
 
+// --- NI modification: BEGIN ---
+// Expose the public XNET socket factory API (use_xnet_socket_factory) and the NI-XNET SDK types it needs.
+#include <vsomeip/xnet.hpp>
+// --- NI modification: END ---
+
 namespace vsomeip = vsomeip_v3;

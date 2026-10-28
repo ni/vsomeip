@@ -68,6 +68,7 @@ global:
         *vsomeip_v3::asio_socket_factory*;
 
         /* XNET socket factory */
+        vsomeip_v3::use_xnet_socket_factory*;
         *vsomeip_v3::xnet_socket_factory*;
         *vsomeip_v3::xnet_tcp_socket*;
         *vsomeip_v3::xnet_tcp_acceptor*;

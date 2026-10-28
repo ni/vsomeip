@@ -1,6 +1,7 @@
 // XNET Socket Factory Implementation
 
 #include "../include/xnet_socket_factory.hpp"
+#include <vsomeip/xnet.hpp>
 #include "../include/xnet_tcp_acceptor.hpp"
 #include "../include/xnet_tcp_socket.hpp"
 #include "../include/xnet_udp_socket.hpp"
@@ -126,5 +127,9 @@ xnet_socket_factory::xnet_socket_factory(nxIpStackRef_t xnet_stack)
         return std::make_unique<asio_uds_acceptor>(_io);
     }
 #endif
+
+void use_xnet_socket_factory(nxIpStackRef_t _xnet_stack) {
+    set_abstract_factory(std::make_shared<xnet_socket_factory>(_xnet_stack));
+}
 
 }

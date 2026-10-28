@@ -10,11 +10,6 @@
 
 #include <vsomeip/vsomeip.hpp>
 
-// Include headers for XNET and XNET socket factory
-#include "nxsocket.h"
-#include "nixnet.h"
-#include "xnet_socket_factory.hpp"
-
 #include "xnet-stack-configuration.h"
 
 std::shared_ptr<vsomeip::application> app;
@@ -56,8 +51,7 @@ bool setup_xnet_stack() {
     // Initialize the XNET socket factory
     try {
         std::cout << "Initializing XNET socket factory with XNET driver enabled..." << std::endl;
-        auto xnet_factory = std::make_shared<vsomeip_v3::xnet_socket_factory>(xnet_stack);
-        vsomeip_v3::set_abstract_factory(xnet_factory);
+        vsomeip_v3::use_xnet_socket_factory(xnet_stack);
 
     } catch (std::exception const& e) {
         std::cerr << "Failed to initialize XNET socket factory: " << e.what() << std::endl;

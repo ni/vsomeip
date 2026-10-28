@@ -2,8 +2,8 @@
 
 These examples show how to run vsomeip on top of the **NI-XNET IP stack** instead of the
 standard operating system TCP/IP stack. Each example creates its own XNET IP stack
-instance, installs the `vsomeip_v3::xnet_socket_factory` as the abstract socket factory and
-then uses the regular vsomeip API.
+instance, installs the XNET socket factory via `vsomeip_v3::use_xnet_socket_factory()`
+(from `<vsomeip/xnet.hpp>`) and then uses the regular vsomeip API.
 
 Available examples:
 
