@@ -8,7 +8,7 @@
   "applications": [
     {
       "name": "xnet-request-response-client",
-      "id": "0x1313"
+      "id": "0x0113"
     }
   ],
   "routing": "xnet-request-response-client",

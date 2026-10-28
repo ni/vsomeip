@@ -14,7 +14,6 @@ endif()
 include_directories (
     ${VSOMEIP_INCLUDE_DIRS}
     ${CMAKE_CURRENT_SOURCE_DIR}/../common/includes
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../../implementation/endpoints/include
 )
 
 include_directories (SYSTEM ${Boost_INCLUDE_DIRS})
