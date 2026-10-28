@@ -9,6 +9,7 @@
 
 #include <vsomeip/vsomeip.hpp>
 #include <vsomeip/xnet.hpp>
+#include "nixnet.h"
 
 #include "xnet-stack-configuration.h"
 
