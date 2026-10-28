@@ -6,6 +6,7 @@
 #include <set>
 
 #include <vsomeip/vsomeip.hpp>
+#include <vsomeip/xnet.hpp>
 
 #include "xnet-stack-configuration.h"
 
