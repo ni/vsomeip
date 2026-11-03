@@ -51,6 +51,9 @@ public:
     // --- NI modification: BEGIN ---
     // Initializes the application from a configuration passed as JSON string.
     VSOMEIP_EXPORT bool init(const std::string& _json);
+
+    // Binds the IP stack used for the network endpoints of this application.
+    VSOMEIP_EXPORT bool register_ip_stack(nxIpStackRef_t _stack);
     // --- NI modification: END ---
 
     VSOMEIP_EXPORT void start();

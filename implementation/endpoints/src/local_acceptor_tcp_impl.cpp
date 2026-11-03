@@ -16,7 +16,7 @@
 #define VSOMEIP_LOG_PREFIX "lati"
 namespace vsomeip_v3 {
 local_acceptor_tcp_impl::local_acceptor_tcp_impl(boost::asio::io_context& _io, std::shared_ptr<configuration> _configuration) :
-    io_(_io), acceptor_(abstract_socket_factory::get()->create_tcp_acceptor(_io)), configuration_(std::move(_configuration)) { }
+    io_(_io), acceptor_(abstract_socket_factory::get()->create_local_tcp_acceptor(_io)), configuration_(std::move(_configuration)) { }
 local_acceptor_tcp_impl::~local_acceptor_tcp_impl() = default;
 
 void local_acceptor_tcp_impl::init(boost::asio::ip::tcp::endpoint _local_ep, boost::system::error_code& _ec) {
@@ -81,7 +81,7 @@ void local_acceptor_tcp_impl::cancel(boost::system::error_code& _ec) {
 void local_acceptor_tcp_impl::async_accept(connection_handler _handler) {
     std::scoped_lock const lock{mtx_};
     // tmp_socket is a `shared_ptr` due to the `std::function`  below which requires everything to be copyable
-    std::shared_ptr<tcp_socket> tmp_socket = abstract_socket_factory::get()->create_tcp_socket(io_);
+    std::shared_ptr<tcp_socket> tmp_socket = abstract_socket_factory::get()->create_local_tcp_socket(io_);
     // Use the peer-endpoint overload so the remote address is captured by the kernel at accept() time.
     // If the client disconnects immediately after connecting, calling remote_endpoint() on the socket
     // in the callback would fail

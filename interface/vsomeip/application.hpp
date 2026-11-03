@@ -19,6 +19,10 @@
 #include <vsomeip/constants.hpp>
 #include <vsomeip/handler.hpp>
 
+// --- NI modification: BEGIN ---
+#include "nxsocket.h"
+// --- NI modification: END ---
+
 namespace vsomeip_v3 {
 
 class configuration;
@@ -105,6 +109,23 @@ public:
      *
      */
     virtual bool init() = 0;
+
+     /**
+     *
+     * \brief Binds an IP stack (XNET nxIpStackRef_t) to this application.
+     *
+     * Must be called after @ref init and before @ref start. Only takes effect
+     * if the application is the routing manager host, as only the routing
+     * manager host opens network sockets. All network endpoints of this
+     * application (service discovery, offered services, remote clients) are
+     * created on the given IP stack. Local routing always uses the OS stack.
+     *
+     * \param _stack The IP stack reference.
+     *
+     * \return True if the stack was registered, false otherwise.
+     *
+     */
+    virtual bool register_ip_stack(nxIpStackRef_t _stack) = 0;
 
     // --- NI modification: BEGIN ---
     /**

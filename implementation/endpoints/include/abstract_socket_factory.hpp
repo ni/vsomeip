@@ -23,6 +23,10 @@
 #include <functional>
 #include <string>
 
+// --- NI modification: BEGIN ---
+#include "nxsocket.h"
+// --- NI modification: END ---
+
 namespace vsomeip_v3 {
 
 class abstract_socket_factory {
@@ -55,16 +59,22 @@ public:
     virtual std::shared_ptr<abstract_clock> get_clock() = 0;
 
     // --- NI modification: BEGIN ---
-    // Optional backend hooks for I/O-context registration and XNET identification.
-    virtual bool register_io_context(boost::asio::io_context&, const std::string&) {
+    // Optional backend hooks for binding an I/O context to an IP stack and XNET identification.
+    virtual bool register_ip_stack(boost::asio::io_context&, nxIpStackRef_t) {
         return true;
     }
 
-    virtual void unregister_io_context(boost::asio::io_context&, const std::string&) { }
+    virtual void unregister_ip_stack(boost::asio::io_context&) { }
 
     virtual bool is_xnet_backend() const {
         return false;
     }
+
+    // Sockets used for local (process/host internal) routing over TCP.
+    // By default they are created like any other TCP socket; backends that
+    // provide their own IP stack (e.g. XNET) override these to use the OS stack.
+    virtual std::unique_ptr<tcp_socket> create_local_tcp_socket(boost::asio::io_context& _io) { return create_tcp_socket(_io); }
+    virtual std::unique_ptr<tcp_acceptor> create_local_tcp_acceptor(boost::asio::io_context& _io) { return create_tcp_acceptor(_io); }
     // --- NI modification: END ---
 };
 

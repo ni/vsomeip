@@ -2,6 +2,9 @@
 #define XNET_SOCKET_FACTORY_HPP_
 
 #include <iostream>
+#include <map>
+#include <mutex>
+#include <string>
 
 #include "abstract_socket_factory.hpp"
 #include "nxsocket.h"
@@ -10,11 +13,16 @@ namespace vsomeip_v3 {
 
 class xnet_socket_factory final : public abstract_socket_factory {
 public:
-explicit xnet_socket_factory(nxIpStackRef_t xnet_stack);
+xnet_socket_factory();
 ~xnet_socket_factory() override = default;
 
-// Get XNET stack reference
-nxIpStackRef_t get_xnet_stack() const { return xnet_stack_; }
+// Binds/unbinds an I/O context to an XNET IP stack. Network sockets created
+// on a registered I/O context use the bound stack.
+bool register_ip_stack(boost::asio::io_context& _io, nxIpStackRef_t _stack) override;
+void unregister_ip_stack(boost::asio::io_context& _io) override;
+
+std::unique_ptr<tcp_socket> create_local_tcp_socket(boost::asio::io_context& _io) override;
+std::unique_ptr<tcp_acceptor> create_local_tcp_acceptor(boost::asio::io_context& _io) override;
 
 #if defined(__linux__)
     std::shared_ptr<abstract_netlink_connector> create_netlink_connector(boost::asio::io_context& _io,
@@ -39,7 +47,10 @@ nxIpStackRef_t get_xnet_stack() const { return xnet_stack_; }
     bool is_xnet_backend() const override;
 
 private:
-    nxIpStackRef_t xnet_stack_ = nullptr; // XNET IP stack reference
+    nxIpStackRef_t get_stack(boost::asio::io_context& _io) const;
+
+    mutable std::mutex stacks_mutex_;
+    std::map<const boost::asio::io_context*, nxIpStackRef_t> io_stacks_;
 };
 
 }

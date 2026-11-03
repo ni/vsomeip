@@ -31,6 +31,11 @@ public:
     void start() const;
     void stop() const;
 
+    // --- NI modification: BEGIN ---
+    // I/O context used by the TCP server acceptors of the network endpoints.
+    boost::asio::io_context& get_auxiliary_io_context() const;
+    // --- NI modification: END ---
+
     void set_routing_state(routing_state_e _routing_state) const;
     bool update_service_configuration(service_t _service, instance_t _instance, uint16_t _port, bool _reliable, bool _magic_cookies_enabled,
                                       bool _offer) const;

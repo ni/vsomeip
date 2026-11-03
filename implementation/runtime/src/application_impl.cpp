@@ -39,6 +39,7 @@
 #include "../../routing/include/routing_manager_impl.hpp"
 #include "../../routing/include/routing_manager_client.hpp"
 #include "../../security/include/policy_manager_impl.hpp"
+#include "../../security/include/policy_manager_impl.hpp"
 #include "../../security/include/security.hpp"
 #include "../../tracing/include/connector_impl.hpp"
 #include "../../thread_manager/include/thread_manager.hpp"
@@ -66,7 +67,14 @@ application_impl::application_impl(const std::string& _name, const std::string& 
 }
 
 application_impl::~application_impl() {
-    runtime_->remove_application(name_);
+    // --- NI modification: BEGIN ---
+    // Release the IP stack bindings before the I/O contexts are destroyed.
+    if (routing_app_) {
+        auto* const its_factory = abstract_socket_factory::get();
+        its_factory->unregister_ip_stack(routing_app_->get_auxiliary_io_context());
+        its_factory->unregister_ip_stack(io_);
+    }
+    // --- NI modification: END ---
 }
 
 bool application_impl::init() {
@@ -178,6 +186,46 @@ bool application_impl::init(const std::string& _json) {
     }
 
     return init_configuration();
+}
+
+bool application_impl::register_ip_stack(nxIpStackRef_t _stack) {
+    {
+        std::scoped_lock its_initialized_lock{initialize_mutex_};
+        if (!is_initialized_) {
+            VSOMEIP_ERROR_P << "Application \"" << name_ << "\" must be initialized before registering an IP stack.";
+            return false;
+        }
+    }
+
+    std::scoped_lock its_lock{start_stop_mutex_};
+    {
+        std::scoped_lock its_lock_inner{handlers_mutex_};
+        if (!dispatchers_.empty() || !io_threads_.empty()) {
+            VSOMEIP_ERROR_P << "Application \"" << name_ << "\" is already started, IP stack must be registered before start().";
+            return false;
+        }
+    }
+
+    if (!routing_app_) {
+        VSOMEIP_WARNING_P << "Application \"" << name_ << "\" is not the routing manager host, it does not open network sockets.";
+        return true;
+    }
+
+    // Network endpoints use io_ (UDP sockets, TCP clients) and the auxiliary
+    // context of the routing host (TCP server acceptors).
+    auto* const its_factory = abstract_socket_factory::get();
+    auto& its_auxiliary_io = routing_app_->get_auxiliary_io_context();
+    if (!its_factory->register_ip_stack(io_, _stack)) {
+        VSOMEIP_ERROR_P << "Registering the IP stack for application \"" << name_ << "\" failed.";
+        return false;
+    }
+    if (!its_factory->register_ip_stack(its_auxiliary_io, _stack)) {
+        its_factory->unregister_ip_stack(io_);
+        VSOMEIP_ERROR_P << "Registering the IP stack for application \"" << name_ << "\" failed.";
+        return false;
+    }
+    VSOMEIP_INFO_P << "IP stack registered for application \"" << name_ << "\".";
+    return true;
 }
 
 bool application_impl::init_configuration() {

@@ -8,12 +8,16 @@
 #include <thread>
 
 #include <vsomeip/vsomeip.hpp>
-#include <vsomeip/xnet.hpp>
+
+// Include headers for XNET and XNET socket factory
+#include "nxsocket.h"
 #include "nixnet.h"
+#include "xnet_socket_factory.hpp"
 
 #include "xnet-stack-configuration.h"
 
 std::shared_ptr<vsomeip::application> app;
+nxIpStackRef_t xnet_stack = nullptr;
 std::atomic_bool running{true};
 std::thread notify_thread;
 
@@ -35,7 +39,6 @@ void stop_application([[maybe_unused]] int exit_code) {
 }
 
 bool setup_xnet_stack() {
-    nxIpStackRef_t xnet_stack = nullptr;
 
     // Initialize the xnet IP stack with the provided configuration
     nxStatus_t status{};
@@ -52,7 +55,8 @@ bool setup_xnet_stack() {
     // Initialize the XNET socket factory
     try {
         std::cout << "Initializing XNET socket factory with XNET driver enabled..." << std::endl;
-        vsomeip_v3::use_xnet_socket_factory(xnet_stack);
+        auto xnet_factory = std::make_shared<vsomeip_v3::xnet_socket_factory>();
+        vsomeip_v3::set_abstract_factory(xnet_factory);
 
     } catch (std::exception const& e) {
         std::cerr << "Failed to initialize XNET socket factory: " << e.what() << std::endl;
@@ -68,6 +72,12 @@ bool setup_application() {
     // Initialize the application
     if (!app->init()) {
         std::cerr << "Couldn't initialize application" << std::endl;
+        return false;
+    }
+
+    // Bind the XNET IP stack to the application (after init, before start)
+    if (!app->register_ip_stack(xnet_stack)) {
+        std::cerr << "Couldn't register XNET IP stack" << std::endl;
         return false;
     }
 

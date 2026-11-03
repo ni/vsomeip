@@ -30,6 +30,11 @@ public:
     endpoint_manager_impl(routing_manager_impl* const _rm, boost::asio::io_context& _io,
                           const std::shared_ptr<configuration>& _configuration);
     ~endpoint_manager_impl();
+    
+    // --- NI modification: BEGIN ---
+    // I/O context used by the TCP server acceptors of the network endpoints.
+    boost::asio::io_context& get_auxiliary_io_context();
+    // --- NI modification: END ---
 
     std::shared_ptr<boardnet_endpoint> find_or_create_remote_client(service_t _service, instance_t _instance, bool _reliable);
 

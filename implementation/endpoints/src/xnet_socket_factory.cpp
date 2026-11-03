@@ -8,6 +8,7 @@
 
 #include "../include/asio_timer.hpp"
 #include "../include/steady_clock.hpp"
+#include "../include/asio_tcp_socket.hpp"
 
 #include <stdexcept>  
 #include <string>
@@ -60,17 +61,14 @@ namespace {
 
 constexpr char const* k_xnet_backend_tag = "backend=xnet";
 
-void log_startup_report(nxIpStackRef_t _stack) {
-    VSOMEIP_INFO_P << k_xnet_backend_tag
-                 << " stack_ref=" << _stack
-                 << " stack_ready=" << (_stack != nullptr ? "true" : "false");
+void log_startup_report() {
+    VSOMEIP_INFO_P << k_xnet_backend_tag << " factory created, IP stacks are bound per I/O context";
 }
 
 } // namespace
 
-xnet_socket_factory::xnet_socket_factory(nxIpStackRef_t xnet_stack) 
-    : xnet_stack_(xnet_stack) {
-        log_startup_report(xnet_stack_);
+xnet_socket_factory::xnet_socket_factory() {
+        log_startup_report();
 }
 
 #if defined(__linux__)
@@ -85,21 +83,57 @@ xnet_socket_factory::xnet_socket_factory(nxIpStackRef_t xnet_stack)
 #endif
 
     std::unique_ptr<udp_socket> xnet_socket_factory::create_udp_socket(boost::asio::io_context& _io) {
-        VSOMEIP_INFO_P << k_xnet_backend_tag
-                     << " stack_ref=" << xnet_stack_;
-        return std::make_unique<xnet_udp_socket>(_io, xnet_stack_);
+        auto its_stack = get_stack(_io);
+        VSOMEIP_INFO_P << k_xnet_backend_tag << " stack_ref=" << its_stack;
+        return std::make_unique<xnet_udp_socket>(_io, its_stack);
     }
 
     std::unique_ptr<tcp_socket> xnet_socket_factory::create_tcp_socket(boost::asio::io_context& _io) {
-        VSOMEIP_INFO_P << k_xnet_backend_tag
-                     << " stack_ref=" << xnet_stack_;
-        return std::make_unique<xnet_tcp_socket>(_io, xnet_stack_);
+        auto its_stack = get_stack(_io);
+        VSOMEIP_INFO_P << k_xnet_backend_tag << " stack_ref=" << its_stack;
+        return std::make_unique<xnet_tcp_socket>(_io, its_stack);
     }
 
     std::unique_ptr<tcp_acceptor> xnet_socket_factory::create_tcp_acceptor(boost::asio::io_context& _io) {
-        VSOMEIP_INFO_P << k_xnet_backend_tag
-                     << " stack_ref=" << xnet_stack_;
-        return std::make_unique<xnet_tcp_acceptor>(_io, xnet_stack_);
+        auto its_stack = get_stack(_io);
+        VSOMEIP_INFO_P << k_xnet_backend_tag << " stack_ref=" << its_stack;
+        return std::make_unique<xnet_tcp_acceptor>(_io, its_stack);
+    }
+
+    std::unique_ptr<tcp_socket> xnet_socket_factory::create_local_tcp_socket(boost::asio::io_context& _io) {
+        // Local routing (application <-> routing host) always uses the OS stack.
+        return std::make_unique<asio_tcp_socket>(_io);
+    }
+
+    std::unique_ptr<tcp_acceptor> xnet_socket_factory::create_local_tcp_acceptor(boost::asio::io_context& _io) {
+        // Local routing (application <-> routing host) always uses the OS stack.
+        return std::make_unique<asio_tcp_acceptor>(_io);
+    }
+
+    bool xnet_socket_factory::register_ip_stack(boost::asio::io_context& _io, nxIpStackRef_t _stack) {
+        if (_stack == nullptr) {
+            VSOMEIP_ERROR_P << k_xnet_backend_tag << " invalid stack_ref for io_context=" << &_io;
+            return false;
+        }
+        std::scoped_lock its_lock{stacks_mutex_};
+        io_stacks_[&_io] = _stack;
+        VSOMEIP_INFO_P << k_xnet_backend_tag << " io_context=" << &_io << " stack_ref=" << _stack;
+        return true;
+    }
+
+    void xnet_socket_factory::unregister_ip_stack(boost::asio::io_context& _io) {
+        std::scoped_lock its_lock{stacks_mutex_};
+        io_stacks_.erase(&_io);
+    }
+
+    nxIpStackRef_t xnet_socket_factory::get_stack(boost::asio::io_context& _io) const {
+        std::scoped_lock its_lock{stacks_mutex_};
+        if (auto found = io_stacks_.find(&_io); found != io_stacks_.end()) {
+            return found->second;
+        }
+        VSOMEIP_ERROR_P << k_xnet_backend_tag << " no IP stack registered for io_context=" << &_io
+                        << ". Call application::register_ip_stack() after init() and before start().";
+        return nullptr;
     }
 
     std::unique_ptr<abstract_timer> xnet_socket_factory::create_timer(boost::asio::io_context& _io) {
