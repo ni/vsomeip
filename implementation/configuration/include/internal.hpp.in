@@ -44,6 +44,7 @@
 
 #define VSOMEIP_ROUTING_HOST_PORT_DEFAULT       31490
 
+#define VSOMEIP_NAME                            "@VSOMEIP_NAME@" // NI modification
 #ifdef _WIN32
 #define VSOMEIP_CFG_LIBRARY                      "vsomeip3-cfg.dll"
 #else

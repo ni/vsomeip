@@ -8,11 +8,15 @@
 #include <thread>
 #include <iomanip>
 #include <iostream>
+#include <fstream>
 
 #include <boost/algorithm/string/join.hpp>
 #include <boost/asio/ip/host_name.hpp>
 #include <boost/asio/ip/tcp.hpp>
 #include <boost/exception/diagnostic_information.hpp>
+#if defined(__linux__)
+#include <boost/dll/runtime_symbol_info.hpp> // NI modification
+#endif
 
 #if defined(__linux__)
 #include <dlfcn.h>
@@ -50,6 +54,38 @@
 
 namespace vsomeip_v3 {
 
+// --- NI modification: BEGIN ---
+#if defined(__linux__)
+namespace {
+// Load environment variables from <VSOMEIP_NAME>.env located next to the
+// library and from /etc/natinst/someip/ (the latter takes precedence).
+void load_env_files() {
+    auto load_env_file = [](const std::string& _path) {
+        std::ifstream its_file(_path);
+        std::string its_line;
+        while (std::getline(its_file, its_line)) {
+            if (its_line.empty() || its_line[0] == '#') {
+                continue;
+            }
+            auto its_delimiter_pos = its_line.find('=');
+            if (its_delimiter_pos == std::string::npos) {
+                continue;
+            }
+            std::string its_key = its_line.substr(0, its_delimiter_pos);
+            std::string its_value = its_line.substr(its_delimiter_pos + 1);
+            setenv(its_key.c_str(), its_value.c_str(), 1);
+        }
+    };
+
+    const std::string its_env_name = std::string(VSOMEIP_NAME) + ".env";
+    boost::filesystem::path its_lib_path = boost::dll::this_line_location();
+    load_env_file((its_lib_path.parent_path() / its_env_name).string());
+    load_env_file("/etc/natinst/someip/" + its_env_name);
+}
+} // namespace
+#endif
+// --- NI modification: END ---
+
 #ifdef ANDROID
 configuration::~configuration() { }
 #endif
@@ -82,6 +118,10 @@ bool application_impl::init() {
         VSOMEIP_WARNING << "Trying to initialize already-initialized application \"" << name_ << "\" (" << hex4(client_) << ")";
         return true;
     }
+
+#if defined(__linux__)
+    load_env_files(); // NI modification
+#endif
 
     // Application name
     if (name_ == "") {
@@ -141,6 +181,10 @@ bool application_impl::init(const std::string& _json) {
         VSOMEIP_WARNING << "Trying to initialize already-initialized application \"" << name_ << "\" (" << hex4(client_) << ")";
         return true;
     }
+
+#if defined(__linux__)
+    load_env_files(); // NI modification
+#endif
 
     // Application name
     if (name_ == "") {
