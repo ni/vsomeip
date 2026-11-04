@@ -54,6 +54,7 @@
 #include "../../utility/include/utility.hpp"
 #include "../../tracing/include/connector_impl.hpp"
 #include "../../tracing/include/header.hpp"
+#include "../../fault_injection/include/fault_injection_manager.hpp" // NI modification
 
 #ifndef ANDROID
 #include "../../e2e_protection/include/buffer/buffer.hpp"
@@ -81,7 +82,8 @@ routing_manager_impl::routing_manager_impl(routing_manager_host* _host) :
     routing_running_(false), routing_state_(configuration_->get_initial_routing_state()), status_log_timer_(_host->get_io()),
     memory_log_timer_(_host->get_io()), ep_mgr_impl_(std::make_shared<endpoint_manager_impl>(this, io_, configuration_)),
     pending_remote_offer_id_(0), last_resume_(std::chrono::steady_clock::time_point::min()), statistics_log_timer_(_host->get_io()),
-    ignored_statistics_counter_(0), stop_offer_graceful_timer_{_host->get_io()} {
+    ignored_statistics_counter_(0), stop_offer_graceful_timer_{_host->get_io()},
+    fault_injection_manager_(std::make_shared<fault_injection::fault_injection_manager>(io_)) { // NI modification
 
     VSOMEIP_INFO << "Starting Routing Manager [Host] with state " << routing_state_tostring(routing_state_);
     const size_t its_max = configuration_->get_io_thread_count(host_->get_name());
@@ -93,6 +95,11 @@ routing_manager_impl::routing_manager_impl(routing_manager_host* _host) :
 }
 
 routing_manager_impl::~routing_manager_impl() {
+    // --- NI modification: BEGIN ---
+    if (fault_injection_manager_) {
+        fault_injection_manager_->shutdown();
+    }
+    // --- NI modification: END ---
     utility::reset_client_ids(configuration_->get_network());
     utility::remove_lockfile(configuration_->get_network());
 }
@@ -155,6 +162,18 @@ void routing_manager_impl::lazy_load([[maybe_unused]] std::string_view _client_h
 
 void routing_manager_impl::init() {
 
+    // --- NI modification: BEGIN ---
+    // Initialize fault injection manager
+    const char* its_fault_config_path_env = getenv("VSOMEIP_FAULT_INJECTION_CONFIG");
+    std::string its_fault_config_path = its_fault_config_path_env
+            ? its_fault_config_path_env
+            : "/var/local/natinst/someip/" + configuration_->get_routing_host_name() + ".fault";
+
+    if (fault_injection_manager_) {
+        fault_injection_manager_->initialize(its_fault_config_path);
+    }
+    // --- NI modification: END ---
+
     stub_ = std::make_shared<routing_manager_stub>(this, configuration_);
     stub_->init();
 
@@ -197,6 +216,14 @@ void routing_manager_impl::init() {
             }
         }
     }
+
+    // --- NI modification: BEGIN ---
+    // If we have both the provider and fault injection, set the interface on the provider
+    if (e2e_provider_ && fault_injection_manager_) {
+        e2e_provider_->set_fault_injection_interface(fault_injection_manager_.get());
+        VSOMEIP_INFO << "Fault injection interface set on E2E provider.";
+    }
+    // --- NI modification: END ---
 #endif
 }
 
@@ -625,6 +652,16 @@ bool routing_manager_impl::send(client_t _client, const byte_t* _data, length_t 
     client_t its_target_client = VSOMEIP_ROUTING_CLIENT;
 
     bool is_service_discovery = (its_service == sd::service && its_method == sd::method);
+
+    // --- NI modification: BEGIN ---
+    // Drop messages that are disabled by the fault injection configuration.
+    if (!is_service_discovery && fault_injection_manager_
+        && fault_injection_manager_->is_disabled(its_service, _instance, static_cast<event_t>(its_method))) {
+        VSOMEIP_DEBUG_P << "early return since message is disabled by fault injection manager [" << hex4(its_service) << "."
+                        << hex4(_instance) << "." << hex4(its_method) << "]";
+        return false;
+    }
+    // --- NI modification: END ---
 
     std::shared_ptr<local_endpoint> its_local_target;
     if (is_request) {

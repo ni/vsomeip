@@ -20,6 +20,8 @@ add_subdirectory(configuration_tests)
 add_subdirectory(in_memory_json_api_tests)
 add_subdirectory(xnet_application_tests)
 add_subdirectory(xnet_factory_tests)
+# Unit tests for the fault injection manager.
+add_subdirectory(fault_injection_tests)
 # --- NI modification: END ---
 
 # --- NI modification: BEGIN ---

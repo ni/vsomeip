@@ -8,6 +8,7 @@
 #include <vsomeip/internal/logger.hpp>
 #include "../../../../include/e2e/profile/profile04/protector.hpp"
 #include "../../../../../utility/include/bithelper.hpp"
+#include "../../../../../fault_injection/include/fault_injection_interface.hpp" // NI modification
 
 namespace vsomeip_v3 {
 namespace e2e {
@@ -72,6 +73,56 @@ void protector::increment_counter(instance_t _instance) {
         counter_[_instance] = 1;
     }
 }
+
+// --- NI modification: BEGIN ---
+void protector::inject_faults(e2e_buffer& _buffer, instance_t _instance, e2exf::data_identifier_t _id,
+                              const fault_injection::fault_injection_interface* _fault_interface) {
+    if (!_fault_interface || _buffer.empty()) {
+        return;
+    }
+
+    // Check what type of faults to inject
+    bool inject_counter = _fault_interface->has_fault(_id.first, _instance, _id.second, vsomeip_v3::fault_injection::FAULT_E2E_COUNTER);
+    bool inject_crc = _fault_interface->has_fault(_id.first, _instance, _id.second, vsomeip_v3::fault_injection::FAULT_E2E_CRC);
+
+    if (!inject_counter && !inject_crc) {
+        return; // No faults to inject
+    }
+
+    if (inject_counter) {
+        VSOMEIP_DEBUG << "profile04::protector: Injecting counter fault for service: 0x" << std::hex << _id.first << ", instance: 0x"
+                      << _instance << ", event: 0x" << _id.second;
+
+        // Profile 04 counter corruption
+        // Counter is at offset + 2 (after length field), takes 2 bytes
+        size_t counter_offset = config_.offset_ + 2;
+        if (counter_offset + 1 < _buffer.size()) {
+            uint16_t original_counter = bithelper::read_uint16_be(&_buffer[counter_offset]);
+            _buffer[counter_offset] = 0xF0;
+            _buffer[counter_offset + 1] = 0x0D;
+            VSOMEIP_DEBUG << "profile04::protector: Corrupted counter at offset " << counter_offset << ", changed from 0x" << std::hex
+                          << original_counter << " to 0xF00D";
+        }
+    }
+
+    if (inject_crc) {
+        VSOMEIP_DEBUG << "profile04::protector: Injecting CRC fault for service: 0x" << std::hex << _id.first << ", instance: 0x"
+                      << _instance << ", event: 0x" << _id.second;
+
+        // Profile 04 CRC corruption
+        // CRC is at offset + 8 (after length + counter + data_id), takes 4 bytes
+        size_t crc_offset = config_.offset_ + 8;
+        if (crc_offset + 3 < _buffer.size()) {
+            VSOMEIP_DEBUG << "profile04::protector: Corrupting CRC (4 bytes) at offset " << crc_offset << " to "
+                          << (_buffer[crc_offset] == 0xDE ? "0x0BADBEEF" : "0xDEADBEEF");
+            _buffer[crc_offset] = _buffer[crc_offset] == 0xDE ? 0x0B : 0xDE;
+            _buffer[crc_offset + 1] = 0xAD;
+            _buffer[crc_offset + 2] = 0xBE;
+            _buffer[crc_offset + 3] = 0xEF;
+        }
+    }
+}
+// --- NI modification: END ---
 
 } // namespace profile04
 } // namespace e2e

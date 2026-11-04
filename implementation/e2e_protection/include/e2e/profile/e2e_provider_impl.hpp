@@ -36,10 +36,16 @@ public:
     VSOMEIP_EXPORT void check(e2exf::data_identifier_t id, const e2e_buffer& _buffer, instance_t _instance,
                               profile_interface::check_status_t& _generic_check_status) override;
 
+    VSOMEIP_EXPORT void
+    set_fault_injection_interface(fault_injection::fault_injection_interface* _fault_interface) override; // NI modification
+
 private:
     std::map<e2exf::data_identifier_t, std::shared_ptr<profile_interface::protector>> custom_protectors_;
     std::map<e2exf::data_identifier_t, std::shared_ptr<profile_interface::checker>> custom_checkers_;
     std::map<e2exf::data_identifier_t, size_t> custom_bases_;
+
+    // NI modification: fault injection interface (not owned)
+    fault_injection::fault_injection_interface* fault_injection_interface_;
 
     template<typename config_t>
     config_t make_e2e_profile_config(const std::shared_ptr<cfg::e2e>& config);

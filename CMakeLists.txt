@@ -413,6 +413,7 @@ endif ()
 ################################################################################
 file(GLOB ${VSOMEIP_NAME}_SRC
     "implementation/endpoints/src/*.cpp"
+    "implementation/fault_injection/src/*.cpp"
     "implementation/logger/src/*.cpp"
     "implementation/tracing/src/*.cpp"
     "implementation/message/src/*.cpp"

@@ -14,6 +14,13 @@
 #include "profile_interface/profile_interface.hpp"
 
 namespace vsomeip_v3 {
+
+// --- NI modification: BEGIN ---
+namespace fault_injection {
+class fault_injection_interface;
+}
+// --- NI modification: END ---
+
 namespace e2e {
 
 class e2e_provider {
@@ -28,6 +35,18 @@ public:
     virtual void protect(e2exf::data_identifier_t id, e2e_buffer& _buffer, instance_t _instance) = 0;
     virtual void check(e2exf::data_identifier_t id, const e2e_buffer& _buffer, instance_t _instance,
                        e2e::profile_interface::check_status_t& _generic_check_status) = 0;
+
+    // --- NI modification: BEGIN ---
+    /**
+     * @brief Set fault injection interface for E2E fault injection capabilities
+     * @param _fault_interface Fault injection interface pointer (not owned by provider)
+     *
+     * This method allows the routing manager to provide fault injection capabilities
+     * to the E2E provider. Implementations may choose to ignore this if they don't
+     * support fault injection.
+     */
+    virtual void set_fault_injection_interface(fault_injection::fault_injection_interface* _fault_interface) = 0;
+    // --- NI modification: END ---
 };
 
 } // namespace e2e

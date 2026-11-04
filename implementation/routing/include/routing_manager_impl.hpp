@@ -44,6 +44,12 @@ namespace trace {
 class connector_impl;
 } // namespace trace
 
+// --- NI modification: BEGIN ---
+namespace fault_injection {
+class fault_injection_manager;
+} // namespace fault_injection
+// --- NI modification: END ---
+
 class configuration;
 class eventgroupinfo;
 class routing_manager_host;
@@ -516,6 +522,11 @@ private:
     boost::asio::steady_timer stop_offer_graceful_timer_;
 
     std::mutex event_registration_mutex_;
+
+    // --- NI modification: BEGIN ---
+    // Fault injection support
+    std::shared_ptr<fault_injection::fault_injection_manager> fault_injection_manager_;
+    // --- NI modification: END ---
 };
 
 } // namespace vsomeip_v3

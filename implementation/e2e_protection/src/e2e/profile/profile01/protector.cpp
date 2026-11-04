@@ -7,6 +7,7 @@
 
 #include <vsomeip/internal/logger.hpp>
 #include "../../../../include/e2e/profile/profile01/protector.hpp"
+#include "../../../../../fault_injection/include/fault_injection_interface.hpp" // NI modification
 
 namespace vsomeip_v3 {
 namespace e2e {
@@ -73,6 +74,61 @@ void protector::write_crc(e2e_buffer& _buffer, uint8_t _computed_crc) {
 void protector::increment_counter(void) {
     counter_ = static_cast<uint8_t>((counter_ + 1U) % 15);
 }
+
+// --- NI modification: BEGIN ---
+void protector::inject_faults(e2e_buffer& _buffer, instance_t _instance, e2exf::data_identifier_t _id,
+                              const fault_injection::fault_injection_interface* _fault_interface) {
+    if (!_fault_interface || _buffer.empty()) {
+        return;
+    }
+
+    // Check what type of faults to inject
+    bool inject_counter = _fault_interface->has_fault(_id.first, _instance, _id.second, vsomeip_v3::fault_injection::FAULT_E2E_COUNTER);
+    bool inject_crc = _fault_interface->has_fault(_id.first, _instance, _id.second, vsomeip_v3::fault_injection::FAULT_E2E_CRC);
+
+    if (!inject_counter && !inject_crc) {
+        return; // No faults to inject
+    }
+
+    if (inject_counter) {
+        VSOMEIP_DEBUG << "profile01::protector: Injecting counter fault for service: 0x" << std::hex << _id.first << ", instance: 0x"
+                      << _instance << ", event: 0x" << _id.second;
+
+        // Profile 01 counter corruption - counter is in nibble at counter_offset
+        size_t counter_byte_offset = config_.counter_offset_ / 8;
+        if (counter_byte_offset < _buffer.size()) {
+            uint8_t original_byte = _buffer[counter_byte_offset];
+            if (config_.counter_offset_ % 8 == 0) {
+                // Counter in low nibble
+                uint8_t original_counter = original_byte & 0x0F;
+                _buffer[counter_byte_offset] = (original_byte & 0xF0) | 0x00;
+                VSOMEIP_DEBUG << "profile01::protector: Corrupted counter (low nibble) at offset " << counter_byte_offset
+                              << ", changed from 0x" << std::hex << static_cast<unsigned int>(original_counter) << " to 0x0";
+            } else {
+                // Counter in high nibble
+                uint8_t original_counter = (original_byte & 0xF0) >> 4;
+                _buffer[counter_byte_offset] = (original_byte & 0x0F);
+                VSOMEIP_DEBUG << "profile01::protector: Corrupted counter (high nibble) at offset " << counter_byte_offset
+                              << ", changed from 0x" << std::hex << static_cast<unsigned int>(original_counter) << " to 0x0";
+            }
+        }
+    }
+
+    if (inject_crc) {
+        VSOMEIP_DEBUG << "profile01::protector: Injecting CRC fault for service: 0x" << std::hex << _id.first << ", instance: 0x"
+                      << _instance << ", event: 0x" << _id.second;
+
+        // Profile 01 CRC corruption
+        size_t crc_offset = config_.crc_offset_;
+        if (crc_offset < _buffer.size()) {
+            uint8_t original_crc = _buffer[crc_offset];
+            _buffer[crc_offset] = 0xCC;
+            VSOMEIP_DEBUG << "profile01::protector: Corrupted CRC at offset " << crc_offset << ", changed from 0x" << std::hex
+                          << static_cast<unsigned int>(original_crc) << " to 0xCC";
+        }
+    }
+}
+// --- NI modification: END ---
 
 } // namespace profile01
 } // namespace e2e

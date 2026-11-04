@@ -21,6 +21,10 @@ public:
 
     void protect(e2e_buffer& _buffer, instance_t _instance) override final;
 
+    // NI modification
+    void inject_faults(e2e_buffer& _buffer, instance_t _instance, e2exf::data_identifier_t _id,
+                       const fault_injection::fault_injection_interface* _fault_interface) override final;
+
 private:
     void write_crc(e2e_buffer& _buffer, uint32_t _computed_crc);
 

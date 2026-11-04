@@ -9,6 +9,7 @@
 #include "../../../../logger/include/logger_ext.hpp"
 
 #include "../../../../e2e_protection/include/e2e/profile/e2e_provider_impl.hpp"
+#include "../../../../fault_injection/include/fault_injection_interface.hpp" // NI modification
 
 #include "../../../../e2e_protection/include/e2e/profile/profile01/checker.hpp"
 #include "../../../../e2e_protection/include/e2e/profile/profile01/profile_01.hpp"
@@ -62,7 +63,8 @@ VSOMEIP_PLUGIN(vsomeip_v3::e2e::e2e_provider_impl)
 namespace vsomeip_v3 {
 namespace e2e {
 
-e2e_provider_impl::e2e_provider_impl() : plugin_impl("vsomeip e2e plugin", 1, plugin_type_e::APPLICATION_PLUGIN) { }
+e2e_provider_impl::e2e_provider_impl() :
+    plugin_impl("vsomeip e2e plugin", 1, plugin_type_e::APPLICATION_PLUGIN), fault_injection_interface_(nullptr) { } // NI modification
 
 e2e_provider_impl::~e2e_provider_impl() { }
 
@@ -116,6 +118,11 @@ void e2e_provider_impl::protect(e2exf::data_identifier_t id, e2e_buffer& _buffer
     auto protector = custom_protectors_.find(id);
     if (protector != custom_protectors_.end()) {
         protector->second->protect(_buffer, _instance);
+
+        // NI modification: apply fault injection if enabled
+        if (fault_injection_interface_) {
+            protector->second->inject_faults(_buffer, _instance, id, fault_injection_interface_);
+        }
     }
 }
 
@@ -126,6 +133,13 @@ void e2e_provider_impl::check(e2exf::data_identifier_t id, const e2e_buffer& _bu
         checker->second->check(_buffer, _instance, _generic_check_status);
     }
 }
+
+// --- NI modification: BEGIN ---
+void e2e_provider_impl::set_fault_injection_interface(fault_injection::fault_injection_interface* _fault_interface) {
+    fault_injection_interface_ = _fault_interface;
+    VSOMEIP_INFO << "e2e_provider_impl: Fault injection interface " << (_fault_interface ? "enabled" : "disabled");
+}
+// --- NI modification: END ---
 
 template<>
 vsomeip_v3::e2e::profile01::profile_config e2e_provider_impl::make_e2e_profile_config(const std::shared_ptr<cfg::e2e>& _config) {
