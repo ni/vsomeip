@@ -149,15 +149,15 @@ bool setup_xnet() {
 std::shared_ptr<vsomeip::application> create_app(const char* _name, const char* _config, nxIpStackRef_t _stack) {
     auto its_app = vsomeip::runtime::get()->create_application(_name);
 
-    // Initialize the application from the in-memory JSON configuration
-    if (!its_app->init(std::string(_config))) {
-        std::cerr << "Couldn't initialize application \"" << _name << "\"" << std::endl;
+    // Bind the XNET IP stack to the application (after creation, before init)
+    if (!its_app->register_ip_stack(_stack)) {
+        std::cerr << "Couldn't register XNET IP stack for \"" << _name << "\"" << std::endl;
         return nullptr;
     }
 
-    // Bind the XNET IP stack to the application (after init, before start)
-    if (!its_app->register_ip_stack(_stack)) {
-        std::cerr << "Couldn't register XNET IP stack for \"" << _name << "\"" << std::endl;
+    // Initialize the application from the in-memory JSON configuration
+    if (!its_app->init(std::string(_config))) {
+        std::cerr << "Couldn't initialize application \"" << _name << "\"" << std::endl;
         return nullptr;
     }
     return its_app;

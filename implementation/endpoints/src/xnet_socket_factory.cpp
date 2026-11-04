@@ -100,16 +100,6 @@ xnet_socket_factory::xnet_socket_factory() {
         return std::make_unique<xnet_tcp_acceptor>(_io, its_stack);
     }
 
-    std::unique_ptr<tcp_socket> xnet_socket_factory::create_local_tcp_socket(boost::asio::io_context& _io) {
-        // Local routing (application <-> routing host) always uses the OS stack.
-        return std::make_unique<asio_tcp_socket>(_io);
-    }
-
-    std::unique_ptr<tcp_acceptor> xnet_socket_factory::create_local_tcp_acceptor(boost::asio::io_context& _io) {
-        // Local routing (application <-> routing host) always uses the OS stack.
-        return std::make_unique<asio_tcp_acceptor>(_io);
-    }
-
     bool xnet_socket_factory::register_ip_stack(boost::asio::io_context& _io, nxIpStackRef_t _stack) {
         if (_stack == nullptr) {
             VSOMEIP_ERROR_P << k_xnet_backend_tag << " invalid stack_ref for io_context=" << &_io;
@@ -126,13 +116,26 @@ xnet_socket_factory::xnet_socket_factory() {
         io_stacks_.erase(&_io);
     }
 
+    bool xnet_socket_factory::register_ip_stack(boost::asio::io_context& _io, boost::asio::io_context& _auxiliary_io) {
+        std::scoped_lock its_lock{stacks_mutex_};
+        auto found = io_stacks_.find(&_io);
+        if (found == io_stacks_.end()) {
+            VSOMEIP_WARNING_P << k_xnet_backend_tag << " no IP stack registered for io_context=" << &_io
+                              << ", auxiliary io_context=" << &_auxiliary_io << " not bound";
+            return false;
+        }
+        io_stacks_[&_auxiliary_io] = found->second;
+        VSOMEIP_INFO_P << k_xnet_backend_tag << " auxiliary io_context=" << &_auxiliary_io << " stack_ref=" << found->second;
+        return true;
+    }
+
     nxIpStackRef_t xnet_socket_factory::get_stack(boost::asio::io_context& _io) const {
         std::scoped_lock its_lock{stacks_mutex_};
         if (auto found = io_stacks_.find(&_io); found != io_stacks_.end()) {
             return found->second;
         }
         VSOMEIP_ERROR_P << k_xnet_backend_tag << " no IP stack registered for io_context=" << &_io
-                        << ". Call application::register_ip_stack() after init() and before start().";
+                        << ". Call application::register_ip_stack() after create_application() and before init().";
         return nullptr;
     }
 

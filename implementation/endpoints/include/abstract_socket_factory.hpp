@@ -66,15 +66,14 @@ public:
 
     virtual void unregister_ip_stack(boost::asio::io_context&) { }
 
+    // Binds the auxiliary I/O context to the IP stack already registered for _io (if any).
+    virtual bool register_ip_stack(boost::asio::io_context&, boost::asio::io_context&) {
+        return true;
+    }
+
     virtual bool is_xnet_backend() const {
         return false;
     }
-
-    // Sockets used for local (process/host internal) routing over TCP.
-    // By default they are created like any other TCP socket; backends that
-    // provide their own IP stack (e.g. XNET) override these to use the OS stack.
-    virtual std::unique_ptr<tcp_socket> create_local_tcp_socket(boost::asio::io_context& _io) { return create_tcp_socket(_io); }
-    virtual std::unique_ptr<tcp_acceptor> create_local_tcp_acceptor(boost::asio::io_context& _io) { return create_tcp_acceptor(_io); }
     // --- NI modification: END ---
 };
 

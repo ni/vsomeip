@@ -114,11 +114,10 @@ public:
      *
      * \brief Binds an IP stack (XNET nxIpStackRef_t) to this application.
      *
-     * Must be called after @ref init and before @ref start. Only takes effect
-     * if the application is the routing manager host, as only the routing
-     * manager host opens network sockets. All network endpoints of this
-     * application (service discovery, offered services, remote clients) are
-     * created on the given IP stack. Local routing always uses the OS stack.
+     * Must be called after the application is created and before @ref init.
+     * All sockets of this application, local routing and network endpoints
+     * (service discovery, offered services, remote clients), are created on
+     * the given IP stack.
      *
      * \param _stack The IP stack reference.
      *

@@ -49,9 +49,17 @@ endpoint_manager_impl::endpoint_manager_impl(routing_manager_impl* const _rm, bo
     io_(_io), configuration_(_configuration), router_(_rm), router_name_(_rm->get_name()),
     is_local_routing_(configuration_->is_local_routing()), is_uds_preferred_(configuration_->is_uds_preferred()),
     auxiliary_context_(configuration_->get_io_thread_nice_level(router_name_)), is_processing_options_(true) {
+    // --- NI modification: BEGIN ---
+    // Bind the auxiliary context to the IP stack of the application I/O context.
+    abstract_socket_factory::get()->register_ip_stack(io_, auxiliary_context_.get_context());
+    // --- NI modification: END ---
 }
 
-endpoint_manager_impl::~endpoint_manager_impl() = default;
+endpoint_manager_impl::~endpoint_manager_impl() {
+    // --- NI modification: BEGIN ---
+    abstract_socket_factory::get()->unregister_ip_stack(auxiliary_context_.get_context());
+    // --- NI modification: END ---
+}
 
 // --- NI modification: BEGIN ---
 boost::asio::io_context& endpoint_manager_impl::get_auxiliary_io_context() {

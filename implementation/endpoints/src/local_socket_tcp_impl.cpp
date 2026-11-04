@@ -39,7 +39,7 @@ local_socket_tcp_impl::local_socket_tcp_impl(boost::asio::io_context& _io, std::
 
 local_socket_tcp_impl::local_socket_tcp_impl(boost::asio::io_context& _io, boost::asio::ip::tcp::endpoint _own,
                                              boost::asio::ip::tcp::endpoint _peer, socket_role_e _role) :
-    local_socket_tcp_impl(_io, abstract_socket_factory::get()->create_local_tcp_socket(_io), std::move(_own), std::move(_peer), _role) { }
+    local_socket_tcp_impl(_io, abstract_socket_factory::get()->create_tcp_socket(_io), std::move(_own), std::move(_peer), _role) { }
 
 local_socket_tcp_impl::~local_socket_tcp_impl() {
     if (socket_->is_open()) {

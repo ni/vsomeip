@@ -21,8 +21,10 @@ xnet_socket_factory();
 bool register_ip_stack(boost::asio::io_context& _io, nxIpStackRef_t _stack) override;
 void unregister_ip_stack(boost::asio::io_context& _io) override;
 
-std::unique_ptr<tcp_socket> create_local_tcp_socket(boost::asio::io_context& _io) override;
-std::unique_ptr<tcp_acceptor> create_local_tcp_acceptor(boost::asio::io_context& _io) override;
+// Binds _auxiliary_io to the IP stack registered for _io. Does nothing if
+// no stack is registered for _io.
+bool register_ip_stack(boost::asio::io_context& _io, boost::asio::io_context& _auxiliary_io) override;
+
 
 #if defined(__linux__)
     std::shared_ptr<abstract_netlink_connector> create_netlink_connector(boost::asio::io_context& _io,
@@ -48,6 +50,7 @@ std::unique_ptr<tcp_acceptor> create_local_tcp_acceptor(boost::asio::io_context&
 
 private:
     nxIpStackRef_t get_stack(boost::asio::io_context& _io) const;
+    nxIpStackRef_t find_stack(boost::asio::io_context& _io) const;
 
     mutable std::mutex stacks_mutex_;
     std::map<const boost::asio::io_context*, nxIpStackRef_t> io_stacks_;
