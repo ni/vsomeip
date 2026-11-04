@@ -23,6 +23,10 @@ public:
 
     void protect(e2e_buffer& _buffer, instance_t _instance) override final;
 
+    // NI modification
+    void inject_faults(e2e_buffer& _buffer, instance_t _instance, e2exf::data_identifier_t _id,
+                       const fault_injection::fault_injection_interface* _fault_interface) override final;
+
 private:
     bool verify_inputs(e2e_buffer& _buffer);
     uint8_t get_counter(instance_t _instance) const;

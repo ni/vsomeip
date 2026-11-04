@@ -22,6 +22,8 @@ add_subdirectory(xnet_application_tests)
 add_subdirectory(xnet_factory_tests)
 # Unit tests for the fault injection manager.
 add_subdirectory(fault_injection_tests)
+# Unit tests for E2E fault injection.
+add_subdirectory(e2e_tests)
 # --- NI modification: END ---
 
 # --- NI modification: BEGIN ---
