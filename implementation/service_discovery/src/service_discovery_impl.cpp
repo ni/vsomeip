@@ -549,10 +549,18 @@ void service_discovery_impl::increment_session(const boost::asio::ip::address& _
     }
 }
 
-bool service_discovery_impl::is_reboot(const boost::asio::ip::address& _sender, bool _is_multicast, bool _reboot_flag, session_t _session) {
+bool service_discovery_impl::is_reboot(const boost::asio::ip::address& _sender, uint16_t _port, bool _is_multicast, bool _reboot_flag,
+                                       session_t _session) {
     bool result(false);
 
-    auto its_received = sessions_received_.find(_sender);
+    // --- NI modification: BEGIN ---
+    // Key session tracking by (sender IP, port) so that messages arriving
+    // from different source ports (when allow_from_any_port is enabled)
+    // maintain independent session sequences and do not falsely trigger
+    // reboot detection.
+    const auto its_key = std::make_pair(_sender, _port);
+    auto its_received = sessions_received_.find(its_key);
+    // --- NI modification: END ---
 
     // Initialize both sessions with 0. Thus, the session identifier
     // for the session not being received from the network is stored
@@ -572,7 +580,7 @@ bool service_discovery_impl::is_reboot(const boost::asio::ip::address& _sender, 
     }
 
     if (its_received == sessions_received_.end()) {
-        sessions_received_[_sender] =
+        sessions_received_[its_key] = // NI modification
                 std::make_tuple(its_multicast_session, its_unicast_session, its_multicast_reboot_flag, its_unicast_reboot_flag);
     } else {
         // Reboot detection: Either the flag has changed from false to true,
@@ -613,19 +621,21 @@ bool service_discovery_impl::is_reboot(const boost::asio::ip::address& _sender, 
                 std::get<3>(its_received->second) = its_unicast_reboot_flag;
             }
         } else {
-            // reboot -> reset the sender data
-            sessions_received_.erase(_sender);
+            // reboot -> reset session data for this specific sender:port (NI modification)
+            sessions_received_.erase(its_key);
         }
     }
 
     return result;
 }
 
-bool service_discovery_impl::check_session_id_sequence(const boost::asio::ip::address& _sender, const bool _is_multicast,
+bool service_discovery_impl::check_session_id_sequence(const boost::asio::ip::address& _sender, uint16_t _port, const bool _is_multicast,
                                                        const session_t& _session, session_t& _missing_session) {
 
-    using address_pair_t = std::pair<boost::asio::ip::address, bool>;
-    address_pair_t peer_to_peer(_sender, _is_multicast);
+    // NI modification: include the port in the key so that messages from different
+    // source ports (when allow_from_any_port is enabled) track independent session sequences.
+    using address_key_t = std::tuple<boost::asio::ip::address, uint16_t, bool>;
+    address_key_t peer_to_peer(_sender, _port, _is_multicast);
     if (auto it = sessions_received_by_peer_.find(peer_to_peer); it != sessions_received_by_peer_.end()) {
         if ((_session > it->second) && (_session != (it->second + 1))) {
             _missing_session = static_cast<session_t>(it->second + 1);
@@ -1017,13 +1027,26 @@ void service_discovery_impl::on_message(const byte_t* _data, length_t _length, c
         }
 
         // Expire all subscriptions / services in case of reboot
-        if (is_reboot(_sender, _is_multicast, its_message->get_reboot_flag(), its_message->get_session())) {
-            VSOMEIP_INFO << "Reboot detected: IP=" << _sender.to_string();
+        if (is_reboot(_sender, _port, _is_multicast, its_message->get_reboot_flag(), its_message->get_session())) {
+            // --- NI modification: BEGIN ---
+            VSOMEIP_INFO << "Reboot detected: IP=" << _sender.to_string() << " port=" << std::dec << _port;
             VSOMEIP_INFO << "Reboot message: " << utility::dump(_data, _length);
 
-            remove_remote_offer_type_by_ip(_sender);
-            host_->expire_subscriptions(_sender);
-            host_->expire_services(_sender);
+            if (configuration_->is_sd_allow_from_any_port()) {
+                // Only expire what belongs to the rebooted sender:port.
+                remove_remote_offer_type_by_ip(_sender, _port, false);
+                host_->expire_subscriptions(_sender, _port, false);
+                host_->expire_services(_sender, _port, false);
+            } else {
+                remove_remote_offer_type_by_ip(_sender);
+                host_->expire_subscriptions(_sender);
+                host_->expire_services(_sender);
+            }
+
+            // ideally we should also update the reboot_notification_handler_ to also include port
+            // for the sd_allow_from_any_port scenario, but this would be a breaking change
+            // so we keep the existing behavior for now
+            // --- NI modification: END ---
             if (reboot_notification_handler_) {
                 ip_address_t ip;
                 if (_sender.is_v4()) {
@@ -1038,9 +1061,9 @@ void service_discovery_impl::on_message(const byte_t* _data, length_t _length, c
         }
 
         session_t start_missing_sessions;
-        if (!check_session_id_sequence(_sender, _is_multicast, its_message->get_session(), start_missing_sessions)) {
+        if (!check_session_id_sequence(_sender, _port, _is_multicast, its_message->get_session(), start_missing_sessions)) {
             std::stringstream log;
-            log << "SD messages lost from " << _sender.to_string() << " to ";
+            log << "SD messages lost from " << _sender.to_string() << " port=" << std::dec << _port << " to "; // NI modification
             if (_is_multicast) {
                 log << sd_multicast_address_.to_string();
             } else {

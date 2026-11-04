@@ -122,10 +122,11 @@ private:
     std::pair<session_t, bool> get_session(const boost::asio::ip::address& _address);
     void increment_session(const boost::asio::ip::address& _address);
 
-    bool is_reboot(const boost::asio::ip::address& _sender, bool _is_multicast, bool _reboot_flag, session_t _session);
+    // NI modification: sessions are tracked per sender address and port
+    bool is_reboot(const boost::asio::ip::address& _sender, uint16_t _port, bool _is_multicast, bool _reboot_flag, session_t _session);
 
-    bool check_session_id_sequence(const boost::asio::ip::address& _sender, const bool _is_multicast, const session_t& _session,
-                                   session_t& _missing_session);
+    bool check_session_id_sequence(const boost::asio::ip::address& _sender, uint16_t _port, const bool _is_multicast,
+                                   const session_t& _session, session_t& _missing_session);
 
     void insert_find_entries(std::vector<std::shared_ptr<message_impl>>& _messages, const requests_t& _requests);
     void insert_offer_entries(std::vector<std::shared_ptr<message_impl>>& _messages, const services_t& _services, bool _ignore_phase);
@@ -350,8 +351,10 @@ private:
 
     // Sessions
     std::map<boost::asio::ip::address, std::pair<session_t, bool>> sessions_sent_;
-    std::map<boost::asio::ip::address, std::tuple<session_t, session_t, bool, bool>> sessions_received_;
-    std::map<std::pair<boost::asio::ip::address, bool>, session_t> sessions_received_by_peer_;
+    // --- NI modification: BEGIN --- keyed by (sender address, sender port)
+    std::map<std::pair<boost::asio::ip::address, uint16_t>, std::tuple<session_t, session_t, bool, bool>> sessions_received_;
+    std::map<std::tuple<boost::asio::ip::address, uint16_t, bool>, session_t> sessions_received_by_peer_;
+    // --- NI modification: END ---
     std::mutex sessions_received_mutex_;
 
     // TTL handling for services offered by other hosts
