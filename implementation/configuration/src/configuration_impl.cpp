@@ -303,6 +303,15 @@ bool configuration_impl::load(const std::string& _name) {
     for (const auto& i : its_input) {
         if (utility::is_file(i)) {
             VSOMEIP_INFO << "Using configuration file: \"" << i << "\".";
+            // --- NI modification: BEGIN ---
+            std::ifstream ifs(i);
+            if (ifs.is_open()) {
+                VSOMEIP_DEBUG << "Configuration file content: " << std::endl << ifs.rdbuf();
+                ifs.close();
+            } else {
+                VSOMEIP_ERROR << "Failed to open configuration file: " << i;
+            }
+            // --- NI modification: END ---
         }
 
         if (utility::is_folder(i)) {
