@@ -112,6 +112,12 @@ void protector::inject_faults(e2e_buffer& _buffer, instance_t _instance, e2exf::
                               << ", changed from 0x" << std::hex << static_cast<unsigned int>(original_counter) << " to 0x0";
             }
         }
+
+        if (!inject_crc) {
+            // Recompute CRC with faulted counter
+            uint8_t computed_crc = profile_01::compute_crc(config_, _buffer);
+            write_crc(_buffer, computed_crc);
+        }
     }
 
     if (inject_crc) {

@@ -99,6 +99,12 @@ void protector::inject_faults(e2e_buffer& _buffer, instance_t _instance, e2exf::
             VSOMEIP_DEBUG << "profile07::protector: Corrupted counter at offset " << counter_offset << ", changed from 0x" << std::hex
                           << original_counter << " to 0x8BADF00D";
         }
+
+        if (!inject_crc) {
+            // Recompute CRC with faulted counter
+            uint64_t its_crc = profile_07::compute_crc(config_, _buffer);
+            bithelper::write_uint64_be(its_crc, &_buffer[config_.offset_ + PROFILE_07_CRC_OFFSET]);
+        }
     }
 
     if (inject_crc) {
