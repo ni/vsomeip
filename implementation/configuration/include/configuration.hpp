@@ -290,7 +290,8 @@ public:
 
     virtual uint8_t get_max_remote_subscribers() const = 0;
 
-    virtual partition_id_t get_partition_id(service_t _service, instance_t _instance) const = 0;
+    // NI modification: per-reliability partitions
+    virtual partition_id_t get_partition_id(service_t _service, instance_t _instance, bool _reliable) const = 0;
 
     // security
     virtual bool is_security_enabled() const = 0;

@@ -2781,17 +2781,45 @@ void configuration_impl::load_selective_broadcasts_support(const configuration_e
 
 void configuration_impl::load_partitions(const configuration_element& _element) {
 
+    // --- NI modification: BEGIN ---
+    // Partitions may be given separately for "reliable" (TCP) and "unreliable" (UDP)
+    // client endpoints. The old format (plain array) applies to both.
     try {
-        auto its_partitions = _element.tree_.get_child("partitions");
-        for (auto i = its_partitions.begin(); i != its_partitions.end(); ++i) {
-            load_partition(i->second);
+        auto its_partitions = _element.tree_.get_child_optional("partitions");
+        if (!its_partitions) {
+            return;
         }
-    } catch (...) {
-        // intentionally left empty
+
+        auto process_partitions = [this](const boost::property_tree::ptree& _partitions, bool _reliable) {
+            for (auto i = _partitions.begin(); i != _partitions.end(); ++i) {
+                load_partition(i->second, _reliable);
+            }
+        };
+
+        auto its_reliable = its_partitions->get_child_optional("reliable");
+        auto its_unreliable = its_partitions->get_child_optional("unreliable");
+
+        if (its_reliable || its_unreliable) {
+            if (its_reliable) {
+                VSOMEIP_DEBUG << "Loading reliable partitions";
+                process_partitions(*its_reliable, true);
+            }
+            if (its_unreliable) {
+                VSOMEIP_DEBUG << "Loading unreliable partitions";
+                process_partitions(*its_unreliable, false);
+            }
+        } else {
+            VSOMEIP_DEBUG << "No reliable or unreliable partitions found, using old format";
+            process_partitions(*its_partitions, true);
+            process_partitions(*its_partitions, false);
+        }
+    } catch (const std::exception& e) {
+        VSOMEIP_ERROR << __func__ << ": Error loading partitions. " << e.what();
     }
+    // --- NI modification: END ---
 }
 
-void configuration_impl::load_partition(const boost::property_tree::ptree& _tree) {
+void configuration_impl::load_partition(const boost::property_tree::ptree& _tree, bool _reliable) {
 
     static partition_id_t its_partition_id(VSOMEIP_DEFAULT_PARTITION_ID);
 
@@ -2844,7 +2872,7 @@ void configuration_impl::load_partition(const boost::property_tree::ptree& _tree
 
             for (const auto& p : its_partition_members) {
                 for (const auto& m : p.second) {
-                    partitions_[service_instance_t{p.first, m}] = its_partition_id;
+                    partitions_[_reliable][service_instance_t{p.first, m}] = its_partition_id; // NI modification
                     its_log << "<" << hex4(p.first) << "." << hex4(m) << ">";
                 }
             }
@@ -4906,15 +4934,20 @@ uint8_t configuration_impl::get_max_remote_subscribers() const {
     return max_remote_subscribers_;
 }
 
-partition_id_t configuration_impl::get_partition_id(service_t _service, instance_t _instance) const {
+partition_id_t configuration_impl::get_partition_id(service_t _service, instance_t _instance, bool _reliable) const {
 
     partition_id_t its_id(VSOMEIP_DEFAULT_PARTITION_ID);
 
     std::scoped_lock its_lock(partitions_mutex_);
-    const auto search = partitions_.find(service_instance_t{_service, _instance});
-    if (search != partitions_.end()) {
-        its_id = search->second;
+    // --- NI modification: BEGIN ---
+    const auto found_reliability = partitions_.find(_reliable);
+    if (found_reliability != partitions_.end()) {
+        const auto search = found_reliability->second.find(service_instance_t{_service, _instance});
+        if (search != found_reliability->second.end()) {
+            its_id = search->second;
+        }
     }
+    // --- NI modification: END ---
 
     return its_id;
 }

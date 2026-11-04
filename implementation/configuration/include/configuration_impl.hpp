@@ -265,7 +265,7 @@ public:
 
     VSOMEIP_EXPORT uint8_t get_max_remote_subscribers() const;
 
-    VSOMEIP_EXPORT partition_id_t get_partition_id(service_t _service, instance_t _instance) const;
+    VSOMEIP_EXPORT partition_id_t get_partition_id(service_t _service, instance_t _instance, bool _reliable) const; // NI modification
 
     VSOMEIP_EXPORT std::map<std::string, std::string> get_additional_data(const std::string& _application_name,
                                                                           const std::string& _plugin_name);
@@ -411,7 +411,7 @@ private:
     void load_secure_service(const boost::property_tree::ptree& _tree);
 
     void load_partitions(const configuration_element& _element);
-    void load_partition(const boost::property_tree::ptree& _tree);
+    void load_partition(const boost::property_tree::ptree& _tree, bool _reliable); // NI modification
 
 private:
     std::mutex mutex_;
@@ -623,7 +623,9 @@ protected:
     uint8_t max_remote_subscribers_;
 
     mutable std::mutex partitions_mutex_;
-    service_instance_map<partition_id_t> partitions_;
+    // --- NI modification: BEGIN --- partitions are kept per reliability (true = TCP, false = UDP)
+    std::map<bool, service_instance_map<partition_id_t>> partitions_;
+    // --- NI modification: END ---
 
     std::string path_;
 

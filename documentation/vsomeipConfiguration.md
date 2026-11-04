@@ -1684,6 +1684,10 @@ events if a single server port is used to offer many services that send many mes
     - **service** - The id of the service
     - **instance** - The id of the instance
 
+  (NI extension) Instead of a plain list, **partitions** may also be an object with the members **reliable** and/or
+  **unreliable**, each containing a list of partitions as above. They are then applied to TCP respectively UDP client
+  endpoints only. A plain list applies to both.
+
 <details><summary>Partitions configuration</summary>
 
 ```json

@@ -609,6 +609,41 @@ TEST_F(test_configuration_impl, concurrent_init_from_base_during_load_optional) 
     EXPECT_TRUE(its_pm_after.is_client_allowed(&its_optional_client, 0x4321, 0x0001, 0x0001));
 }
 
+// --- NI modification: BEGIN ---
+// Partitions can be given separately for reliable (TCP) and unreliable (UDP)
+// client endpoints; the plain list format applies to both.
+TEST_F(test_configuration_impl, partitions_per_reliability) {
+    {
+        scratch_config_dir dir;
+        dir.write("vsomeip_std.json", R"({
+            "routing": { "host": { "name": "routingmanager" } },
+            "applications": [ { "name": "routingmanager", "id": "0x1111" } ],
+            "partitions": [ [ { "service": "0x1234", "instance": "0x0001" } ] ]
+        })");
+        auto its_config = load(dir, "routingmanager");
+        EXPECT_NE(its_config->get_partition_id(0x1234, 0x0001, true), vsomeip_v3::VSOMEIP_DEFAULT_PARTITION_ID);
+        EXPECT_NE(its_config->get_partition_id(0x1234, 0x0001, false), vsomeip_v3::VSOMEIP_DEFAULT_PARTITION_ID);
+        EXPECT_EQ(its_config->get_partition_id(0x1234, 0x0002, true), vsomeip_v3::VSOMEIP_DEFAULT_PARTITION_ID);
+    }
+    {
+        scratch_config_dir dir;
+        dir.write("vsomeip_std.json", R"({
+            "routing": { "host": { "name": "routingmanager" } },
+            "applications": [ { "name": "routingmanager", "id": "0x1111" } ],
+            "partitions": {
+                "reliable": [ [ { "service": "0x1234", "instance": "0x0001" } ] ],
+                "unreliable": [ [ { "service": "0x5678", "instance": "0x0001" } ] ]
+            }
+        })");
+        auto its_config = load(dir, "routingmanager");
+        EXPECT_NE(its_config->get_partition_id(0x1234, 0x0001, true), vsomeip_v3::VSOMEIP_DEFAULT_PARTITION_ID);
+        EXPECT_EQ(its_config->get_partition_id(0x1234, 0x0001, false), vsomeip_v3::VSOMEIP_DEFAULT_PARTITION_ID);
+        EXPECT_EQ(its_config->get_partition_id(0x5678, 0x0001, true), vsomeip_v3::VSOMEIP_DEFAULT_PARTITION_ID);
+        EXPECT_NE(its_config->get_partition_id(0x5678, 0x0001, false), vsomeip_v3::VSOMEIP_DEFAULT_PARTITION_ID);
+    }
+}
+// --- NI modification: END ---
+
 // A routing.host uid/gid pair alone (no explicit routing-credentials block)
 // configures non-strict credentials: mismatches stay permissive, preserving
 // pre-existing audit-mode semantics.

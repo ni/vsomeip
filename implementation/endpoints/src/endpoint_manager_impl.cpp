@@ -463,7 +463,7 @@ void endpoint_manager_impl::clear_client_endpoints(service_t _service, instance_
             if (!other_services_reachable_through_endpoint) {
                 partition_id_t its_partition;
 
-                its_partition = configuration_->get_partition_id(_service, _instance);
+                its_partition = configuration_->get_partition_id(_service, _instance, _reliable);
 
                 if (_reliable) {
                     std::shared_ptr<tcp_client_endpoint_impl> its_tcp_client_endpoint =
@@ -1035,7 +1035,7 @@ std::shared_ptr<boardnet_endpoint> endpoint_manager_impl::find_remote_client(ser
 
     // Endpoint did not yet exist. Get the partition id to check
     // whether the client endpoint for the partition does exist.
-    partition_id_t its_partition_id = configuration_->get_partition_id(_service, _instance);
+    partition_id_t its_partition_id = configuration_->get_partition_id(_service, _instance, _reliable);
 
     // If another service within the same partition is hosted on the
     // same server_endpoint reuse the existing client_endpoint.
@@ -1103,7 +1103,7 @@ std::shared_ptr<boardnet_endpoint> endpoint_manager_impl::create_remote_client(s
                 service_instances_[_service][its_endpoint.get()] = _instance;
                 remote_services_[{_service, _instance}][_reliable] = its_endpoint;
 
-                partition_id_t its_partition = configuration_->get_partition_id(_service, _instance);
+                partition_id_t its_partition = configuration_->get_partition_id(_service, _instance, _reliable);
                 client_endpoints_[its_endpoint_def->get_address()][its_endpoint_def->get_port()][_reliable][its_partition] = its_endpoint;
                 // Set the basic route to the service in the service info
                 // TODO major version
