@@ -61,13 +61,6 @@ endpoint_manager_impl::~endpoint_manager_impl() {
     // --- NI modification: END ---
 }
 
-// --- NI modification: BEGIN ---
-boost::asio::io_context& endpoint_manager_impl::get_auxiliary_io_context() {
-
-    return auxiliary_context_.get_context();
-}
-// --- NI modification: END ---
-
 void endpoint_manager_impl::start() {
     options_thread_ = std::thread([this]() {
 #if defined(__linux__) || defined(__QNX__)

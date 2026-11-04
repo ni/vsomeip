@@ -57,12 +57,6 @@ void routing_application::stop() const {
     routing_->stop();
 }
 
-// --- NI modification: BEGIN ---
-boost::asio::io_context& routing_application::get_auxiliary_io_context() const {
-    return routing_->get_endpoint_manager()->get_auxiliary_io_context();
-}
-// --- NI modification: END ---
-
 void routing_application::set_routing_state(routing_state_e _routing_state) const {
     routing_->set_routing_state(_routing_state);
 }
