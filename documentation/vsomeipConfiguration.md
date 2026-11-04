@@ -704,6 +704,7 @@ The general filter rules are:
     - **initial_state** - Specifies the initial Service Discovery state after startup. Valid values are `unknown`, `suspended` or `resumed`. The default value is `unknown`.
     - **multicast** - The multicast address which the messages of the Service Discovery will be sent to. The default value is `224.224.224.0`.
     - **port** - The port of the Service Discovery. The default value is `30490`.
+    - **allow_from_any_port** - (NI extension) Specifies whether Service Discovery messages are accepted from any remote port instead of only from **port**. If enabled, SD replies to a remote address are sent to the port its last SD message was received from. Valid values are `true`, `false`. The default value is `false`.
     - **protocol** The protocol that is used for sending the Service Discovery messages, valid values are `tcp`, `udp`. The default value is `udp`.
     - **initial_delay_min** - Minimum delay before first offer/find messages. The default value is `0` ms.
     - **initial_delay_max** - Maximum delay before first offer/find messages. The default value is `0` ms.

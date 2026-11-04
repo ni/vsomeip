@@ -180,6 +180,7 @@ public:
     VSOMEIP_EXPORT const std::string& get_sd_multicast() const;
     VSOMEIP_EXPORT uint16_t get_sd_port() const;
     VSOMEIP_EXPORT const std::string& get_sd_protocol() const;
+    VSOMEIP_EXPORT bool is_sd_allow_from_any_port() const; // NI modification
 
     VSOMEIP_EXPORT uint32_t get_sd_initial_delay_min() const;
     VSOMEIP_EXPORT uint32_t get_sd_initial_delay_max() const;
@@ -474,6 +475,7 @@ protected:
     std::string sd_protocol_;
     std::string sd_multicast_;
     uint16_t sd_port_;
+    bool sd_allow_from_any_port_{false}; // NI modification
 
     uint32_t sd_initial_delay_min_;
     uint32_t sd_initial_delay_max_;

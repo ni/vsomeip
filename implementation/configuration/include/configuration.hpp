@@ -166,6 +166,7 @@ public:
     virtual const std::string& get_sd_multicast() const = 0;
     virtual uint16_t get_sd_port() const = 0;
     virtual const std::string& get_sd_protocol() const = 0;
+    virtual bool is_sd_allow_from_any_port() const = 0; // NI modification
 
     virtual uint32_t get_sd_initial_delay_min() const = 0;
     virtual uint32_t get_sd_initial_delay_max() const = 0;

@@ -95,7 +95,8 @@ public:
 
     bool send(bool _is_announcing);
 
-    void on_message(const byte_t* _data, length_t _length, const boost::asio::ip::address& _sender, bool _is_multicast);
+    // NI modification: added _port (remote SD port)
+    void on_message(const byte_t* _data, length_t _length, const boost::asio::ip::address& _sender, uint16_t _port, bool _is_multicast);
 
     void sent_messages(const byte_t* _data, length_t _size, const boost::asio::ip::address& _remote_address = boost::asio::ip::address());
 
@@ -444,6 +445,12 @@ private:
 
     std::mutex offer_mutex_;
     std::mutex check_ttl_mutex_;
+
+    // --- NI modification: BEGIN ---
+    // Last SD source port per remote address (used if service_discovery.allow_from_any_port is set)
+    std::mutex sender_ports_mutex_;
+    std::map<boost::asio::ip::address, uint16_t> sender_ports_;
+    // --- NI modification: END ---
 
     boost::asio::steady_timer suspend_stop_offer_watchdog_;
     std::mutex suspend_stop_offer_mutex_;

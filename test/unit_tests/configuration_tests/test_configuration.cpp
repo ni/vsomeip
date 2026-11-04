@@ -1117,3 +1117,30 @@ TEST_F(test_configuration_impl, runtime_policy_update_does_not_leak_across_apps)
     its_config->load_security_policies(its_pm_app3);
     EXPECT_FALSE(its_pm_app3.is_client_allowed(&its_client, 0x4321, 0x0001, 0x0001));
 }
+
+// --- NI modification: BEGIN ---
+// service_discovery.allow_from_any_port is disabled by default and can be enabled.
+TEST_F(test_configuration_impl, sd_allow_from_any_port) {
+    {
+        scratch_config_dir dir;
+        dir.write("vsomeip_std.json", R"({
+            "routing": { "host": { "name": "routingmanager" } },
+            "applications": [ { "name": "routingmanager", "id": "0x1111" } ],
+            "service-discovery": { "enable": "true", "port": "30490" }
+        })");
+        auto its_config = load(dir, "routingmanager");
+        EXPECT_FALSE(its_config->is_sd_allow_from_any_port());
+    }
+    {
+        scratch_config_dir dir;
+        dir.write("vsomeip_std.json", R"({
+            "routing": { "host": { "name": "routingmanager" } },
+            "applications": [ { "name": "routingmanager", "id": "0x1111" } ],
+            "service-discovery": { "enable": "true", "port": "30490", "allow_from_any_port": "true" }
+        })");
+        auto its_config = load(dir, "routingmanager");
+        EXPECT_TRUE(its_config->is_sd_allow_from_any_port());
+        EXPECT_EQ(its_config->get_sd_port(), 30490);
+    }
+}
+// --- NI modification: END ---

@@ -44,7 +44,9 @@ public:
 
     virtual bool send(bool _is_announcing) = 0;
 
-    virtual void on_message(const byte_t* _data, length_t _length, const boost::asio::ip::address& _sender, bool _is_multicast) = 0;
+    // NI modification: added _port (remote SD port)
+    virtual void on_message(const byte_t* _data, length_t _length, const boost::asio::ip::address& _sender, uint16_t _port,
+                            bool _is_multicast) = 0;
 
     virtual void sent_messages(const byte_t* _data, length_t _size,
                                const boost::asio::ip::address& _remote_address = boost::asio::ip::address()) = 0;

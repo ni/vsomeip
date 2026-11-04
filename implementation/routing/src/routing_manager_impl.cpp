@@ -1143,13 +1143,14 @@ void routing_manager_impl::on_message(const byte_t* _data, length_t _length, boa
 
     if (its_service == VSOMEIP_SD_SERVICE) {
         if (discovery_ && its_method == sd::method) {
-            if (configuration_->get_sd_port() == _remote_port) {
+            // NI modification: optionally accept SD messages from any remote port
+            if (configuration_->get_sd_port() == _remote_port || configuration_->is_sd_allow_from_any_port()) {
                 // ACL check SD message
                 if (!is_acl_message_allowed(_receiver, its_service, ANY_INSTANCE, _remote_address)) {
                     // Note: acl check already logs failure
                     return;
                 }
-                discovery_->on_message(_data, _length, _remote_address, _is_multicast);
+                discovery_->on_message(_data, _length, _remote_address, _remote_port, _is_multicast); // NI modification: pass remote port
                 its_was_forwarded = true;
             } else {
                 VSOMEIP_ERROR << "Ignored SD message from unknown port (" << _remote_port << ")";

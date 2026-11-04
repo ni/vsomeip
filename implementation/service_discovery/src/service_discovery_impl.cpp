@@ -972,7 +972,7 @@ bool service_discovery_impl::send(bool _is_announcing) {
 }
 
 // Interface boardnet_endpoint_host
-void service_discovery_impl::on_message(const byte_t* _data, length_t _length, const boost::asio::ip::address& _sender,
+void service_discovery_impl::on_message(const byte_t* _data, length_t _length, const boost::asio::ip::address& _sender, uint16_t _port,
                                         bool _is_multicast) {
     std::scoped_lock its_lock(check_ttl_mutex_);
     std::scoped_lock its_session_lock(sessions_received_mutex_);
@@ -989,6 +989,13 @@ void service_discovery_impl::on_message(const byte_t* _data, length_t _length, c
     if (!check_source_address(_sender)) {
         return;
     }
+
+    // --- NI modification: BEGIN ---
+    if (configuration_->is_sd_allow_from_any_port()) {
+        std::scoped_lock its_ports_lock(sender_ports_mutex_);
+        sender_ports_[_sender] = _port;
+    }
+    // --- NI modification: END ---
 
     if (_is_multicast) {
         std::scoped_lock its_last_msg_lock{last_msg_received_timer_mutex_};
@@ -2269,6 +2276,17 @@ bool service_discovery_impl::serialize_and_send(const std::vector<std::shared_pt
     bool its_result(true);
     if (!_address.is_unspecified()) {
         std::scoped_lock its_lock(serialize_mutex_);
+        // --- NI modification: BEGIN ---
+        // Reply to the port the remote SD messages were received from.
+        uint16_t its_port = port_;
+        if (configuration_->is_sd_allow_from_any_port()) {
+            std::scoped_lock its_ports_lock(sender_ports_mutex_);
+            auto found_port = sender_ports_.find(_address);
+            if (found_port != sender_ports_.end()) {
+                its_port = found_port->second;
+            }
+        }
+        // --- NI modification: END ---
         for (const auto& m : _messages) {
             if (m->has_entry()) {
                 std::pair<session_t, bool> its_session = get_session(_address);
@@ -2276,7 +2294,7 @@ bool service_discovery_impl::serialize_and_send(const std::vector<std::shared_pt
                 m->set_reboot_flag(its_session.second);
 
                 if (serializer_->serialize(m.get())) {
-                    if (host_->send_via_sd(endpoint_definition::get(_address, port_, reliable_, m->get_service(), m->get_instance()),
+                    if (host_->send_via_sd(endpoint_definition::get(_address, its_port, reliable_, m->get_service(), m->get_instance()),
                                            serializer_->get_data(), serializer_->get_size(), port_)) {
                         increment_session(_address);
                     }

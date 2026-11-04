@@ -130,6 +130,7 @@ configuration_impl::configuration_impl(const configuration_impl& _other) :
     is_sd_enabled_ = _other.is_sd_enabled_;
     sd_multicast_ = _other.sd_multicast_;
     sd_port_ = _other.sd_port_;
+    sd_allow_from_any_port_ = _other.sd_allow_from_any_port_; // NI modification
     sd_protocol_ = _other.sd_protocol_;
 
     is_suppress_events_enabled_ = _other.is_suppress_events_enabled_;
@@ -1882,6 +1883,10 @@ void configuration_impl::load_service_discovery(const configuration_element& _el
                         is_configured_[ET_SERVICE_DISCOVERY_PORT] = true;
                     }
                 }
+                // --- NI modification: BEGIN ---
+            } else if (its_key == "allow_from_any_port") {
+                sd_allow_from_any_port_ = (its_value == "true");
+                // --- NI modification: END ---
             } else if (its_key == "protocol") {
                 if (is_configured_[ET_SERVICE_DISCOVERY_PROTOCOL]) {
                     VSOMEIP_WARNING << "Multiple definitions for service_discovery.protocol. Ignoring definition from " << _element.name_;
@@ -3665,6 +3670,12 @@ uint16_t configuration_impl::get_sd_port() const {
 const std::string& configuration_impl::get_sd_protocol() const {
     return sd_protocol_;
 }
+
+// --- NI modification: BEGIN ---
+bool configuration_impl::is_sd_allow_from_any_port() const {
+    return sd_allow_from_any_port_;
+}
+// --- NI modification: END ---
 
 uint32_t configuration_impl::get_sd_initial_delay_min() const {
     return sd_initial_delay_min_;
