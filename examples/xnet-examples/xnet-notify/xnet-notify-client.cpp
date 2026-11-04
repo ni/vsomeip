@@ -78,14 +78,8 @@ bool setup_application() {
     // Create a vsomeip application
     app = vsomeip::runtime::get()->create_application("xnet-notify-client");
 
-    // Bind the XNET IP stack to the application (after creation, before init)
-    if (!app->register_ip_stack(xnet_stack)) {
-        std::cerr << "Couldn't register XNET IP stack" << std::endl;
-        return false;
-    }
-
-    // Initialize the application
-    if (!app->init()) {
+    // Initialize the application on the XNET IP stack
+    if (!app->init(xnet_stack)) {
         std::cerr << "Couldn't initialize application" << std::endl;
         return false;
     }

@@ -185,6 +185,14 @@ bool application_impl::init(const std::string& _json) {
     return init_configuration();
 }
 
+bool application_impl::init(nxIpStackRef_t _stack) {
+    return register_ip_stack(_stack) && init();
+}
+
+bool application_impl::init(const std::string& _json, nxIpStackRef_t _stack) {
+    return register_ip_stack(_stack) && init(_json);
+}
+
 bool application_impl::register_ip_stack(nxIpStackRef_t _stack) {
     std::scoped_lock its_initialized_lock{initialize_mutex_};
     if (is_initialized_) {

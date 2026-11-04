@@ -110,21 +110,24 @@ public:
      */
     virtual bool init() = 0;
 
-     /**
+    // --- NI modification: BEGIN ---
+    /**
      *
-     * \brief Binds an IP stack (XNET nxIpStackRef_t) to this application.
+     * \brief Initializes the application on the given IP stack.
      *
-     * Must be called after the application is created and before @ref init.
-     * All sockets of this application, local routing and network endpoints
-     * (service discovery, offered services, remote clients), are created on
-     * the given IP stack.
+     * Binds the IP stack (XNET nxIpStackRef_t) to this application and then
+     * behaves like @ref init. All sockets of this application, local routing
+     * and network endpoints (service discovery, offered services, remote
+     * clients), are created on the given IP stack.
      *
      * \param _stack The IP stack reference.
      *
-     * \return True if the stack was registered, false otherwise.
+     * \return True if the application was initialized successfully, false
+     * otherwise.
      *
      */
-    virtual bool register_ip_stack(nxIpStackRef_t _stack) = 0;
+    virtual bool init(nxIpStackRef_t _stack) = 0;
+    // --- NI modification: END ---
 
     // --- NI modification: BEGIN ---
     /**
@@ -145,6 +148,24 @@ public:
      *
      */
     virtual bool init(const std::string& _json) = 0;
+
+    /**
+     *
+     * \brief Initializes the application on the given IP stack from an
+     * in-memory JSON configuration.
+     *
+     * Binds the IP stack (XNET nxIpStackRef_t) to this application and then
+     * behaves like @ref init(const std::string&).
+     *
+     * \param _json The complete vsomeip configuration encoded as a JSON
+     * string.
+     * \param _stack The IP stack reference.
+     *
+     * \return True if the application was initialized successfully, false
+     * otherwise.
+     *
+     */
+    virtual bool init(const std::string& _json, nxIpStackRef_t _stack) = 0;
     // --- NI modification: END ---
 
     /**
