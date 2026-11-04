@@ -50,7 +50,6 @@ bool register_ip_stack(boost::asio::io_context& _io, boost::asio::io_context& _a
 
 private:
     nxIpStackRef_t get_stack(boost::asio::io_context& _io) const;
-    nxIpStackRef_t find_stack(boost::asio::io_context& _io) const;
 
     mutable std::mutex stacks_mutex_;
     std::map<const boost::asio::io_context*, nxIpStackRef_t> io_stacks_;
