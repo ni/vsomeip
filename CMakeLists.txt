@@ -741,9 +741,10 @@ add_subdirectory( examples/wait-until-available )
 
 # --- NI modification: BEGIN ---
 # Build the NI-XNET transport backend example applications
-add_subdirectory( examples/xnet-examples/xnet-notify )
-add_subdirectory( examples/xnet-examples/xnet-notify-tp )
-add_subdirectory( examples/xnet-examples/xnet-request-response )
+#add_subdirectory( examples/xnet-examples/xnet-notify )
+#add_subdirectory( examples/xnet-examples/xnet-notify-tp )
+#add_subdirectory( examples/xnet-examples/xnet-request-response )
+add_subdirectory( examples/xnet-examples/xnet-notify-single-process )
 # --- NI modification: END ---
 
 # build tools

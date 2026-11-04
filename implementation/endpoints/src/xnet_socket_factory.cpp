@@ -163,7 +163,9 @@ xnet_socket_factory::xnet_socket_factory() {
 #endif
 
 void use_xnet_socket_factory(nxIpStackRef_t _xnet_stack) {
-    set_abstract_factory(std::make_shared<xnet_socket_factory>(_xnet_stack));
+    // IP stacks are bound per I/O context via application::register_ip_stack().
+    (void)_xnet_stack;
+    set_abstract_factory(std::make_shared<xnet_socket_factory>());
 }
 
 }
