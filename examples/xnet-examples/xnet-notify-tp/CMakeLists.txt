@@ -8,7 +8,7 @@ set(VSOMEIP_NAME "vsomeip3")
 
 if(NOT TARGET ${VSOMEIP_NAME})
 	find_package(${VSOMEIP_NAME} REQUIRED)
-	find_package(Boost COMPONENTS filesystem REQUIRED)
+	find_package(Boost REQUIRED)
 endif()
 
 include_directories (

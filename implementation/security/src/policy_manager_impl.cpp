@@ -8,7 +8,7 @@
 #define NOMINMAX
 #include <windows.h>
 #include <cstdlib>
-#include <boost/filesystem.hpp>
+#include <filesystem>
 #endif
 
 #include <algorithm>
@@ -945,14 +945,14 @@ void policy_manager_impl::load_security_policy_extensions(const configuration_el
             return;
         }
         auto found_policy_extensions = _element.tree_.get_child("container_policy_extensions");
-        boost::filesystem::path its_base_path;
+        std::filesystem::path its_base_path;
         {
             std::unique_lock its_lock(policy_extension_paths_mutex_);
-            its_base_path = boost::filesystem::path(policy_base_path_);
+            its_base_path = std::filesystem::path(policy_base_path_);
         }
 
         for (auto i = found_policy_extensions.begin(); i != found_policy_extensions.end(); ++i) {
-            boost::filesystem::path its_canonical_path;
+            std::filesystem::path its_canonical_path;
             std::string its_client_host("");
             std::string its_path("");
             auto its_data = i->second;
@@ -970,16 +970,16 @@ void policy_manager_impl::load_security_policy_extensions(const configuration_el
                 }
             }
 #ifdef _WIN32
-            // Windows: use boost::filesystem to join paths correctly
-            boost::filesystem::path base_path(VSOMEIP_DEFAULT_CONFIGURATION_FOLDER);
-            boost::filesystem::path extension_path(its_path);
+            // Windows: use std::filesystem to join paths correctly
+            std::filesystem::path base_path(VSOMEIP_DEFAULT_CONFIGURATION_FOLDER);
+            std::filesystem::path extension_path(its_path);
 
             // Remove leading separators from extension_path
             while (!extension_path.empty() && (extension_path.string().front() == '/' || extension_path.string().front() == '\\')) {
                 extension_path = extension_path.string().substr(1);
             }
 
-            boost::filesystem::path full_path = base_path.parent_path() / extension_path;
+            std::filesystem::path full_path = base_path.parent_path() / extension_path;
             std::string its_filesystem_path = full_path.string();
             std::replace(its_filesystem_path.begin(), its_filesystem_path.end(), '\\', '/');
 #else

@@ -203,7 +203,7 @@ add_compile_definitions(VSOMEIP_INTERNAL_SUPPRESS_DEPRECATED)
 find_package(Threads REQUIRED)
 
 # Boost
-find_package( Boost 1.75 COMPONENTS filesystem REQUIRED )
+find_package( Boost 1.75 REQUIRED )
 if(${CMAKE_SYSTEM_NAME} MATCHES "QNX")
     include_directories(${Boost_INCLUDE_DIR} )
 else()

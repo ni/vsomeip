@@ -12,7 +12,8 @@
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
-#include <boost/filesystem.hpp>
+#include <filesystem>
+#include <random>
 
 #include <atomic>
 #include <cstdlib>
@@ -323,13 +324,13 @@ TEST_F(test_configuration_plugin, concurrent_get_configuration_creates_one_share
 
 class scratch_config_dir {
 public:
-    scratch_config_dir() : path_(boost::filesystem::temp_directory_path() / boost::filesystem::unique_path("vsomeip_cfg_test_%%%%-%%%%")) {
-        boost::filesystem::create_directories(path_);
+    scratch_config_dir() : path_(std::filesystem::temp_directory_path() / ("vsomeip_cfg_test_" + std::to_string(std::random_device{}()))) {
+        std::filesystem::create_directories(path_);
     }
 
     ~scratch_config_dir() {
-        boost::system::error_code ec;
-        boost::filesystem::remove_all(path_, ec);
+        std::error_code ec;
+        std::filesystem::remove_all(path_, ec);
     }
 
     void write(const std::string& _filename, const std::string& _content) const {
@@ -340,7 +341,7 @@ public:
     std::string path() const { return path_.string(); }
 
 private:
-    boost::filesystem::path path_;
+    std::filesystem::path path_;
 };
 
 vsomeip_sec_client_t make_tcp_client(uid_t _uid, gid_t _gid) {

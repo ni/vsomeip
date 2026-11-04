@@ -9,6 +9,7 @@
 #include <atomic>
 #include <chrono>
 #include <ctime>
+#include <filesystem>
 #include <map>
 #include <memory>
 #include <mutex>
@@ -52,7 +53,7 @@ private:
     std::string config_filename_;
     std::atomic<bool> monitoring_enabled_{false};
     std::unique_ptr<boost::asio::steady_timer> timer_;
-    std::time_t last_write_time_{0};
+    std::filesystem::file_time_type last_write_time_{};
 
     mutable std::mutex rules_mutex_;
     std::map<rule_key_t, fault_state_t> fault_rules_; // Store fault states

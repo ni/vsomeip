@@ -10,7 +10,7 @@
 #include <vector>
 
 #include <boost/asio/post.hpp>
-#include <boost/filesystem.hpp>
+#include <filesystem>
 #include <vsomeip/internal/logger.hpp>
 
 #ifdef __linux__
@@ -36,7 +36,7 @@ fault_injection_manager::~fault_injection_manager() {
 bool fault_injection_manager::initialize(const std::string& _config_file_path) {
     config_file_path_ = _config_file_path;
 
-    boost::filesystem::path p(config_file_path_);
+    std::filesystem::path p(config_file_path_);
     config_filename_ = p.filename().string();
 
     if (!load_config_file()) {
@@ -47,9 +47,9 @@ bool fault_injection_manager::initialize(const std::string& _config_file_path) {
     monitoring_enabled_ = true;
 
     try {
-        last_write_time_ = boost::filesystem::exists(config_file_path_) ? boost::filesystem::last_write_time(config_file_path_) : 0;
+        last_write_time_ = std::filesystem::exists(config_file_path_) ? std::filesystem::last_write_time(config_file_path_) : std::filesystem::file_time_type{};
     } catch (...) {
-        last_write_time_ = 0;
+        last_write_time_ = {};
     }
 
 #ifdef __linux__
@@ -208,8 +208,8 @@ void fault_injection_manager::monitor_file() {
     }
 
     try {
-        if (boost::filesystem::exists(config_file_path_)) {
-            auto current_time = boost::filesystem::last_write_time(config_file_path_);
+        if (std::filesystem::exists(config_file_path_)) {
+            auto current_time = std::filesystem::last_write_time(config_file_path_);
             if (current_time != last_write_time_) {
                 last_write_time_ = current_time;
                 if (load_config_file()) {
@@ -236,7 +236,7 @@ void fault_injection_manager::monitor_file() {
 #ifdef __linux__
 void fault_injection_manager::monitor_file_linux() {
     VSOMEIP_DEBUG << "fault_injection_manager: Monitor " << config_file_path_ << " using inotify";
-    boost::filesystem::path p(config_file_path_);
+    std::filesystem::path p(config_file_path_);
     std::string dir = p.parent_path().string();
     if (dir.empty()) {
         dir = ".";

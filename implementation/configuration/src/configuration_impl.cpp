@@ -16,7 +16,7 @@
 #define BOOST_BIND_GLOBAL_PLACEHOLDERS
 
 #include <boost/algorithm/string.hpp>
-#include <boost/filesystem.hpp>
+#include <filesystem>
 #include <boost/foreach.hpp>
 #include <boost/asio/ip/address.hpp>
 #include <boost/property_tree/json_parser.hpp>
@@ -613,10 +613,10 @@ void configuration_impl::read_data(const std::set<std::string>& _input, std::vec
             // specific configuration file names to overwrite generic
             // (or generated) parts of the configuration.
             std::map<std::string, bool> its_names;
-            boost::filesystem::path its_path(i);
-            for (auto j = boost::filesystem::directory_iterator(its_path); j != boost::filesystem::directory_iterator(); j++) {
+            std::filesystem::path its_path(i);
+            for (auto j = std::filesystem::directory_iterator(its_path); j != std::filesystem::directory_iterator(); j++) {
                 const auto& p = j->path();
-                if (!boost::filesystem::is_directory(p)) {
+                if (!std::filesystem::is_directory(p)) {
                     auto ext = p.extension().string();
                     if (!_mandatory_only && !boost::iequals(ext, ".json")) {
                         VSOMEIP_INFO << "Configuration '" << p.string() << "' skipped: not json extension";

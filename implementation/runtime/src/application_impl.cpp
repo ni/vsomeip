@@ -15,7 +15,7 @@
 #include <boost/asio/ip/tcp.hpp>
 #include <boost/exception/diagnostic_information.hpp>
 #if defined(__linux__)
-#include <boost/dll/runtime_symbol_info.hpp> // NI modification
+#include <filesystem> // NI modification
 #endif
 
 #if defined(__linux__)
@@ -78,8 +78,10 @@ void load_env_files() {
     };
 
     const std::string its_env_name = std::string(VSOMEIP_NAME) + ".env";
-    boost::filesystem::path its_lib_path = boost::dll::this_line_location();
-    load_env_file((its_lib_path.parent_path() / its_env_name).string());
+    Dl_info its_lib_info{};
+    if (dladdr(reinterpret_cast<void*>(&load_env_files), &its_lib_info) != 0 && its_lib_info.dli_fname != nullptr) {
+        load_env_file((std::filesystem::path(its_lib_info.dli_fname).parent_path() / its_env_name).string());
+    }
     load_env_file("/etc/natinst/someip/" + its_env_name);
 }
 } // namespace

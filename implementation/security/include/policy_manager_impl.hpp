@@ -13,7 +13,7 @@
 #include <vector>
 
 #include <boost/property_tree/ptree.hpp>
-#include <boost/filesystem.hpp>
+#include <filesystem>
 
 #include <vsomeip/export.hpp>
 #include <vsomeip/internal/policy_manager.hpp>

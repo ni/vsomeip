@@ -15,7 +15,6 @@
 // <boost/property_tree/json_parser.hpp>
 #define BOOST_BIND_GLOBAL_PLACEHOLDERS
 
-#include <boost/filesystem.hpp>
 #include <boost/property_tree/ptree.hpp>
 #include <boost/property_tree/json_parser.hpp>
 
