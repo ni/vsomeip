@@ -49,8 +49,11 @@ public:
     VSOMEIP_EXPORT bool init();
 
     // --- NI modification: BEGIN ---
-    // Initializes the application from a configuration passed as JSON string.
+    VSOMEIP_EXPORT bool init(const nxIpStackRef_t _stack);
+
     VSOMEIP_EXPORT bool init(const std::string& _json);
+
+    VSOMEIP_EXPORT bool init(const std::string& _json, const nxIpStackRef_t _stack);
     // --- NI modification: END ---
 
     VSOMEIP_EXPORT void start();
@@ -209,6 +212,9 @@ private:
     // Common initialization logic shared by init() and init(const std::string&),
     // executed once the configuration_ member has been resolved.
     bool init_configuration();
+
+    // Binds the IP stack used for all sockets of this application. Must run before init.
+    bool register_ip_stack(const nxIpStackRef_t _stack);
     // --- NI modification: END ---
 
     using members_key_t = uint64_t;

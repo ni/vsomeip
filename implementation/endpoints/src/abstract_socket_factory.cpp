@@ -42,75 +42,20 @@ namespace vsomeip_v3 {
  *non-neglectable cost to pay during production run-time for enabling these tests.
  **/
 static std::shared_ptr<abstract_socket_factory> _factory;
-// --- NI modification: BEGIN ---
-// Synchronize factory initialization and detect injection after selection is frozen.
-static bool _factory_finalized{false};
-static bool _late_injection_detected{false};
-static std::mutex _factory_mutex;
-
 static std::shared_ptr<abstract_socket_factory> init() {
-    std::scoped_lock its_lock{_factory_mutex};
     if (!_factory) {
-        VSOMEIP_INFO_P << "socket_factory_freeze=default_asio";
         _factory = std::make_shared<asio_socket_factory>();
-    } else {
-        VSOMEIP_INFO_P << "socket_factory_freeze=preinjected";
     }
-    _factory_finalized = true;
     return _factory;
 }
 
 void set_abstract_factory(std::shared_ptr<abstract_socket_factory> ptr) {
-std::scoped_lock its_lock{_factory_mutex};
-// --- NI modification: BEGIN ---
-// Re-registering the identical factory pointer is a no-op and must stay tolerated:
-// the gtest fixtures inject from SetUpTestSuite(), which runs once per test suite
-// rather than once per binary. In unit_tests_endpoint_tests the first suite to call
-// abstract_socket_factory::get() froze the selection, so the next suite aborted the
-// process with "Late socket factory injection detected after factory freeze.".
-// Injecting the same pointer again cannot leave a previously returned get() pointer
-// stale, hence the early return. Injecting a *different* factory after the freeze
-// still sets the late-injection flag and throws.
-if (_factory_finalized && _factory == ptr) {
-    return;
-}
-// --- NI modification: END ---
-if (_factory_finalized) {
-        _late_injection_detected = true;
-        VSOMEIP_ERROR_P << "late socket factory injection detected after factory freeze.";
-        throw std::runtime_error("Late socket factory injection detected after factory freeze.");
-    }
     _factory = ptr;
-}
-
-void freeze_abstract_factory() {
-    std::scoped_lock its_lock{_factory_mutex};
-    if (_factory_finalized) {
-        return;
-    }
-
-    if (!_factory) {
-        VSOMEIP_INFO_P << "socket_factory_freeze=default_asio";
-        _factory = std::make_shared<asio_socket_factory>();
-    } else {
-        VSOMEIP_INFO_P << "socket_factory_freeze=preinjected";
-    }
-
-    _factory_finalized = true;
 }
 
 abstract_socket_factory* abstract_socket_factory::get() {
     static auto const factory = init();
     return factory.get();
 }
-
-bool is_abstract_factory_finalized() {
-    return _factory_finalized;
-}
-
-bool was_abstract_factory_late_injection_detected() {
-    return _late_injection_detected;
-}
-// --- NI modification: END ---
 
 }
