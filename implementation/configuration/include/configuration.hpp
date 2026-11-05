@@ -18,7 +18,6 @@
 #include <boost/icl/interval_set.hpp>
 
 #include <vsomeip/defines.hpp>
-#include <vsomeip/export.hpp>
 #include <vsomeip/plugin.hpp>
 #include <vsomeip/primitive_types.hpp>
 #include <vsomeip/vsomeip_sec.h>
@@ -30,9 +29,8 @@
 
 #include "internal.hpp"
 
+#include "../../runtime/include/routing_application.hpp"
 #include "../../security/include/policy.hpp"
-
-#define VSOMEIP_CONFIG_PLUGIN_VERSION              1
 
 namespace vsomeip_v3 {
 
@@ -85,7 +83,6 @@ public:
 
     virtual const boost::asio::ip::address& get_unicast_address() const = 0;
     virtual const boost::asio::ip::address& get_netmask() const = 0;
-    virtual unsigned short get_prefix() const = 0;
     virtual const std::string& get_device() const = 0;
     virtual diagnosis_t get_diagnosis_address() const = 0;
     virtual diagnosis_t get_diagnosis_mask() const = 0;
@@ -107,7 +104,7 @@ public:
 
     virtual bool is_local_routing() const = 0;
     virtual bool is_uds_preferred() const = 0;
-    virtual routing_state_e get_initial_routing_state() const = 0;
+    virtual routing_state_internal_e get_initial_routing_state() const = 0;
 
     virtual std::string get_unicast_address(service_t _service, instance_t _instance) const = 0;
     virtual uint16_t get_reliable_port(service_t _service, instance_t _instance) const = 0;
@@ -150,8 +147,6 @@ public:
     virtual uint32_t get_max_message_size_reliable(const std::string& _address, uint16_t _port) const = 0;
     virtual uint32_t get_max_message_size_unreliable() const = 0;
     virtual uint32_t get_buffer_shrink_threshold() const = 0;
-
-    virtual bool supports_selective_broadcasts(const boost::asio::ip::address& _address) const = 0;
 
     virtual bool is_offered_remote(service_t _service, instance_t _instance) const = 0;
 
@@ -203,8 +198,6 @@ public:
     // Plugins
     virtual std::map<plugin_type_e, std::set<std::string>> get_plugins(const std::string& _name) const = 0;
 
-    virtual void set_configuration_path(const std::string& _path) = 0;
-
     virtual std::map<std::string, std::string> get_additional_data(const std::string& _application_name,
                                                                    const std::string& _plugin_name) = 0;
 
@@ -216,6 +209,8 @@ public:
     virtual uint32_t get_log_memory_interval() const = 0;
 
     virtual uint32_t get_status_log_interval(const std::string& _name, bool _is_host) const = 0;
+
+    virtual uint32_t get_network_state_log_interval() const = 0;
 
     // TTL factor
     typedef uint32_t ttl_factor_t;

@@ -8,6 +8,7 @@
 #include <map>
 #include <memory>
 #include <mutex>
+#include <queue>
 #include <vector>
 #include <list>
 #include <unordered_set>
@@ -65,14 +66,10 @@ class routing_manager_impl : public boardnet_routing_host,
                              public event_dispatcher,
                              public std::enable_shared_from_this<routing_manager_impl> {
 public:
-    routing_manager_impl(routing_manager_host* _host);
+    routing_manager_impl(routing_manager_host* _host, std::shared_ptr<trace::connector_impl> _trace_connector);
     ~routing_manager_impl();
 
     boost::asio::io_context& get_io();
-    client_t get_client() const;
-    vsomeip_sec_client_t get_sec_client() const;
-    void set_sec_client_port(port_t _port);
-    std::string get_client_host() const;
     std::string const& get_name() const;
 
     void init();
@@ -118,7 +115,8 @@ public:
                            remote_subscription_id_t _id);
 
     // interface to stub
-    std::shared_ptr<boardnet_endpoint> find_or_create_remote_client(service_t _service, instance_t _instance, bool _reliable);
+    std::shared_ptr<boardnet_endpoint> find_or_create_remote_client(service_t _service, instance_t _instance, major_version_t _major,
+                                                                    bool _reliable);
 
     void remove_local(client_t _client);
 
@@ -154,24 +152,23 @@ public:
     void init_routing_info();
     void add_routing_info(service_t _service, instance_t _instance, major_version_t _major, minor_version_t _minor, ttl_t _ttl,
                           const boost::asio::ip::address& _reliable_address, uint16_t _reliable_port,
-                          const boost::asio::ip::address& _unreliable_address, uint16_t _unreliable_port, bool _is_reliable_known,
-                          bool _is_unreliable_known);
-    void del_routing_info(service_t _service, instance_t _instance, bool _has_reliable, bool _has_unreliable, bool _trigger_availability);
+                          const boost::asio::ip::address& _unreliable_address, uint16_t _unreliable_port,
+                          const endpoint_manager_impl::remote_offer_state& _state);
+    void del_routing_info(service_t _service, instance_t _instance, major_version_t _major, bool _has_reliable, bool _has_unreliable,
+                          bool _trigger_availability);
     void update_routing_info(std::chrono::milliseconds _elapsed);
     void is_remote_service_known(service_t _service, instance_t _instance, major_version_t _major, minor_version_t _minor,
-                                 const boost::asio::ip::address& _reliable_address, uint16_t _reliable_port, bool& _reliable_known,
-                                 const boost::asio::ip::address& _unreliable_address, uint16_t _unreliable_port, bool& _unreliable_known,
-                                 bool& _drop_offer);
+                                 const boost::asio::ip::address& _reliable_address, uint16_t _reliable_port,
+                                 const boost::asio::ip::address& _unreliable_address, uint16_t _unreliable_port,
+                                 endpoint_manager_impl::remote_offer_state& _state);
 
     // Handle remote subscriptions / subscription acks
     void on_remote_subscribe(std::shared_ptr<remote_subscription>& _subscription, const remote_subscription_callback_t& _callback);
     void on_remote_unsubscribe(std::shared_ptr<remote_subscription>& _subscription);
 
     void expire_subscriptions(const boost::asio::ip::address& _address);
-    void expire_subscriptions(const boost::asio::ip::address& _address, uint16_t _port, bool _reliable);
     void expire_subscriptions(const boost::asio::ip::address& _address, const port_range_t& _range, bool _reliable);
     void expire_services(const boost::asio::ip::address& _address);
-    void expire_services(const boost::asio::ip::address& _address, uint16_t _port, bool _reliable);
     void expire_services(const boost::asio::ip::address& _address, const port_range_t& _range, bool _reliable);
 
     std::chrono::steady_clock::time_point expire_subscriptions(bool _force);
@@ -180,9 +177,7 @@ public:
     void cleanup_client(client_t _client);
     std::shared_ptr<endpoint_manager_impl> get_endpoint_manager() const;
 
-    routing_state_e get_routing_state();
-    const char* routing_state_tostring(routing_state_e _state);
-    void set_routing_state(routing_state_e _routing_state);
+    void set_routing_state(routing_state_internal_e _routing_state);
     bool is_suspended() const;
 
     connection_control_response_e change_connection_control(connection_control_request_e _control,
@@ -239,6 +234,17 @@ public:
 
     // endpoint_manager_impl requires this to be accessible
     std::shared_ptr<serviceinfo> find_service(service_t _service, instance_t _instance, major_version_t _major) const;
+    // Returns every concrete major currently known for (service, instance) -- used by
+    // release_service() to re-check each one individually when a client releases an ANY_MAJOR
+    // request, since such a request could plausibly have been counted (via has_requester()'s
+    // ANY_MAJOR-is-a-wildcard semantics) against any of them, not just whichever single major
+    // find_service(..., ANY_MAJOR) happens to arbitrarily resolve to.
+    std::map<major_version_t, std::shared_ptr<serviceinfo>> find_services(service_t _service, instance_t _instance) const;
+    // Returns the serviceinfo this host itself offers for (service, instance), regardless of
+    // major version -- unlike find_service(..., ANY_MAJOR), never returns an entry that only
+    // exists because a *different* host announced a different major of the same
+    // (service, instance) via SD.
+    std::shared_ptr<serviceinfo> find_local_service(service_t _service, instance_t _instance) const;
     bool offer_service_base(client_t _client, service_t _service, instance_t _instance, major_version_t _major, minor_version_t _minor);
     std::shared_ptr<serviceinfo> create_service_info(service_t _service, instance_t _instance, major_version_t _major,
                                                      minor_version_t _minor, ttl_t _ttl, bool _is_local_service);
@@ -263,6 +269,11 @@ public:
     void notify_one_current_value(client_t _client, service_t _service, instance_t _instance, eventgroup_t _eventgroup, event_t _event);
 
 private:
+    client_t find_local_provider(service_t _service, instance_t _instance, major_version_t _major,
+                                 std::scoped_lock<std::mutex> const& _service_state_lock);
+    // Assumes mutex_ is already held by the caller, passed via `_lock`
+    void set_routing_state_internal(std::unique_lock<std::mutex>& _lock, routing_state_internal_e _routing_state);
+
     bool is_locally_available(service_t _service, instance_t _instance, major_version_t _major) const;
 
     [[nodiscard]] bool is_local_client(client_t _client) const;
@@ -280,11 +291,8 @@ private:
 
     void init_service_info(service_t _service, instance_t _instance, bool _is_local_service);
 
-    std::shared_ptr<boardnet_endpoint> find_remote_client(service_t _service, instance_t _instance, bool _reliable, client_t _client);
-
     std::shared_ptr<boardnet_endpoint> create_remote_client(service_t _service, instance_t _instance, bool _reliable, client_t _client);
 
-    void clear_client_endpoints(service_t _service, instance_t _instance, bool _reliable);
     void clear_multicast_endpoints(service_t _service, instance_t _instance);
 
     std::set<eventgroup_t> get_subscribed_eventgroups(service_t _service, instance_t _instance);
@@ -293,9 +301,12 @@ private:
 
     return_code_e check_error(const byte_t* _data, length_t _size, instance_t _instance) const;
 
-    bool supports_selective(service_t _service, instance_t _instance);
+    void version_log_timer_cbk(boost::system::error_code const& _error);
 
-    void version_log_timer_cbk(boost::system::error_code const& _error, size_t _count);
+    void network_state_log_timer_cbk(boost::system::error_code const& _error, size_t _count, uint32_t _wait_interval,
+                                     std::uint64_t _generation);
+
+    void restart_network_state_log_timer();
 
     bool handle_local_offer_service(client_t _client, service_t _service, instance_t _instance, major_version_t _major,
                                     minor_version_t _minor);
@@ -312,8 +323,6 @@ private:
     void add_requested_service(client_t _client, service_t _service, instance_t _instance, major_version_t _major, minor_version_t _minor);
     void remove_requested_service(client_t _client, service_t _service, instance_t _instance, major_version_t _major,
                                   minor_version_t _minor);
-    std::set<client_t> get_requesters(service_t _service, instance_t _instance, major_version_t _major);
-    std::set<client_t> get_requesters_unlocked(service_t _service, instance_t _instance, major_version_t _major);
 
     bool has_requester(service_t _service, instance_t _instance, major_version_t _major, minor_version_t _minor);
     bool has_requester_unlocked(service_t _service, instance_t _instance, major_version_t _major, minor_version_t _minor);
@@ -349,8 +358,8 @@ private:
     pending_remote_offer_id_t pending_remote_offer_add(service_t _service, instance_t _instance);
     std::pair<service_t, instance_t> pending_remote_offer_remove(pending_remote_offer_id_t _id);
 
-    bool insert_event_statistics(service_t _service, instance_t _instance, method_t _method, length_t _length);
-    void statistics_log_timer_cbk(boost::system::error_code const& _error);
+    bool insert_event_statistics(service_t _service, instance_t _instance, method_t _method, length_t _length, uint32_t _forwarded);
+    void print_event_statistics(boost::system::error_code const& _error);
 
     bool get_guest(client_t _client, boost::asio::ip::address& _address, port_t& _port) const;
 
@@ -361,17 +370,6 @@ private:
 
     void remove_pending_requests_unlocked(pending_request_removal_type_e _removal_type, client_t _client, service_t _service = ANY_SERVICE,
                                           instance_t _instance = ANY_INSTANCE);
-
-    /// Whether the `_client` is valid for the given message `_type`.
-    ///
-    /// Returns `true` if:
-    ///
-    /// - For requests, the client id does not match the diagnostic address.
-    /// - For responses, the client id matches the diagnostic address of this host.
-    ///
-    /// This is used to check incoming SOME/IP messages for client IDs which could cause routing
-    /// problems, such as routing responses to the incorrect application.
-    bool is_valid_client_id(const client_t _client, const message_type_e _type) const;
 
     std::shared_ptr<local_endpoint> find_routing_endpoint(client_t _client) const;
     bool send_event(client_t _client, std::shared_ptr<message> _message, bool _force) override;
@@ -385,8 +383,8 @@ private:
     void stop_offer_service_base(client_t _client, service_t _service, instance_t _instance, major_version_t _major,
                                  minor_version_t _minor);
 
-    services_t get_services_remote() const;
-    void clear_service_info(service_t _service, instance_t _instance);
+    versioned_services_t get_services_remote() const;
+    void clear_service_info(service_t _service, instance_t _instance, major_version_t _major);
     versioned_services_t get_services() const;
 
     void notify_one(service_t _service, instance_t _instance, event_t _event, std::shared_ptr<payload> _payload, client_t _client,
@@ -434,6 +432,8 @@ private:
 
     std::mutex log_timer_mutex_;
     boost::asio::steady_timer version_log_timer_;
+    boost::asio::steady_timer network_state_log_timer_;
+    std::uint64_t network_state_log_generation_{0};
 
     std::atomic_bool if_state_running_;
     std::atomic_bool sd_route_set_;
@@ -444,7 +444,8 @@ private:
     std::shared_ptr<abstract_netlink_connector> netlink_connector_;
 #endif
 
-    std::atomic<routing_state_e> routing_state_;
+    // TODO: use _mutex instead
+    std::atomic<routing_state_internal_e> routing_state_;
 
     mutable std::mutex services_state_mutex_;
     local_offering_table local_services_table_;
@@ -489,7 +490,6 @@ private:
 
     std::mutex message_statistics_mutex_;
     std::map<std::tuple<service_t, instance_t, method_t>, msg_statistic_t> message_statistics_;
-    std::tuple<service_t, instance_t, method_t> message_to_discard_;
     uint32_t ignored_statistics_counter_;
 
     // synchronize update_remote_subscription() and send_(un)subscription()
@@ -497,7 +497,7 @@ private:
 
     message_acceptance_handler_t message_acceptance_handler_;
 
-    services_t services_remote_;
+    versioned_services_t services_remote_;
     mutable std::mutex services_remote_mutex_;
     versioned_services_t services_;
     mutable std::mutex services_mutex_;

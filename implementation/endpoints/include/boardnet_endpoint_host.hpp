@@ -18,12 +18,6 @@ namespace vsomeip_v3 {
 class configuration;
 class boardnet_endpoint;
 
-struct multicast_option_t {
-    std::shared_ptr<boardnet_endpoint> endpoint_;
-    bool is_join_;
-    boost::asio::ip::address address_;
-};
-
 class boardnet_endpoint_host {
 public:
     virtual ~boardnet_endpoint_host() = default;
@@ -32,15 +26,12 @@ public:
     virtual void on_disconnect(std::shared_ptr<boardnet_endpoint> _endpoint) = 0;
     virtual bool on_bind_error(std::shared_ptr<boardnet_endpoint> _endpoint, const boost::asio::ip::address& _remote_address,
                                uint16_t _remote_port, uint16_t& _local_port) = 0;
-    virtual client_t get_client() const = 0;
-    virtual std::string get_client_host() const = 0;
     /**
      * @brief Find instance for a given service+endpoint pair
      *
      * @return instance_t the instance id, or ANY_INSTANCE if not found
      */
     virtual instance_t find_instance(service_t _service, boardnet_endpoint* const _endpoint) const = 0;
-    virtual void add_multicast_option(const multicast_option_t& _option) = 0;
 };
 
 } // namespace vsomeip_v3

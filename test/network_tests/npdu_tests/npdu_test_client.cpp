@@ -12,8 +12,7 @@
 #include "common/test_main.hpp"
 #include "../../implementation/configuration/include/configuration.hpp"
 #include "../../implementation/configuration/include/configuration_impl.hpp"
-#include "../../implementation/configuration/include/configuration_plugin.hpp"
-#include "../../implementation/plugin/include/plugin_manager_impl.hpp"
+#include "../../implementation/configuration/include/configuration_plugin_impl.hpp"
 
 enum class payloadsize : uint8_t { UDS, TCP, UDP };
 
@@ -58,10 +57,10 @@ void npdu_test_client::init() {
     register_message_handler_for_all_service_methods<2>();
     register_message_handler_for_all_service_methods<3>();
 
-    app_->request_service(npdu_test::RMD_SERVICE_ID_CLIENT_SIDE, npdu_test::RMD_INSTANCE_ID);
     app_->register_availability_handler(npdu_test::RMD_SERVICE_ID_CLIENT_SIDE, npdu_test::RMD_INSTANCE_ID,
                                         std::bind(&npdu_test_client::on_shutdown_service_available, this, std::placeholders::_1,
                                                   std::placeholders::_2, std::placeholders::_3));
+    app_->request_service(npdu_test::RMD_SERVICE_ID_CLIENT_SIDE, npdu_test::RMD_INSTANCE_ID);
 
     request_->set_service(vsomeip_test::TEST_SERVICE_SERVICE_ID);
     request_->set_instance(vsomeip_test::TEST_SERVICE_INSTANCE_ID);
@@ -299,14 +298,7 @@ void npdu_test_client::wait_for_all_senders() {
 
 TEST(someip_npdu_test, send_different_payloads) {
     // get the configuration
-    std::shared_ptr<vsomeip::configuration> its_configuration;
-    auto its_plugin = vsomeip::plugin_manager::get()->get_plugin(vsomeip::plugin_type_e::CONFIGURATION_PLUGIN, VSOMEIP_CFG_LIBRARY);
-    if (its_plugin) {
-        auto its_config_plugin = std::dynamic_pointer_cast<vsomeip::configuration_plugin>(its_plugin);
-        if (its_config_plugin) {
-            its_configuration = its_config_plugin->get_configuration("", "");
-        }
-    }
+    std::shared_ptr<vsomeip::configuration> its_configuration = vsomeip_v3::configuration_plugin_impl::get()->get_configuration("", "");
     if (!its_configuration) {
         ADD_FAILURE() << "No configuration object. "
                          "Either memory overflow or loading error detected!";

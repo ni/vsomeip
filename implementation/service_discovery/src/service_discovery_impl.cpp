@@ -40,6 +40,7 @@
 #include "../../routing/include/eventgroupinfo.hpp"
 #include "../../routing/include/serviceinfo.hpp"
 #include "../../utility/include/bithelper.hpp"
+#include "../../utility/include/blocking_guard.hpp"
 #include "../../utility/include/utility.hpp"
 
 namespace vsomeip_v3 {
@@ -51,34 +52,27 @@ namespace sd {
 service_discovery_impl::service_discovery_impl(service_discovery_host* _host, const std::shared_ptr<configuration>& _configuration) :
     io_(_host->get_io()), host_(_host), configuration_(_configuration), port_(VSOMEIP_SD_DEFAULT_PORT), reliable_(false),
     serializer_(std::make_shared<serializer>(configuration_->get_buffer_shrink_threshold())),
-    deserializer_(std::make_shared<deserializer>(configuration_->get_buffer_shrink_threshold())), ttl_timer_(_host->get_io()),
-    ttl_timer_runtime_(VSOMEIP_SD_DEFAULT_CYCLIC_OFFER_DELAY / 2), ttl_(VSOMEIP_SD_DEFAULT_TTL),
-    subscription_expiration_timer_(_host->get_io()), offer_debounce_time_(VSOMEIP_SD_DEFAULT_OFFER_DEBOUNCE_TIME),
-    repetitions_base_delay_(VSOMEIP_SD_DEFAULT_REPETITIONS_BASE_DELAY), repetitions_max_(VSOMEIP_SD_DEFAULT_REPETITIONS_MAX),
-    cyclic_offer_delay_(VSOMEIP_SD_DEFAULT_CYCLIC_OFFER_DELAY), offer_debounce_timer_(_host->get_io()),
-    find_initial_debounce_time_(VSOMEIP_SD_INITIAL_FIND_DEBOUNCE_TIME),
+    deserializer_(std::make_shared<deserializer>(configuration_->get_buffer_shrink_threshold())), ttl_timer_(io_),
+    ttl_timer_runtime_(VSOMEIP_SD_DEFAULT_CYCLIC_OFFER_DELAY / 2), ttl_(VSOMEIP_SD_DEFAULT_TTL), subscription_expiration_timer_(io_),
+    offer_debounce_time_(VSOMEIP_SD_DEFAULT_OFFER_DEBOUNCE_TIME), repetitions_base_delay_(VSOMEIP_SD_DEFAULT_REPETITIONS_BASE_DELAY),
+    repetitions_max_(VSOMEIP_SD_DEFAULT_REPETITIONS_MAX), cyclic_offer_delay_(VSOMEIP_SD_DEFAULT_CYCLIC_OFFER_DELAY),
+    offer_debounce_timer_(io_), find_initial_debounce_time_(VSOMEIP_SD_INITIAL_FIND_DEBOUNCE_TIME),
     remaining_find_initial_debounce_reps_(VSOMEIP_SD_INITIAL_FIND_DEBOUNCE_REPS),
-    find_debounce_time_(VSOMEIP_SD_DEFAULT_FIND_DEBOUNCE_TIME), find_debounce_timer_(_host->get_io()), main_phase_timer_(_host->get_io()),
-    is_suspended_(false), must_start_last_msg_received_timer_(true), last_msg_received_timer_(_host->get_io()),
+    find_debounce_time_(VSOMEIP_SD_DEFAULT_FIND_DEBOUNCE_TIME), find_debounce_timer_(io_), main_phase_timer_(io_), is_suspended_(false),
+    must_start_last_msg_received_timer_(true), last_msg_received_timer_(io_),
     last_msg_received_timer_timeout_(VSOMEIP_SD_DEFAULT_CYCLIC_OFFER_DELAY + (VSOMEIP_SD_DEFAULT_CYCLIC_OFFER_DELAY / 10)),
-    suspend_stop_offer_watchdog_{_host->get_io()}, stop_offer_watchdog_time_{VSOMEIP_SD_STOP_OFFER_WATCHDOG_TIME},
-    offers_watchdog_{_host->get_io()}, offers_watchdog_time_{VSOMEIP_SD_OFFERS_WATCHDOG_TIME}, offers_received_after_last_resume_{0},
-    offers_received_{0} {
+    suspend_stop_offer_watchdog_{io_}, stop_offer_watchdog_time_{VSOMEIP_SD_STOP_OFFER_WATCHDOG_TIME}, offers_watchdog_{io_},
+    offers_watchdog_time_{VSOMEIP_SD_OFFERS_WATCHDOG_TIME}, offers_received_after_last_resume_{0}, offers_received_{0},
+    offer_entries_sent_{0}, offer_entries_sent_after_last_resume_{0}, last_multicast_processed_{std::chrono::steady_clock::time_point{}} {
 
     next_subscription_expiration_ = std::chrono::steady_clock::now() + std::chrono::hours(24);
 }
 
 service_discovery_impl::~service_discovery_impl() { }
 
-boost::asio::io_context& service_discovery_impl::get_io() {
-    return io_;
-}
-
 void service_discovery_impl::init() {
     unicast_ = configuration_->get_unicast_address();
     sd_multicast_ = configuration_->get_sd_multicast();
-    boost::system::error_code ec;
-    sd_multicast_address_ = boost::asio::ip::make_address(sd_multicast_, ec);
 
     port_ = configuration_->get_sd_port();
     reliable_ = (configuration_->get_sd_protocol() == "tcp");
@@ -132,9 +126,11 @@ void service_discovery_impl::start() {
 
     if (is_suspended_) {
         // make sure to sent out FindService messages after resume
-        std::scoped_lock its_lock(requested_mutex_);
-        for (const auto& [si, req] : requested_) {
-            req->set_sent_counter(0);
+        {
+            std::scoped_lock its_lock(requested_mutex_);
+            for (const auto& [si, req] : requested_) {
+                req->set_sent_counter(0);
+            }
         }
 
         // rejoin multicast group
@@ -154,6 +150,7 @@ void service_discovery_impl::start() {
     }
     if (offers_watchdog_time_ != std::chrono::milliseconds::zero()) {
         offers_received_after_last_resume_ = offers_received_.load();
+        offer_entries_sent_after_last_resume_ = offer_entries_sent_.load();
         offers_watchdog_.cancel();
     }
 
@@ -177,11 +174,7 @@ void service_discovery_impl::suspend() {
     stop_offer_debounce_timer();
     stop_main_phase_timer();
     offers_watchdog_.cancel();
-    {
-        // FIXME(bruno.ld.silva): Replace with general-purpose service discovery mutex, when available.
-        std::scoped_lock its_session_lock(sessions_received_mutex_);
-        clear_observed_host();
-    }
+    observed_hosts_.clear();
 }
 
 void service_discovery_impl::stop() {
@@ -214,7 +207,11 @@ void service_discovery_impl::request_service(service_t _service, instance_t _ins
     bool state_changed = false;
     {
         std::scoped_lock its_lock(requested_mutex_);
-        auto [it, inserted] = requested_.emplace(service_instance_t{_service, _instance}, std::shared_ptr<request>{});
+        // Keyed including major: two majors of the same (service, instance) are tracked as
+        // separate pending requests, each with its own FindService repetition/debounce state --
+        // otherwise the second request silently no-ops because the (service, instance) slot is
+        // already taken by the first.
+        auto [it, inserted] = requested_.emplace(versioned_service_instance_t{_service, _instance, _major}, std::shared_ptr<request>{});
         if (inserted) {
             it->second = std::make_shared<request>(_major, _minor, _ttl);
             state_changed = true;
@@ -226,33 +223,55 @@ void service_discovery_impl::request_service(service_t _service, instance_t _ins
     }
 }
 
-void service_discovery_impl::release_service(service_t _service, instance_t _instance) {
+void service_discovery_impl::release_service(service_t _service, instance_t _instance, major_version_t _major) {
     bool state_changed = false;
     {
         std::scoped_lock its_lock(requested_mutex_);
-        state_changed = requested_.erase({_service, _instance}) > 0;
+        // Keyed including major: only forget the specific major being released, so a different
+        // client's still-active request for another major of the same (service, instance) keeps
+        // its own FindService repetition/debounce state untouched.
+        if (auto it = requested_.find(versioned_service_instance_t{_service, _instance, _major}); it != requested_.end()) {
+            requested_.erase(it);
+            state_changed = true;
+        }
     }
     if (state_changed) {
-        VSOMEIP_INFO << "RELEASE SD: [" << hex4(_service) << "." << hex4(_instance) << "]";
+        VSOMEIP_INFO << "RELEASE SD: [" << hex4(_service) << "." << hex4(_instance) << ":" << static_cast<int>(_major) << "]";
     }
 }
 
-void service_discovery_impl::reset_request_sent_counter(service_t _service, instance_t _instance) {
+void service_discovery_impl::reset_request_sent_counter(service_t _service, instance_t _instance, major_version_t _major) {
     std::scoped_lock its_lock{requested_mutex_};
-    if (auto find_instance = requested_.find({_service, _instance}); find_instance != requested_.end()) {
-        find_instance->second->set_sent_counter(0);
+    // Major-scoped: only the exact (service, instance, major) whose TTL actually expired goes
+    // back into the FindService repetition phase. A different, still-fully-available major of the
+    // same (service, instance) must keep its own "already found" state untouched, otherwise its
+    // request gets spuriously reset too and a stale Find entry reappears in the next SD message.
+    if (auto it = requested_.find(versioned_service_instance_t{_service, _instance, _major}); it != requested_.end()) {
+        it->second->set_sent_counter(0);
+    }
+    // A request made with ANY_MAJOR is stored under its own {service, instance, ANY_MAJOR} key -- but TTL expiry is
+    // always reported for the concrete major that actually went away. Reset that ANY_MAJOR entry
+    // too, if present: it cares about any concrete major disappearing exactly as much as it cared
+    // about one appearing, otherwise its sent-counter is never reset and no further Find is ever
+    // sent again for it.
+    if (auto it = requested_.find(versioned_service_instance_t{_service, _instance, ANY_MAJOR}); it != requested_.end()) {
+        it->second->set_sent_counter(0);
     }
 }
 
-void service_discovery_impl::update_request(service_t _service, instance_t _instance) {
+void service_discovery_impl::update_request(service_t _service, instance_t _instance, major_version_t _major) {
     std::scoped_lock its_lock(requested_mutex_);
-    if (auto find_instance = requested_.find({_service, _instance}); find_instance != requested_.end()) {
+    if (auto find_instance = requested_.find({_service, _instance, _major}); find_instance != requested_.end()) {
         find_instance->second->set_sent_counter(uint8_t(repetitions_max_ + 1));
     }
-}
-
-std::recursive_mutex& service_discovery_impl::get_subscribed_mutex() {
-    return subscribed_mutex_;
+    // A request made with ANY_MAJOR is stored under its own {service, instance, ANY_MAJOR} key -- but an
+    // incoming OfferService always carries the concrete major that satisfied it. Stop that ANY_MAJOR
+    // entry's repetition phase too, if present, the same way the exact-major entry above was just
+    // stopped -- otherwise it is left free to keep sending redundant FindService messages even
+    // though the service it was looking for is already available.
+    if (auto it = requested_.find(versioned_service_instance_t{_service, _instance, ANY_MAJOR}); it != requested_.end()) {
+        it->second->set_sent_counter(uint8_t(repetitions_max_ + 1));
+    }
 }
 
 void service_discovery_impl::subscribe(service_t _service, instance_t _instance, eventgroup_t _eventgroup, major_version_t _major,
@@ -270,8 +289,7 @@ void service_discovery_impl::subscribe(service_t _service, instance_t _instance,
             if (auto its_subscription = found_eventgroup->second; its_subscription->get_major() != _major) {
                 VSOMEIP_ERROR << "Subscriptions to different versions of the same service instance are not supported!";
             } else if (its_subscription->is_selective()) {
-                if (its_subscription->add_client(_client)) {
-                    its_subscription->set_state(_client, subscription_state_e::ST_NOT_ACKNOWLEDGED);
+                if (its_subscription->add_client(_client, subscription_state_e::ST_NOT_ACKNOWLEDGED)) {
                     send_subscription(its_subscription, _service, _instance, _eventgroup, _client);
                 }
             }
@@ -280,7 +298,7 @@ void service_discovery_impl::subscribe(service_t _service, instance_t _instance,
     }
 
     std::shared_ptr<boardnet_endpoint> its_reliable, its_unreliable;
-    get_subscription_endpoints(_service, _instance, its_reliable, its_unreliable);
+    get_subscription_endpoints(_service, _instance, _major, its_reliable, its_unreliable);
 
     // New subscription
     std::shared_ptr<subscription> its_subscription = create_subscription(_major, _ttl, its_reliable, its_unreliable, _info);
@@ -292,8 +310,7 @@ void service_discovery_impl::subscribe(service_t _service, instance_t _instance,
 
     subscribed_[{_service, _instance}][_eventgroup] = its_subscription;
 
-    its_subscription->add_client(_client);
-    its_subscription->set_state(_client, subscription_state_e::ST_NOT_ACKNOWLEDGED);
+    its_subscription->add_client(_client, subscription_state_e::ST_NOT_ACKNOWLEDGED);
 
     send_subscription(its_subscription, _service, _instance, _eventgroup, _client);
 }
@@ -351,11 +368,16 @@ void service_discovery_impl::send_subscription(const std::shared_ptr<subscriptio
     }
 }
 
-void service_discovery_impl::get_subscription_endpoints(service_t _service, instance_t _instance,
+void service_discovery_impl::get_subscription_endpoints(service_t _service, instance_t _instance, major_version_t _major,
                                                         std::shared_ptr<boardnet_endpoint>& _reliable,
                                                         std::shared_ptr<boardnet_endpoint>& _unreliable) const {
-    _unreliable = host_->find_or_create_remote_client(_service, _instance, false);
-    _reliable = host_->find_or_create_remote_client(_service, _instance, true);
+    // Always resolve to the concrete major of this subscription -- never ANY_MAJOR. This keeps
+    // endpoint_manager_impl::remote_services_ consistently keyed by a concrete major, so a later
+    // release (which recovers the requester's own possibly-ANY_MAJOR bookkeeping key) can't
+    // silently create a second, independent connection to the same remote service alongside this
+    // one, or leave this one's key ambiguous.
+    _unreliable = host_->find_or_create_remote_client(_service, _instance, _major, false);
+    _reliable = host_->find_or_create_remote_client(_service, _instance, _major, true);
 }
 
 void service_discovery_impl::get_subscription_address(const std::shared_ptr<boardnet_endpoint>& _reliable,
@@ -400,21 +422,15 @@ void service_discovery_impl::unsubscribe(service_t _service, instance_t _instanc
                     } else if (its_subscription->is_selective()) {
                         // create a dummy subscription object to unsubscribe
                         // the single client.
-                        auto its_major = its_subscription->get_major();
-
-                        its_subscription = std::make_shared<subscription>();
-                        its_subscription->set_major(its_major);
-                        its_subscription->set_ttl(0);
-                        its_subscription->set_selective(true);
-                        its_subscription->set_endpoint(its_reliable, true);
-                        its_subscription->set_endpoint(its_unreliable, false);
+                        its_subscription = std::make_shared<subscription>(its_subscription->get_major(), true /*is-selective*/, 0,
+                                                                          its_reliable, its_unreliable);
                     }
                 }
 
                 // For selective subscriptions, the client must be added again
                 // to generate the selective option
                 if (its_subscription->is_selective()) {
-                    its_subscription->add_client(_client);
+                    its_subscription->add_client(_client, subscription_state_e::ST_NOT_ACKNOWLEDGED);
                 }
 
                 const reliability_type_e its_reliability_type =
@@ -443,10 +459,7 @@ void service_discovery_impl::unsubscribe(service_t _service, instance_t _instanc
         }
     }
 
-    std::vector<std::shared_ptr<message_impl>> its_messages;
-    its_messages.push_back(its_current_message);
-
-    serialize_and_send(its_messages, its_address);
+    serialize_and_send(its_current_message, its_address);
 }
 
 void service_discovery_impl::unsubscribe_all(service_t _service, instance_t _instance) {
@@ -480,10 +493,7 @@ void service_discovery_impl::unsubscribe_all(service_t _service, instance_t _ins
         }
     }
 
-    std::vector<std::shared_ptr<message_impl>> its_messages;
-    its_messages.push_back(its_current_message);
-
-    serialize_and_send(its_messages, its_address);
+    serialize_and_send(its_current_message, its_address);
 }
 
 void service_discovery_impl::unsubscribe_all_on_suspend() {
@@ -770,8 +780,8 @@ entry_data_t service_discovery_impl::create_eventgroup_entry(service_t _service,
             its_entry->set_ttl(_subscription->get_ttl());
             its_data.entry_ = its_entry;
 
-            for (const auto its_client : _subscription->get_clients()) {
-                if (_subscription->get_state(its_client) == subscription_state_e::ST_RESUBSCRIBING_NOT_ACKNOWLEDGED) {
+            for (const auto& [_, its_state] : _subscription->get_clients()) {
+                if (its_state == subscription_state_e::ST_RESUBSCRIBING_NOT_ACKNOWLEDGED) {
                     its_other = std::make_shared<eventgroupentry_impl>();
                     its_other->set_type(entry_type_e::STOP_SUBSCRIBE_EVENTGROUP);
                     its_other->set_service(_service);
@@ -816,8 +826,8 @@ entry_data_t service_discovery_impl::create_eventgroup_entry(service_t _service,
                 its_data.entry_ = its_entry;
             }
 
-            for (const auto its_client : _subscription->get_clients()) {
-                if (_subscription->get_state(its_client) == subscription_state_e::ST_RESUBSCRIBING_NOT_ACKNOWLEDGED) {
+            for (const auto& [_, its_state] : _subscription->get_clients()) {
+                if (its_state == subscription_state_e::ST_RESUBSCRIBING_NOT_ACKNOWLEDGED) {
                     if (!its_other) {
                         its_other = std::make_shared<eventgroupentry_impl>();
                         its_other->set_type(entry_type_e::STOP_SUBSCRIBE_EVENTGROUP);
@@ -846,7 +856,11 @@ entry_data_t service_discovery_impl::create_eventgroup_entry(service_t _service,
 
     if (its_entry && _subscription->is_selective()) {
         auto its_selective_option = std::make_shared<selective_option_impl>();
-        its_selective_option->set_clients(_subscription->get_clients());
+        std::set<uint16_t> its_clients;
+        for (const auto& [its_client, _] : _subscription->get_clients()) {
+            its_clients.insert(its_client);
+        }
+        its_selective_option->set_clients(its_clients);
         its_data.options_.push_back(its_selective_option);
     }
 
@@ -979,7 +993,10 @@ void service_discovery_impl::on_message(const byte_t* _data, length_t _length, c
     std::scoped_lock its_subscribed_lock(subscribed_mutex_);
 
     // Print KPI on first message from host.
-    observed_host(_sender, _is_multicast);
+    if (!observed_hosts_.observe(_sender, _is_multicast)) {
+        VSOMEIP_INFO << "KPI NET4 First SD " << (_is_multicast ? "multicast" : "unicast") << " message from " << _sender
+                     << ", size=" << _length << ", session=" << hex4(bithelper::read_uint16_be(_data + VSOMEIP_SESSION_POS_MIN));
+    }
 
     if (is_suspended_) {
         return;
@@ -991,6 +1008,7 @@ void service_discovery_impl::on_message(const byte_t* _data, length_t _length, c
     }
 
     if (_is_multicast) {
+        last_multicast_processed_ = std::chrono::steady_clock::now();
         std::scoped_lock its_last_msg_lock{last_msg_received_timer_mutex_};
         if (0 < last_msg_received_timer_.cancel() || must_start_last_msg_received_timer_) {
             must_start_last_msg_received_timer_ = false;
@@ -1014,10 +1032,14 @@ void service_discovery_impl::on_message(const byte_t* _data, length_t _length, c
             VSOMEIP_INFO << "Reboot detected: IP=" << _sender.to_string();
             VSOMEIP_INFO << "Reboot message: " << utility::dump(_data, _length);
 
-            remove_remote_offer_type_by_ip(_sender);
             host_->expire_subscriptions(_sender);
             host_->expire_services(_sender);
-            if (reboot_notification_handler_) {
+            reboot_notification_handler_t its_reboot_notification_handler;
+            {
+                std::scoped_lock its_lock(handlers_mutex_);
+                its_reboot_notification_handler = reboot_notification_handler_;
+            }
+            if (its_reboot_notification_handler) {
                 ip_address_t ip;
                 if (_sender.is_v4()) {
                     ip.address_.v4_ = _sender.to_v4().to_bytes();
@@ -1026,7 +1048,7 @@ void service_discovery_impl::on_message(const byte_t* _data, length_t _length, c
                     ip.address_.v6_ = _sender.to_v6().to_bytes();
                     ip.is_v4_ = false;
                 }
-                reboot_notification_handler_(ip);
+                invoke_watched(its_reboot_notification_handler, "reboot_notification_handler(" + _sender.to_string() + ")", ip);
             }
         }
 
@@ -1035,7 +1057,7 @@ void service_discovery_impl::on_message(const byte_t* _data, length_t _length, c
             std::stringstream log;
             log << "SD messages lost from " << _sender.to_string() << " to ";
             if (_is_multicast) {
-                log << sd_multicast_address_.to_string();
+                log << sd_multicast_;
             } else {
                 log << unicast_.to_string();
             }
@@ -1060,13 +1082,17 @@ void service_discovery_impl::on_message(const byte_t* _data, length_t _length, c
         bool force_initial_events(false);
 
         bool sd_acceptance_queried(false);
-        expired_ports_t expired_ports;
-        sd_acceptance_state_t accept_state(expired_ports);
+        sd_acceptance_state_t accept_state{false, false};
 
         for (auto iter = its_entries.begin(); iter != its_end; iter++) {
             if (!sd_acceptance_queried) {
                 sd_acceptance_queried = true;
-                if (sd_acceptance_handler_) {
+                sd_acceptance_handler_t its_sd_acceptance_handler;
+                {
+                    std::scoped_lock its_lock(handlers_mutex_);
+                    its_sd_acceptance_handler = sd_acceptance_handler_;
+                }
+                if (its_sd_acceptance_handler) {
                     accept_state.sd_acceptance_required_ = configuration_->is_protected_device(_sender);
                     remote_info_t remote;
                     remote.first_ = ANY_PORT;
@@ -1079,7 +1105,8 @@ void service_discovery_impl::on_message(const byte_t* _data, length_t _length, c
                         remote.ip_.address_.v6_ = _sender.to_v6().to_bytes();
                         remote.ip_.is_v4_ = false;
                     }
-                    accept_state.accept_entries_ = sd_acceptance_handler_(remote);
+                    accept_state.accept_entries_ =
+                            invoke_watched(its_sd_acceptance_handler, "sd_acceptance_handler(" + _sender.to_string() + ")", remote);
                 } else {
                     accept_state.accept_entries_ = true;
                 }
@@ -1148,12 +1175,40 @@ void service_discovery_impl::start_offer_watchdog() {
     }
 }
 
+// OfferService entries a message announces, StopOffers excluded.
+static uint32_t count_offer_entries(const message_impl::entries_t& _entries) {
+    uint32_t its_offers{0};
+    for (const auto& its_entry : _entries) {
+        if (its_entry->get_type() == entry_type_e::OFFER_SERVICE && its_entry->get_ttl() > 0) {
+            its_offers++;
+        }
+    }
+    return its_offers;
+}
+
 void service_discovery_impl::sent_messages(const byte_t* _data, length_t _size, const boost::asio::ip::address& _remote_address) {
+    // Record first message KPI.
+    const bool is_multicast = _remote_address.is_unspecified();
+    if (!observed_hosts_.observe(unicast_, is_multicast)) {
+        VSOMEIP_INFO << "KPI NET4 First SD " << (is_multicast ? "multicast" : "unicast") << " message from " << unicast_ << " (self)"
+                     << ", size=" << _size << ", session=" << hex4(bithelper::read_uint16_be(_data + VSOMEIP_SESSION_POS_MIN));
+    }
+
     std::shared_ptr<message_impl> its_message;
     deserialize_data(_data, _size, its_message);
     if (its_message) {
         const message_impl::entries_t& its_entries = its_message->get_entries();
+        const auto its_offers = count_offer_entries(its_entries);
+        const bool is_first_after_resume = its_offers > 0 && offers_received_ == offers_received_after_last_resume_;
+
         check_sent_offers(its_entries, _remote_address);
+
+        if (is_first_after_resume) {
+            VSOMEIP_INFO_P << "First own offer observed after resume via " << (_remote_address.is_unspecified() ? "multicast" : "unicast")
+                           << ", entries=" << its_offers << ", offers_received=" << offers_received_.load();
+        }
+    } else {
+        VSOMEIP_WARNING_P << "Deserialization of own SD message failed, size=" << _size;
     }
 }
 
@@ -1293,14 +1348,14 @@ void service_discovery_impl::process_serviceentry(std::shared_ptr<serviceentry_i
         }
 
         // stop sending find service in repetition phase
-        update_request(its_service, its_instance);
+        update_request(its_service, its_instance, its_major);
 
         remove_remote_offer_type(its_service, its_instance, its_reliable_address, its_reliable_port, its_unreliable_address,
                                  its_unreliable_port);
         remove_subscriptions(its_service, its_instance);
         if (!is_suspended_) {
-            host_->del_routing_info(its_service, its_instance, (its_reliable_port != ILLEGAL_PORT), (its_unreliable_port != ILLEGAL_PORT),
-                                    true);
+            host_->del_routing_info(its_service, its_instance, its_major, (its_reliable_port != ILLEGAL_PORT),
+                                    (its_unreliable_port != ILLEGAL_PORT), true);
         }
     }
 }
@@ -1373,69 +1428,38 @@ void service_discovery_impl::process_offerservice_serviceentry(service_t _servic
     }
 
     // stop sending find service in repetition phase
-    update_request(_service, _instance);
+    update_request(_service, _instance, _major);
 
-    bool is_reliable_known(false);
-    bool is_unreliable_known(false);
-    bool drop_offer(false);
-    host_->is_remote_service_known(_service, _instance, _major, _minor, _reliable_address, _reliable_port, is_reliable_known,
-                                   _unreliable_address, _unreliable_port, is_unreliable_known, drop_offer);
+    endpoint_manager_impl::remote_offer_state its_offer_state;
+    host_->is_remote_service_known(_service, _instance, _major, _minor, _reliable_address, _reliable_port, _unreliable_address,
+                                   _unreliable_port, its_offer_state);
 
-    if (drop_offer) {
-        VSOMEIP_ERROR_P << "Dropping offer of " << service_address_str() << " due to endpoint mismatch";
+    if (its_offer_state.drop_offer) {
         return;
     }
 
-    if (_sd_ac_state.sd_acceptance_required_) {
+    // return if the registered sd_acceptance handler returned false
+    // and for the provided port sd_acceptance is necessary
+    if (_sd_ac_state.sd_acceptance_required_ && !_sd_ac_state.accept_entries_
+        && (configuration_->is_protected_port(_unreliable_address, _unreliable_port, false)
+            || configuration_->is_protected_port(_reliable_address, _reliable_port, true))) {
+        VSOMEIP_WARNING << "sdi::process_offerservice_serviceentry: Dropping offer of " << service_address_str() << " @ "
+                        << (_reliable_port != ILLEGAL_PORT ? _reliable_address.to_string() : _unreliable_address.to_string())
+                        << " due to no-acceptance";
+        return;
+    }
 
-        auto expire_subscriptions_and_services = [this, &service_str, &_sd_ac_state](const boost::asio::ip::address& _address,
-                                                                                     uint16_t _port, bool _reliable) {
-            const auto its_port_pair = std::make_pair(_reliable, _port);
-            if (_sd_ac_state.expired_ports_.count(its_port_pair) == 0) {
-                VSOMEIP_WARNING << "sdi::process_offerservice_serviceentry: Dropping offer of " << service_str() << " @ "
-                                << (_reliable ? "tcp:" : "udp:") << _address.to_string() << ":" << _port << " due to no-acceptance";
-
-                remove_remote_offer_type_by_ip(_address, _port, _reliable);
-                host_->expire_subscriptions(_address, _port, _reliable);
-                host_->expire_services(_address, _port, _reliable);
-                _sd_ac_state.expired_ports_.insert(its_port_pair);
-            }
-        };
-
-        // return if the registered sd_acceptance handler returned false
-        // and for the provided port sd_acceptance is necessary
-        switch (offer_type) {
-        case reliability_type_e::RT_UNRELIABLE:
-            if (!_sd_ac_state.accept_entries_ && configuration_->is_protected_port(_unreliable_address, _unreliable_port, false)) {
-                expire_subscriptions_and_services(_unreliable_address, _unreliable_port, false);
-                return;
-            }
-            break;
-        case reliability_type_e::RT_RELIABLE:
-            if (!_sd_ac_state.accept_entries_ && configuration_->is_protected_port(_reliable_address, _reliable_port, true)) {
-                expire_subscriptions_and_services(_reliable_address, _reliable_port, true);
-                return;
-            }
-            break;
-        case reliability_type_e::RT_BOTH:
-            if (!_sd_ac_state.accept_entries_
-                && (configuration_->is_protected_port(_unreliable_address, _unreliable_port, false)
-                    || configuration_->is_protected_port(_reliable_address, _reliable_port, true))) {
-                expire_subscriptions_and_services(_unreliable_address, _unreliable_port, false);
-                expire_subscriptions_and_services(_reliable_address, _reliable_port, true);
-                return;
-            }
-            break;
-        case reliability_type_e::RT_UNKNOWN:
-        default:
-            break;
-        }
+    // If an ECU offers the same service/instance with completely
+    // different endpoints, delete the old routing info and re-add it
+    if (its_offer_state.endpoints_changed && (!its_offer_state.reliable_known && !its_offer_state.unreliable_known)) {
+        VSOMEIP_WARNING_P << "Endpoints changed for [" << hex4(_service) << "." << hex4(_instance)
+                          << "] and none of the previous endpoints are still known - updating routing info";
+        host_->del_routing_info(_service, _instance, _major, true, true, true);
     }
 
     if (update_remote_offer_type(_service, _instance, offer_type, _reliable_address, _reliable_port, _unreliable_address, _unreliable_port,
-                                 _received_via_multicast)) {
-        VSOMEIP_ERROR_P << "Offer type changed to " << reliability_to_str(offer_type) << " for " << service_address_str();
-
+                                 _received_via_multicast, its_offer_state.endpoints_changed)) {
+        VSOMEIP_WARNING_P << "Offer type changed [" << hex4(_service) << "." << hex4(_instance) << "]";
         // Only update eventgroup reliability type if it was initially unknown
         auto its_eventgroups = host_->get_subscribed_eventgroups(_service, _instance);
         for (auto eg : its_eventgroups) {
@@ -1462,24 +1486,25 @@ void service_discovery_impl::process_offerservice_serviceentry(service_t _servic
         if (const auto found_si = subscribed_.find({_service, _instance}); found_si != subscribed_.end()) {
             for (const auto& [its_eventgroup_id, its_subscription] : found_si->second) {
                 std::shared_ptr<boardnet_endpoint> its_reliable, its_unreliable;
-                get_subscription_endpoints(_service, _instance, its_reliable, its_unreliable);
+                // TODO: horrifying - do we really need to lookup-and-set the endpoints for _every_ received offer?!
+                get_subscription_endpoints(_service, _instance, its_subscription->get_major(), its_reliable, its_unreliable);
                 its_subscription->set_endpoint(its_reliable, true);
                 its_subscription->set_endpoint(its_unreliable, false);
-                for (const auto& its_client : its_subscription->get_clients()) {
-                    if (its_subscription->get_state(its_client) == subscription_state_e::ST_ACKNOWLEDGED) {
+                // NOTE: we're mutating the subscription state directly
+                for (auto& [its_client, its_state] : its_subscription->get_clients()) {
+                    if (its_state == subscription_state_e::ST_ACKNOWLEDGED) {
                         if (has_unreceived_field_value(its_subscription)) {
-                            its_subscription->set_state(its_client, subscription_state_e::ST_RESUBSCRIBING_NOT_ACKNOWLEDGED);
+                            its_state = subscription_state_e::ST_RESUBSCRIBING_NOT_ACKNOWLEDGED;
                         } else {
-                            its_subscription->set_state(its_client, subscription_state_e::ST_RESUBSCRIBING);
+                            its_state = subscription_state_e::ST_RESUBSCRIBING;
                         }
-                    } else if (its_subscription->get_state(its_client) != subscription_state_e::ST_ACKNOWLEDGED
-                               && was_previously_offered_by_unicast) {
-                        its_subscription->set_state(its_client, subscription_state_e::ST_RESUBSCRIBING);
+                    } else if (its_state != subscription_state_e::ST_ACKNOWLEDGED && was_previously_offered_by_unicast) {
+                        its_state = subscription_state_e::ST_RESUBSCRIBING;
                     } else {
                         VSOMEIP_WARNING_P << "Pending SubAck for client " << hex4(its_client) << " for eventgroup "
                                           << hex4(its_eventgroup_id) << ", " << service_address_str() << " will resubscribe due to Offer";
 
-                        its_subscription->set_state(its_client, subscription_state_e::ST_RESUBSCRIBING_NOT_ACKNOWLEDGED);
+                        its_state = subscription_state_e::ST_RESUBSCRIBING_NOT_ACKNOWLEDGED;
                     }
                 }
                 const reliability_type_e its_reliability =
@@ -1489,16 +1514,15 @@ void service_discovery_impl::process_offerservice_serviceentry(service_t _servic
                     its_data.entry_) {
                     add_entry_data(_resubscribes, its_data);
                 }
-                for (const auto its_client : its_subscription->get_clients()) {
-                    its_subscription->set_state(its_client, subscription_state_e::ST_NOT_ACKNOWLEDGED);
+                for (auto& [_, its_state] : its_subscription->get_clients()) {
+                    its_state = subscription_state_e::ST_NOT_ACKNOWLEDGED;
                 }
             }
         }
     }
 
     host_->add_routing_info(_service, _instance, _major, _minor, _ttl * get_ttl_factor(_service, _instance, ttl_factor_offers_),
-                            _reliable_address, _reliable_port, _unreliable_address, _unreliable_port, is_reliable_known,
-                            is_unreliable_known);
+                            _reliable_address, _reliable_port, _unreliable_address, _unreliable_port, its_offer_state);
 }
 
 void service_discovery_impl::process_findservice_serviceentry(service_t _service, instance_t _instance, major_version_t _major,
@@ -1597,13 +1621,13 @@ void service_discovery_impl::on_endpoint_connected(service_t _service, instance_
 
                             std::shared_ptr<boardnet_endpoint> its_unreliable;
                             std::shared_ptr<boardnet_endpoint> its_reliable;
-                            get_subscription_endpoints(_service, _instance, its_reliable, its_unreliable);
+                            get_subscription_endpoints(_service, _instance, its_subscription->get_major(), its_reliable, its_unreliable);
                             get_subscription_address(its_reliable, its_unreliable, its_address);
 
                             its_subscription->set_endpoint(its_reliable, true);
                             its_subscription->set_endpoint(its_unreliable, false);
-                            for (const auto its_client : its_subscription->get_clients()) {
-                                its_subscription->set_state(its_client, subscription_state_e::ST_NOT_ACKNOWLEDGED);
+                            for (auto& [_, its_state] : its_subscription->get_clients()) {
+                                its_state = subscription_state_e::ST_NOT_ACKNOWLEDGED;
                             }
 
                             const reliability_type_e its_reliability_type =
@@ -2219,8 +2243,9 @@ void service_discovery_impl::handle_eventgroup_subscription_ack(service_t _servi
     if (auto found_si = subscribed_.find({_service, _instance}); found_si != subscribed_.end()) {
         if (auto found_eventgroup = found_si->second.find(_eventgroup); found_eventgroup != found_si->second.end()) {
             for (const auto its_client : _clients) {
-                if (found_eventgroup->second->get_state(its_client) == subscription_state_e::ST_NOT_ACKNOWLEDGED) {
-                    found_eventgroup->second->set_state(its_client, subscription_state_e::ST_ACKNOWLEDGED);
+                auto itr = found_eventgroup->second->get_clients().find(its_client);
+                if (itr != found_eventgroup->second->get_clients().end() && itr->second == subscription_state_e::ST_NOT_ACKNOWLEDGED) {
+                    itr->second = subscription_state_e::ST_ACKNOWLEDGED;
                     host_->on_subscribe_ack(its_client, _service, _instance, _eventgroup, ANY_EVENT, PENDING_SUBSCRIPTION_ID);
                 }
             }
@@ -2256,6 +2281,7 @@ bool service_discovery_impl::send(const std::vector<std::shared_ptr<message_impl
             m->set_reboot_flag(its_session.second);
             if (host_->send_notification(VSOMEIP_SD_CLIENT, m, true)) {
                 increment_session(unicast_);
+                offer_entries_sent_ += count_offer_entries(m->get_entries());
             }
         } else {
             its_result = false;
@@ -2279,6 +2305,7 @@ bool service_discovery_impl::serialize_and_send(const std::vector<std::shared_pt
                     if (host_->send_via_sd(endpoint_definition::get(_address, port_, reliable_, m->get_service(), m->get_instance()),
                                            serializer_->get_data(), serializer_->get_size(), port_)) {
                         increment_session(_address);
+                        offer_entries_sent_ += count_offer_entries(m->get_entries());
                     }
                 } else {
                     VSOMEIP_ERROR_P << "Serialization failed!";
@@ -2291,6 +2318,28 @@ bool service_discovery_impl::serialize_and_send(const std::vector<std::shared_pt
         }
     }
     return its_result;
+}
+
+bool service_discovery_impl::serialize_and_send(const std::shared_ptr<message_impl>& _message, const boost::asio::ip::address& _address) {
+    if (_address.is_unspecified() || !_message->has_entry()) {
+        return false;
+    }
+    std::scoped_lock its_lock(serialize_mutex_);
+    std::pair<session_t, bool> its_session = get_session(_address);
+    _message->set_session(its_session.first);
+    _message->set_reboot_flag(its_session.second);
+    if (serializer_->serialize(_message.get())) {
+        if (host_->send_via_sd(endpoint_definition::get(_address, port_, reliable_, _message->get_service(), _message->get_instance()),
+                               serializer_->get_data(), serializer_->get_size(), port_)) {
+            increment_session(_address);
+        }
+    } else {
+        VSOMEIP_ERROR_P << "Serialization failed!";
+        serializer_->reset();
+        return false;
+    }
+    serializer_->reset();
+    return true;
 }
 
 void service_discovery_impl::start_ttl_timer(int _shift) {
@@ -2499,7 +2548,7 @@ void service_discovery_impl::on_find_debounce_timer_expired(const boost::system:
     std::chrono::milliseconds its_delay(repetitions_base_delay_);
     uint8_t its_repetitions(1);
 
-    auto its_timer = std::make_shared<boost::asio::steady_timer>(host_->get_io());
+    auto its_timer = std::make_shared<boost::asio::steady_timer>(io_);
     {
         std::scoped_lock its_lock(find_repetition_phase_timers_mutex_);
         find_repetition_phase_timers_[its_timer] = repetition_phase_finds;
@@ -2573,7 +2622,7 @@ void service_discovery_impl::on_offer_debounce_timer_expired(const boost::system
         its_repetitions = 0;
     }
 
-    auto its_timer = std::make_shared<boost::asio::steady_timer>(host_->get_io());
+    auto its_timer = std::make_shared<boost::asio::steady_timer>(io_);
 
     {
         std::scoped_lock its_lock(repetition_phase_timers_mutex_);
@@ -3053,7 +3102,7 @@ reliability_type_e service_discovery_impl::get_remote_offer_type(const std::shar
 bool service_discovery_impl::update_remote_offer_type(service_t _service, instance_t _instance, reliability_type_e _offer_type,
                                                       const boost::asio::ip::address& _reliable_address, uint16_t _reliable_port,
                                                       const boost::asio::ip::address& _unreliable_address, uint16_t _unreliable_port,
-                                                      bool _received_via_multicast) {
+                                                      bool _received_via_multicast, bool _endpoints_changed) {
     bool ret(false);
     std::scoped_lock its_lock(remote_offer_types_mutex_);
     const remote_offer_info_t its_service_instance(_service, _instance, _received_via_multicast);
@@ -3066,6 +3115,60 @@ bool service_discovery_impl::update_remote_offer_type(service_t _service, instan
     } else {
         remote_offer_types_[its_service_instance.service_info] = _offer_type;
     }
+
+    // If any endpoint changed in the most recent offer,
+    // delete the endpoints which are no longer used
+    if (_endpoints_changed) {
+        ret = true;
+        std::vector<std::pair<boost::asio::ip::address, std::pair<bool, uint16_t>>> its_current_endpoints;
+        switch (_offer_type) {
+        case reliability_type_e::RT_UNRELIABLE:
+            its_current_endpoints.emplace_back(_unreliable_address, std::make_pair(false, _unreliable_port));
+            break;
+        case reliability_type_e::RT_RELIABLE:
+            its_current_endpoints.emplace_back(_reliable_address, std::make_pair(true, _reliable_port));
+            break;
+        case reliability_type_e::RT_BOTH:
+            its_current_endpoints.emplace_back(_unreliable_address, std::make_pair(false, _unreliable_port));
+            its_current_endpoints.emplace_back(_reliable_address, std::make_pair(true, _reliable_port));
+            break;
+        default:
+            break;
+        }
+
+        std::set<boost::asio::ip::address> its_current_addresses;
+        for (const auto& its_endpoint : its_current_endpoints) {
+            its_current_addresses.insert(its_endpoint.first);
+        }
+
+        for (const auto& its_address : its_current_addresses) {
+            const auto found_address = remote_offers_by_ip_.find(its_address);
+            if (found_address == remote_offers_by_ip_.end()) {
+                continue;
+            }
+            for (auto it_port = found_address->second.begin(); it_port != found_address->second.end();) {
+                bool is_current_endpoint(false);
+                for (const auto& its_endpoint : its_current_endpoints) {
+                    if (its_endpoint.first == its_address && its_endpoint.second == it_port->first) {
+                        is_current_endpoint = true;
+                        break;
+                    }
+                }
+                if (!is_current_endpoint) {
+                    it_port->second.erase(its_service_instance);
+                }
+                if (it_port->second.empty()) {
+                    it_port = found_address->second.erase(it_port);
+                } else {
+                    ++it_port;
+                }
+            }
+            if (found_address->second.empty()) {
+                remote_offers_by_ip_.erase(found_address);
+            }
+        }
+    }
+
     switch (_offer_type) {
     case reliability_type_e::RT_UNRELIABLE:
         remote_offers_by_ip_[_unreliable_address][std::make_pair(false, _unreliable_port)].insert(its_service_instance);
@@ -3075,7 +3178,7 @@ bool service_discovery_impl::update_remote_offer_type(service_t _service, instan
         break;
     case reliability_type_e::RT_BOTH:
         remote_offers_by_ip_[_unreliable_address][std::make_pair(false, _unreliable_port)].insert(its_service_instance);
-        remote_offers_by_ip_[_unreliable_address][std::make_pair(true, _reliable_port)].insert(its_service_instance);
+        remote_offers_by_ip_[_reliable_address][std::make_pair(true, _reliable_port)].insert(its_service_instance);
         break;
     case reliability_type_e::RT_UNKNOWN:
     default:
@@ -3117,10 +3220,6 @@ void service_discovery_impl::remove_remote_offer_type(service_t _service, instan
     }
 }
 
-void service_discovery_impl::remove_remote_offer_type_by_ip(const boost::asio::ip::address& _address) {
-    remove_remote_offer_type_by_ip(_address, ANY_PORT, false);
-}
-
 void service_discovery_impl::remove_remote_offer_type_by_ip(const boost::asio::ip::address& _address, uint16_t _port, bool _reliable) {
     std::scoped_lock its_lock(remote_offer_types_mutex_);
     const auto found_address = remote_offers_by_ip_.find(_address);
@@ -3152,7 +3251,7 @@ bool service_discovery_impl::set_offer_multicast_state(service_t _service, insta
                                                        const boost::asio::ip::address& _reliable_address, port_t _reliable_port,
                                                        const boost::asio::ip::address& _unreliable_address, uint16_t _unreliable_port,
                                                        bool _received_via_multicast) {
-
+    std::scoped_lock its_lock(remote_offer_types_mutex_);
     bool was_unicast = false;
 
     auto check_offer_info = [this, &was_unicast, _received_via_multicast](const boost::asio::ip::address& address, bool reliable,
@@ -3196,22 +3295,14 @@ std::shared_ptr<subscription> service_discovery_impl::create_subscription(major_
                                                                           const std::shared_ptr<boardnet_endpoint>& _reliable,
                                                                           const std::shared_ptr<boardnet_endpoint>& _unreliable,
                                                                           const std::shared_ptr<eventgroupinfo>& _info) const {
-    auto its_subscription = std::make_shared<subscription>();
-    its_subscription->set_major(_major);
-    its_subscription->set_ttl(_ttl);
+    auto its_subscription = std::make_shared<subscription>(_major, _info->is_selective(), _ttl, _reliable, _unreliable);
 
     if (_reliable) {
-        its_subscription->set_endpoint(_reliable, true);
         its_subscription->set_tcp_connection_established(_reliable->is_established());
     }
-
     if (_unreliable) {
-        its_subscription->set_endpoint(_unreliable, false);
         its_subscription->set_udp_connection_established(_unreliable->is_established());
     }
-
-    // check whether the eventgroup is selective
-    its_subscription->set_selective(_info->is_selective());
 
     its_subscription->set_eventgroupinfo(_info);
 
@@ -3228,46 +3319,10 @@ void service_discovery_impl::send_subscription_ack(const std::shared_ptr<remote_
 
     uint32_t its_max_answers(1); // Must be 1 as "_acknowledgement" not
                                  // necessarily contains subscriptions
-    bool do_not_answer(false);
-    std::shared_ptr<remote_subscription> its_parent;
 
     // Find highest number of necessary answers
     for (const auto& its_subscription : _acknowledgement->get_subscriptions()) {
-        auto its_answers = its_subscription->get_answers();
-        if (its_answers > its_max_answers) {
-            its_max_answers = its_answers;
-        } else if (its_answers == 0) {
-            do_not_answer = true;
-            its_parent = its_subscription->get_parent();
-        }
-    }
-
-    if (do_not_answer) {
-        if (its_parent) {
-            // Snapshot the parent ack under pending_remote_subscriptions_mutex_, then
-            // release that lock before calling get_subscriptions() on it.
-            // Holding pending_remote_subscriptions_mutex_ while acquiring another
-            // ack's mutex_ (inside get_subscriptions) would invert the lock order
-            // relative to update_acknowledgement, which holds ack->mutex_ first and
-            // then acquires pending_remote_subscriptions_mutex_.
-            std::shared_ptr<remote_subscription_ack> its_parent_ack;
-            {
-                std::scoped_lock its_lock(pending_remote_subscriptions_mutex_);
-                auto it = pending_remote_subscriptions_.find(its_parent);
-                if (it != pending_remote_subscriptions_.end()) {
-                    its_parent_ack = it->second;
-                }
-            }
-            if (its_parent_ack) {
-                std::scoped_lock its_parent_lock(its_parent_ack->get_mutex());
-                for (const auto& its_subscription : its_parent_ack->get_subscriptions()) {
-                    if (its_subscription != its_parent) {
-                        its_subscription->set_answers(its_subscription->get_answers() + 1);
-                    }
-                }
-            }
-        }
-        return;
+        its_max_answers = std::max(its_max_answers, its_subscription->get_answers());
     }
 
     // send messages
@@ -3344,10 +3399,12 @@ void service_discovery_impl::add_entry_data_to_remote_subscription_ack_msg(const
 }
 
 void service_discovery_impl::register_sd_acceptance_handler(const sd_acceptance_handler_t& _handler) {
+    std::scoped_lock its_lock(handlers_mutex_);
     sd_acceptance_handler_ = _handler;
 }
 
 void service_discovery_impl::register_reboot_notification_handler(const reboot_notification_handler_t& _handler) {
+    std::scoped_lock its_lock(handlers_mutex_);
     reboot_notification_handler_ = _handler;
 }
 
@@ -3385,7 +3442,7 @@ reliability_type_e service_discovery_impl::get_eventgroup_reliability(service_t 
 void service_discovery_impl::deserialize_data(const byte_t* _data, const length_t& _size, std::shared_ptr<message_impl>& _message) {
     std::scoped_lock its_lock(deserialize_mutex_);
     deserializer_->set_data(_data, _size);
-    _message = std::shared_ptr<message_impl>(deserializer_->deserialize_sd_message());
+    _message = deserializer_->deserialize_sd_message();
     deserializer_->reset();
 }
 
@@ -3408,34 +3465,39 @@ void service_discovery_impl::check_offer_services(const boost::system::error_cod
         VSOMEIP_ERROR_P << "Suspend offer watchdog error " << error.message();
     } else if (!error) { // and there are offers being made
         if (_faulty_value == offers_received_) {
+            log_offer_watchdog_state();
             VSOMEIP_TERMINATE("No offer was received after resume");
         }
     }
 }
 
-void service_discovery_impl::observed_host(const boost::asio::ip::address& _host, const bool _multicast) {
-    // Add en entry if it doesn't already exist.
-    if (observed_hosts.count(_host) == 0) {
-        observed_hosts[_host] = std::make_tuple(false, false);
+void service_discovery_impl::log_offer_watchdog_state() const {
+    bool its_joined{false};
+    uint64_t its_own_multicast{0};
+    const auto its_endpoint = std::dynamic_pointer_cast<udp_server_endpoint_impl>(endpoint_);
+    if (its_endpoint) {
+        its_joined = its_endpoint->is_joined(sd_multicast_);
+        its_own_multicast = its_endpoint->get_own_multicast_received();
     }
 
-    // Update the entry and log the KPI if necessary.
-    auto& [unicast_seen, multicast_seen] = observed_hosts.at(_host);
-    if (_multicast) {
-        if (!multicast_seen) {
-            VSOMEIP_INFO << "KPI NET4 First SD multicast message from " << _host;
-            multicast_seen = true;
-        }
-    } else {
-        if (!unicast_seen) {
-            VSOMEIP_INFO << "KPI NET4 First SD unicast message from " << _host;
-            unicast_seen = true;
-        }
+    const auto its_last_multicast = last_multicast_processed_.load();
+    std::string its_age{"never"};
+    if (its_last_multicast != std::chrono::steady_clock::time_point{}) {
+        its_age =
+                std::to_string(std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - its_last_multicast)
+                                       .count())
+                + "ms ago";
     }
-}
 
-void service_discovery_impl::clear_observed_host() {
-    observed_hosts.clear();
+    VSOMEIP_ERROR_P << "Offer watchdog expired after " << offers_watchdog_time_.count() << "ms: offers_received=" << offers_received_.load()
+                    << " (" << offers_received_after_last_resume_.load()
+                    << " when armed), offer entries sent=" << offer_entries_sent_.load() << " ("
+                    << offer_entries_sent_after_last_resume_.load() << " when armed), own multicast received=" << its_own_multicast
+                    << ", joined " << sd_multicast_ << "=" << std::boolalpha << its_joined << ", last multicast processed " << its_age;
+
+    if (its_endpoint) {
+        its_endpoint->log_multicast_backlog();
+    }
 }
 
 } // namespace sd

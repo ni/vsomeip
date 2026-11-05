@@ -18,7 +18,7 @@
 #include "../implementation/configuration/include/configuration.hpp"
 
 #include "../../implementation/configuration/include/configuration_impl.hpp"
-#include "../../implementation/configuration/include/configuration_plugin.hpp"
+#include "../../implementation/configuration/include/configuration_plugin_impl.hpp"
 #include "../../implementation/protocol/include/protocol.hpp"
 #include "../../implementation/security/include/policy_manager_impl.hpp"
 
@@ -37,11 +37,9 @@ namespace vsomeip = vsomeip_v3;
 #define EXPECTED_ROUTING_MANAGER_HOST "my_application"
 
 // Logging
-#define EXPECTED_VERSION_LOGGING_ENABLED false
 #define EXPECTED_VERSION_LOGGING_INTERVAL 15
 
 // Request debounce time
-#define EXPECTED_DEFAULT_REQUEST_DEBOUNCE_TIME 10
 #define EXPECTED_GLOBAL_REQUEST_DEBOUNCE_TIME 33
 
 // Application
@@ -128,14 +126,7 @@ std::shared_ptr<vsomeip::configuration> load_config(std::string key, std::string
 
     // `configuration_plugin_impl` does caching based on `key`, so each test needs to pass a
     // different value
-    std::shared_ptr<vsomeip::configuration> conf;
-    auto plugin = vsomeip::plugin_manager::get()->get_plugin(vsomeip::plugin_type_e::CONFIGURATION_PLUGIN, VSOMEIP_CFG_LIBRARY);
-    if (plugin) {
-        auto conf_plugin = std::dynamic_pointer_cast<vsomeip::configuration_plugin>(plugin);
-        if (conf_plugin) {
-            conf = conf_plugin->get_configuration(key, "");
-        }
-    }
+    std::shared_ptr<vsomeip::configuration> conf = vsomeip_v3::configuration_plugin_impl::get()->get_configuration(key, "");
 
     return conf;
 }
@@ -166,14 +157,8 @@ void check_file(const std::string& _config_file, const std::string& _expected_un
 #endif
 
     // 1. Create configuration object
-    std::shared_ptr<vsomeip::configuration> its_configuration;
-    auto its_plugin = vsomeip::plugin_manager::get()->get_plugin(vsomeip::plugin_type_e::CONFIGURATION_PLUGIN, VSOMEIP_CFG_LIBRARY);
-    if (its_plugin) {
-        auto its_configuration_plugin = std::dynamic_pointer_cast<vsomeip::configuration_plugin>(its_plugin);
-        if (its_configuration_plugin) {
-            its_configuration = its_configuration_plugin->get_configuration(EXPECTED_ROUTING_MANAGER_HOST, "");
-        }
-    }
+    std::shared_ptr<vsomeip::configuration> its_configuration =
+            vsomeip_v3::configuration_plugin_impl::get()->get_configuration(EXPECTED_ROUTING_MANAGER_HOST, "");
 
     // 2. Did we get a configuration object?
     if (0 == its_configuration) {
@@ -198,12 +183,6 @@ void check_file(const std::string& _config_file, const std::string& _expected_un
 
     EXPECT_TRUE(its_configuration->check_suppress_events(0x0024, 0x5555, 0x8011)); // "ANY" INSTANCE
     EXPECT_FALSE(its_configuration->check_suppress_events(0x0024, 0x5555, 0x8016)); // "ANY" INSTANCE
-
-    vsomeip::cfg::configuration_impl its_copied_config(static_cast<vsomeip::cfg::configuration_impl&>(*its_configuration));
-    vsomeip::cfg::configuration_impl* its_new_config = new vsomeip::cfg::configuration_impl(its_copied_config);
-    delete its_new_config;
-
-    its_configuration->set_configuration_path("/my/test/path");
 
     // 3. Check host address
     boost::asio::ip::address its_host_unicast_address = its_configuration->get_unicast_address();
@@ -233,9 +212,6 @@ void check_file(const std::string& _config_file, const std::string& _expected_un
 
     // file permissions
     EXPECT_EQ(0222u, its_configuration->get_permissions_uds());
-
-    // selective broadcasts
-    EXPECT_TRUE(its_configuration->supports_selective_broadcasts(boost::asio::ip::make_address("160.160.160.160")));
 
     // tracing
     std::shared_ptr<vsomeip::cfg::trace> its_trace = its_configuration->get_trace();
@@ -333,7 +309,7 @@ void check_file(const std::string& _config_file, const std::string& _expected_un
     EXPECT_TRUE(check<size_t>(io_threads, _expected_application_threads, "IO THREADS"));
     EXPECT_TRUE(check<size_t>(request_time, _expected_application_request_debounce_time, "REQUEST DEBOUNCE TIME"));
 
-    EXPECT_EQ(0x9933, its_configuration->get_id("other_application"));
+    EXPECT_EQ(0x5533, its_configuration->get_id("other_application"));
 
     std::map<vsomeip::plugin_type_e, std::set<std::string>> its_plugins = its_configuration->get_plugins(EXPECTED_ROUTING_MANAGER_HOST);
     EXPECT_EQ(1u, its_plugins.size());
@@ -343,10 +319,6 @@ void check_file(const std::string& _config_file, const std::string& _expected_un
             EXPECT_EQ(std::string("libtestlibraryname.so." + std::to_string(VSOMEIP_APPLICATION_PLUGIN_VERSION)), its_library);
         }
     }
-    EXPECT_EQ(vsomeip::plugin_type_e::CONFIGURATION_PLUGIN, its_plugin->get_plugin_type());
-    EXPECT_EQ("vsomeip-configuration-plugin", its_plugin->get_plugin_name());
-    EXPECT_EQ(1u, its_plugin->get_plugin_version());
-
     // 5. Services
     std::string its_unicast_address = its_configuration->get_unicast_address(0x1234, 0x0022);
     uint16_t its_reliable_port = its_configuration->get_reliable_port(0x1234, 0x0022);
@@ -477,15 +449,15 @@ void check_file(const std::string& _config_file, const std::string& _expected_un
 #if !defined(VSOMEIP_DISABLE_SECURITY) && !defined(__QNX__)
     vsomeip_sec_client_t its_x123_x456 = utility::create_uds_client(0x123, 0x456, 0);
 
-    EXPECT_TRUE(its_configuration->check_routing_credentials(0x7788, its_x123_x456));
+    EXPECT_TRUE(its_configuration->check_routing_credentials(0x5588, its_x123_x456));
 
     // GID does not match
     vsomeip_sec_client_t its_x123_x222 = utility::create_uds_client(0x123, 0x222, 0);
-    EXPECT_FALSE(its_configuration->check_routing_credentials(0x7788, its_x123_x222));
+    EXPECT_FALSE(its_configuration->check_routing_credentials(0x5588, its_x123_x222));
 
     // UID does not match
     vsomeip_sec_client_t its_x333_x456 = utility::create_uds_client(0x333, 0x456, 0);
-    EXPECT_FALSE(its_configuration->check_routing_credentials(0x7788, its_x333_x456));
+    EXPECT_FALSE(its_configuration->check_routing_credentials(0x5588, its_x333_x456));
 
     // client is not the routing manager
     vsomeip_sec_client_t its_x888_x999 = utility::create_uds_client(0x888, 0x999, 0);
@@ -679,9 +651,8 @@ void check_file(const std::string& _config_file, const std::string& _expected_un
     EXPECT_TRUE(check<int32_t>(cyclic_offer_delay, static_cast<int32_t>(_expected_cyclic_offer_delay), "SD CYCLIC OFFER DELAY"));
     EXPECT_TRUE(
             check<bool>(wait_route_netlink_notification, _expected_wait_route_netlink_notification, "SD WAIT ROUTE NETLINK NOTIFICATION"));
-    EXPECT_EQ(1000u, its_configuration->get_sd_offer_debounce_time());
-
-    ASSERT_TRUE(vsomeip::plugin_manager::get()->unload_plugin(vsomeip::plugin_type_e::CONFIGURATION_PLUGIN));
+    EXPECT_EQ(10u, its_configuration->get_sd_offer_debounce_time());
+    EXPECT_EQ(11u, its_configuration->get_sd_find_debounce_time());
 }
 
 TEST(configuration_test, check_config_file) {
@@ -709,6 +680,7 @@ TEST(configuration_test, default_values) {
 
     // check a few default values
     EXPECT_EQ(conf->get_diagnosis_address(), VSOMEIP_DIAGNOSIS_ADDRESS);
+    EXPECT_EQ(conf->get_network_state_log_interval(), VSOMEIP_DEFAULT_LOG_NETWORK);
 
     EXPECT_EQ(conf->get_local_tcp_user_timeout(), VSOMEIP_DEFAULT_TCP_USER_TIMEOUT);
     EXPECT_EQ(conf->get_local_tcp_keepidle(), VSOMEIP_DEFAULT_TCP_KEEPIDLE);
@@ -832,6 +804,26 @@ TEST(configuration_test, version_and_status) {
     // configured application with default values
     EXPECT_EQ(conf->get_status_log_interval("app2", false), VSOMEIP_DEFAULT_LOG_STATUS);
     EXPECT_EQ(conf->get_version_log_interval("app2", false), VSOMEIP_DEFAULT_LOG_NETWORK);
+}
+
+TEST(configuration_test, network_state_log_interval) {
+    /// check behavior of "network_state_log_interval": unlike "version_log_interval" and
+    /// "status_log_interval", it only ever applies to the routing manager (the host), so it has
+    /// no per-application override and no host/non-host distinction.
+
+    write_config("network_state_log_interval.json", R"(
+{
+    "logging":
+    {
+        "network_state_log_interval": "12"
+    }
+}
+    )");
+
+    std::shared_ptr<vsomeip::configuration> conf = load_config("network_state_log_interval", "network_state_log_interval.json");
+    ASSERT_TRUE(conf);
+
+    EXPECT_EQ(conf->get_network_state_log_interval(), 12'000);
 }
 
 TEST(configuration_test, eventgroup_multiple_events) {

@@ -5,9 +5,6 @@
 
 #pragma once
 
-#include <condition_variable>
-#include <queue>
-#include <thread>
 #include <unordered_map>
 
 #include "../include/boardnet_endpoint_host.hpp"
@@ -31,19 +28,31 @@ public:
                           const std::shared_ptr<configuration>& _configuration);
     ~endpoint_manager_impl();
 
-    std::shared_ptr<boardnet_endpoint> find_or_create_remote_client(service_t _service, instance_t _instance, bool _reliable);
+    // Stores result of comparing a new offer for a known service instance
+    // @see endpoint_manager_impl::is_remote_service_known
+    struct remote_offer_state {
+        bool reliable_known{false};
+        bool unreliable_known{false};
+        bool reliable_removed{false};
+        bool unreliable_removed{false};
+        bool drop_offer{false};
+        bool endpoints_changed{false};
+    };
 
-    void find_or_create_remote_client(service_t _service, instance_t _instance);
-    void start_endpoint(vsomeip_v3::boardnet_endpoint& _endpoint);
+    std::shared_ptr<boardnet_endpoint> find_or_create_remote_client(service_t _service, instance_t _instance, major_version_t _major,
+                                                                    bool _reliable);
+
+    void find_or_create_remote_client(service_t _service, instance_t _instance, major_version_t _major);
     void is_remote_service_known(service_t _service, instance_t _instance, major_version_t _major, minor_version_t _minor,
-                                 const boost::asio::ip::address& _reliable_address, uint16_t _reliable_port, bool& _reliable_known,
-                                 const boost::asio::ip::address& _unreliable_address, uint16_t _unreliable_port, bool& _unreliable_known,
-                                 bool& _drop_offer) const;
-    void add_remote_service_info(service_t _service, instance_t _instance, const std::shared_ptr<endpoint_definition>& _ep_definition);
-    void add_remote_service_info(service_t _service, instance_t _instance,
+                                 const boost::asio::ip::address& _reliable_address, uint16_t _reliable_port,
+                                 const boost::asio::ip::address& _unreliable_address, uint16_t _unreliable_port,
+                                 remote_offer_state& _state) const;
+    void add_remote_service_info(service_t _service, instance_t _instance, major_version_t _major,
+                                 const std::shared_ptr<endpoint_definition>& _ep_definition);
+    void add_remote_service_info(service_t _service, instance_t _instance, major_version_t _major,
                                  const std::shared_ptr<endpoint_definition>& _ep_definition_reliable,
                                  const std::shared_ptr<endpoint_definition>& _ep_definition_unreliable);
-    void clear_remote_service_info(service_t _service, instance_t _instance, bool _reliable);
+    void clear_remote_service_info(service_t _service, instance_t _instance, major_version_t _major, bool _reliable);
 
     std::shared_ptr<boardnet_endpoint> create_server_endpoint(uint16_t _port, bool _reliable, bool _start);
 
@@ -53,7 +62,7 @@ public:
                                                                       instance_t _instance, bool& _is_found, bool _is_multicast = false);
     bool remove_server_endpoint(uint16_t _port, bool _reliable);
 
-    void clear_client_endpoints(service_t _service, instance_t _instance, bool _reliable);
+    void clear_client_endpoints(service_t _service, instance_t _instance, major_version_t _major, bool _reliable);
     void find_or_create_multicast_endpoint(service_t _service, instance_t _instance, const boost::asio::ip::address& _sender,
                                            const boost::asio::ip::address& _address, uint16_t _port);
     void clear_multicast_endpoints(service_t _service, instance_t _instance);
@@ -63,7 +72,7 @@ public:
     void print_status() const;
 
     bool create_routing_root(std::shared_ptr<local_server>& _root, const transport_protocol_e& _type, bool& _is_socket_activated,
-                             const std::shared_ptr<routing_host>& _host);
+                             const std::shared_ptr<routing_host>& _host, const std::string& _env);
 
     instance_t find_instance(service_t _service, boardnet_endpoint* const _endpoint) const;
     instance_t find_instance_multicast(service_t _service, const boost::asio::ip::address& _sender) const;
@@ -86,9 +95,7 @@ public:
     void log_client_states() const;
     void log_server_states() const;
 
-    // add join/leave options
-    void add_multicast_option(const multicast_option_t& _option);
-    std::unordered_set<client_t> get_connected_clients() const;
+    std::unordered_map<client_t, vsomeip_sec_client_t> get_connected_clients() const;
     void suspend();
     void resume();
     void start();
@@ -105,9 +112,12 @@ public:
 
     bool get_guest(client_t _client, boost::asio::ip::address& _address, port_t& _port) const;
 
+    void add_local_routing_endpoint(std::shared_ptr<local_endpoint> _ep);
+
 private:
-    std::shared_ptr<boardnet_endpoint> find_remote_client(service_t _service, instance_t _instance, bool _reliable);
-    std::shared_ptr<boardnet_endpoint> create_remote_client(service_t _service, instance_t _instance, bool _reliable);
+    std::shared_ptr<boardnet_endpoint> find_remote_client(service_t _service, instance_t _instance, major_version_t _major, bool _reliable);
+    std::shared_ptr<boardnet_endpoint> create_remote_client(service_t _service, instance_t _instance, major_version_t _major,
+                                                            bool _reliable);
     std::shared_ptr<boardnet_endpoint> create_client_endpoint(const boost::asio::ip::address& _address, uint16_t _local_port,
                                                               uint16_t _remote_port, bool _reliable);
 
@@ -119,18 +129,13 @@ private:
     // TCP routing root acceptor bound to the configured host address+port; used by guests.
     bool create_local_tcp_acceptor(std::shared_ptr<local_acceptor>& _tcp_acceptor) const;
     void setup_root_server(std::shared_ptr<local_server>& _root, std::shared_ptr<local_acceptor> _acceptor,
-                           const std::shared_ptr<routing_host>& _host);
-
-    // process join/leave options
-    void process_multicast_options();
+                           const std::shared_ptr<routing_host>& _host, const std::string& _env);
 
     bool is_used_endpoint(boardnet_endpoint* const _endpoint) const;
 
-    client_t get_client() const;
-    std::string get_client_host() const;
-
-    void add_local_routing_endpoint(std::shared_ptr<local_endpoint> _ep);
-    void add_local_routing_endpoint_unlocked(client_t _client, const std::shared_ptr<local_endpoint>& _ep);
+    /// @return true if _ep was installed as the live routing endpoint for _client, false if it was
+    /// only queued as pending because an existing endpoint for _client is still being cleaned up.
+    bool add_local_routing_endpoint_unlocked(client_t _client, const std::shared_ptr<local_endpoint>& _ep);
 
 private:
     boost::asio::io_context& io_;
@@ -141,11 +146,12 @@ private:
     bool const is_uds_preferred_;
 
     mutable std::recursive_mutex endpoint_mutex_;
-    // Client endpoints for remote services
-    service_instance_map<std::map<bool, std::shared_ptr<endpoint_definition>>> remote_service_info_;
+    // Client endpoints for remote services -- keyed including major version: two majors of the
+    // same (service, instance), discovered from different remote hosts, must not collapse into a
+    // single tracked endpoint.
+    versioned_service_instance_map<std::map<bool, std::shared_ptr<endpoint_definition>>> remote_service_info_;
 
-    typedef service_instance_map<std::map<bool, std::shared_ptr<boardnet_endpoint>>> remote_services_t;
-    remote_services_t remote_services_;
+    versioned_service_instance_map<std::map<bool, std::shared_ptr<boardnet_endpoint>>> remote_services_;
 
     using client_endpoints_t = std::map<boost::asio::ip::address,
                                         std::map<uint16_t, std::map<bool, std::map<partition_id_t, std::shared_ptr<boardnet_endpoint>>>>>;
@@ -163,13 +169,6 @@ private:
     // Multicast endpoint info (notifications)
     service_instance_map<std::shared_ptr<endpoint_definition>> multicast_info_;
     auxiliary_context auxiliary_context_;
-
-    // Socket option processing (join, leave)
-    std::mutex options_mutex_;
-    bool is_processing_options_;
-    std::condition_variable options_condition_;
-    std::queue<multicast_option_t> options_queue_;
-    std::thread options_thread_;
 
     mutable std::mutex routing_endpoint_mtx_;
     std::unordered_map<client_t, std::shared_ptr<local_endpoint>> routing_endpoints_;

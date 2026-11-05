@@ -77,6 +77,23 @@ ecu_config& ecu_config::with_initial_delay(uint32_t min, uint32_t max) {
     service_discovery_.initial_delay_max_ = max;
     return *this;
 }
+
+ecu_config& ecu_config::add_acceptance(acceptance_config rule) {
+    acceptances_.push_back(std::move(rule));
+    return *this;
+}
+
+ecu_config& ecu_config::add_secure_service(service_instance si) {
+    secure_services_.push_back(si);
+    return *this;
+}
+
+ecu_config& ecu_config::with_diagnosis(vsomeip::diagnosis_t diagnosis, vsomeip::diagnosis_t mask) {
+    diagnosis_ = diagnosis;
+    diagnosis_mask_ = mask;
+    return *this;
+}
+
 namespace {
 
 template<typename T>
@@ -117,6 +134,37 @@ void to_json(std::ostringstream& o, const eventgroup_config& eg) {
     o << " }";
 }
 
+/// One "offers"/"requests" section of a policy body. The legacy single-instance form is enough
+/// here and implies "all methods" for requests.
+void write_policy_section(std::ostringstream& o, char const* _key, std::vector<service_instance> const& _instances) {
+    o << R"( ")" << _key << R"(" : [)";
+    for (size_t i = 0; i < _instances.size(); ++i) {
+        o << R"( { "service" : ")" << to_hex(_instances[i].service_) << R"(", "instance" : ")" << to_hex(_instances[i].instance_) << "\" }";
+        if (i + 1 < _instances.size()) {
+            o << ",";
+        }
+    }
+    o << " ]";
+}
+
+void to_json(std::ostringstream& o, const security_credentials& credentials) {
+    o << R"({ "credentials" : { "uid" : ")" << credentials.uid_ << R"(", "gid" : ")" << credentials.gid_ << R"(" })";
+    if (!credentials.offers_.empty() || !credentials.requests_.empty()) {
+        o << R"(, "allow" : {)";
+        if (!credentials.offers_.empty()) {
+            write_policy_section(o, "offers", credentials.offers_);
+        }
+        if (!credentials.offers_.empty() && !credentials.requests_.empty()) {
+            o << ",";
+        }
+        if (!credentials.requests_.empty()) {
+            write_policy_section(o, "requests", credentials.requests_);
+        }
+        o << " }";
+    }
+    o << " }";
+}
+
 void to_json(std::ostringstream& o, const service_config& svc) {
     o << R"({ "service" : ")" << to_hex(svc.si_.service_) << "\",";
     o << R"( "instance" : ")" << to_hex(svc.si_.instance_) << "\"";
@@ -150,6 +198,39 @@ void to_json(std::ostringstream& o, const service_config& svc) {
         o << "}]" << "}";
     }
     o << " }";
+}
+
+void to_json(std::ostringstream& o, const std::string& value) {
+    o << '"' << value << '"';
+}
+
+void to_json(std::ostringstream& o, const acceptance_port_range& range) {
+    o << "{";
+    if (range.ports_) {
+        o << R"( "first" : ")" << range.ports_->first_ << R"(", "last" : ")" << range.ports_->last_ << "\",";
+    }
+    o << R"( "type" : ")" << (range.type_ == port_type::secure ? "secure" : "optional") << "\" }";
+}
+
+void to_json(std::ostringstream& o, const acceptance_config& acceptance) {
+    o << R"({ "address" : ")" << acceptance.address_.to_string() << "\"";
+    if (!acceptance.activation_paths_.empty()) {
+        o << R"(, "path" : )";
+        write_array(o, acceptance.activation_paths_);
+    }
+    if (!acceptance.unreliable_.empty()) {
+        o << R"(, "unreliable" : )";
+        write_array(o, acceptance.unreliable_);
+    }
+    if (!acceptance.reliable_.empty()) {
+        o << R"(, "reliable" : )";
+        write_array(o, acceptance.reliable_);
+    }
+    o << " }";
+}
+
+void to_json(std::ostringstream& o, const service_instance& si) {
+    o << R"({ "service" : ")" << to_hex(si.service_) << R"(", "instance" : ")" << to_hex(si.instance_) << "\" }";
 }
 
 template<typename T>
@@ -188,18 +269,25 @@ void write_client_ports(std::ostringstream& o, const client_port_config& cp) {
     o << R"( } ])";
 }
 
+void write_security(std::ostringstream& o, const security_config& security) {
+    o << R"("security" : { "check_credentials" : ")" << (security.check_credentials_ ? "true" : "false") << "\"";
+    if (!security.allowed_.empty()) {
+        o << R"(, "policies" : )";
+        write_array(o, security.allowed_);
+    }
+    o << " }";
+}
+
 void write_service_discovery(std::ostringstream& o, bool enabled, const service_discovery_config& sd) {
     o << R"("service-discovery" : { "enable" : ")" << (enabled ? "true" : "false") << "\"";
     if (enabled) {
-        o << R"(, "multicast" : "224.244.224.245")";
-        o << R"(, "port" : "30490")";
-        o << R"(, "protocol" : "udp")";
         o << R"(, "initial_delay_min" : ")" << sd.initial_delay_min_ << "\"";
         o << R"(, "initial_delay_max" : ")" << sd.initial_delay_max_ << "\"";
-        o << R"(, "repetitions_base_delay" : "200")";
-        o << R"(, "repetitions_max" : "3")";
-        o << R"(, "ttl" : "3")";
-        o << R"(, "cyclic_offer_delay" : "2000")";
+        o << R"(, "repetitions_max" : ")" << sd.repetitions_max_ << "\"";
+        if (sd.repetitions_base_delay_) {
+            o << R"(, "repetitions_base_delay" : ")" << *sd.repetitions_base_delay_ << "\"";
+        }
+        o << R"(, "ttl" : ")" << sd.ttl_ << "\"";
     }
     o << R"( })";
 }
@@ -215,6 +303,13 @@ std::string to_json_string(const ecu_config& cfg) {
     o << R"( "logging" : { "level" : "trace", "console" : "true", "version" : { "interval" : 0 } },)";
     o << R"( "tracing" : { "enable" : "true" },)";
 
+    if (cfg.diagnosis_) {
+        o << R"( "diagnosis" : ")" << to_hex(*cfg.diagnosis_) << "\",";
+    }
+    if (cfg.diagnosis_mask_) {
+        o << R"( "diagnosis_mask" : ")" << to_hex(*cfg.diagnosis_mask_) << "\",";
+    }
+
     o << R"( "applications" : )";
     write_array(o, cfg.apps_);
     o << ",";
@@ -228,6 +323,18 @@ std::string to_json_string(const ecu_config& cfg) {
     if (cfg.client_ports_) {
         o << " ";
         write_client_ports(o, *cfg.client_ports_);
+        o << ",";
+    }
+
+    if (!cfg.acceptances_.empty()) {
+        o << R"( "acceptances" : )";
+        write_array(o, cfg.acceptances_);
+        o << ",";
+    }
+
+    if (!cfg.secure_services_.empty()) {
+        o << R"( "secure-services" : )";
+        write_array(o, cfg.secure_services_);
         o << ",";
     }
 
@@ -252,6 +359,12 @@ std::string to_json_string(const ecu_config& cfg) {
 
     if (cfg.uds_preferred_) {
         o << R"( "uds-preferred" : "true",)";
+    }
+
+    if (cfg.security_) {
+        o << " ";
+        write_security(o, *cfg.security_);
+        o << ",";
     }
 
     o << " ";

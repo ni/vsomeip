@@ -11,6 +11,7 @@
 #include <map>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <set>
 #include <thread>
 #include <atomic>
@@ -44,7 +45,7 @@ struct policy;
 
 class routing_manager_stub : public routing_host, public std::enable_shared_from_this<routing_manager_stub> {
 public:
-    routing_manager_stub(routing_manager_stub_host* _host, const std::shared_ptr<configuration>& _configuration);
+    routing_manager_stub(routing_manager_stub_host* _host, const std::shared_ptr<configuration>& _configuration, const std::string& _env);
     virtual ~routing_manager_stub();
 
     void init();
@@ -81,7 +82,6 @@ public:
 
     bool send_ping(client_t _client);
     bool is_registered(client_t _client) const;
-    client_t get_client() const;
     void handle_credentials(const client_t _client, std::set<protocol::service>& _requests);
     void handle_requests(const client_t _client, std::set<protocol::service>& _requests);
 
@@ -164,18 +164,30 @@ private:
     void add_pending_security_update_timer(pending_security_update_id_t _id);
 
     std::shared_ptr<local_endpoint> find_local_routing_endpoint(client_t _client) const;
+
+    /// @brief Returns the security credentials of @p _client, taken from its routing connection.
+    ///
+    /// The sec_client is owned by the local endpoint that accepted the client, which is the only
+    /// authoritative source: it is filled once from the peer credentials of that very connection.
+    ///
+    /// @return the peer's sec_client, or std::nullopt when the client has no routing connection.
+    [[nodiscard]] std::optional<vsomeip_sec_client_t> find_sec_client(client_t _client) const;
+
     static bool send_local(std::shared_ptr<local_endpoint> const& _ep, std::vector<byte_t> const& _data);
 
 private:
     routing_manager_stub_host* host_;
     boost::asio::io_context& io_;
+    const std::string env_;
 
     std::shared_ptr<local_server> uds_root_; // Routing manager endpoint for UDS
     std::shared_ptr<local_server> tcp_root_; // Routing manager endpoint for TCP
 
+    std::atomic<uint32_t> lc_token_{0};
+
     std::mutex lazy_load_mtx_;
 
-    std::map<client_t, service_instance_map<std::pair<major_version_t, minor_version_t>>> routing_info_;
+    std::map<client_t, versioned_service_instance_map<minor_version_t>> routing_info_;
     mutable std::mutex routing_info_mutex_;
     std::shared_ptr<configuration> configuration_;
 

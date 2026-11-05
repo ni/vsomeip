@@ -6,12 +6,16 @@
 #include "../include/configuration_plugin_impl.hpp"
 #include "../include/configuration_impl.hpp"
 
-VSOMEIP_PLUGIN(vsomeip_v3::configuration_plugin_impl)
-
 namespace vsomeip_v3 {
 
-configuration_plugin_impl::configuration_plugin_impl() :
-    plugin_impl("vsomeip-configuration-plugin", VSOMEIP_CONFIG_PLUGIN_VERSION, plugin_type_e::CONFIGURATION_PLUGIN) { }
+std::shared_ptr<configuration_plugin_impl> configuration_plugin_impl::the_configuration_plugin__ =
+        std::make_shared<configuration_plugin_impl>();
+
+std::shared_ptr<configuration_plugin_impl> configuration_plugin_impl::get() {
+    return the_configuration_plugin__;
+}
+
+configuration_plugin_impl::configuration_plugin_impl() { }
 
 configuration_plugin_impl::~configuration_plugin_impl() { }
 
@@ -47,6 +51,8 @@ std::shared_ptr<configuration> configuration_plugin_impl::get_configuration(cons
     auto its_configuration = make_configuration(_path);
     its_configuration->load(_name);
     configurations_[its_key] = its_configuration;
+
+    VSOMEIP_INFO << "Loaded configuration for application '" << _name << "' from '" << its_key << "'";
 
     return its_configuration;
 }

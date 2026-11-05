@@ -9,8 +9,8 @@ project (vsomeip)
 set (VSOMEIP_NAME vsomeip3)
 
 set (VSOMEIP_MAJOR_VERSION 3)
-set (VSOMEIP_MINOR_VERSION 7)
-set (VSOMEIP_PATCH_VERSION 6)
+set (VSOMEIP_MINOR_VERSION 8)
+set (VSOMEIP_PATCH_VERSION 0)
 set (VSOMEIP_HOTFIX_VERSION 0)
 
 set (VSOMEIP_VERSION ${VSOMEIP_MAJOR_VERSION}.${VSOMEIP_MINOR_VERSION}.${VSOMEIP_PATCH_VERSION})
@@ -118,11 +118,6 @@ else ()
 set (VSOMEIP_ENABLE_DLT 1)
 endif ()
 
-# Signal handling
-if (ENABLE_SIGNAL_HANDLING)
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DVSOMEIP_ENABLE_SIGNAL_HANDLING")
-endif ()
-
 if (NOT MSVC)
     # Sanitizers
     if (ENABLE_SANITIZERS)
@@ -170,13 +165,6 @@ endif (NOT MSVC)
 # Compatibility
 if (ENABLE_COMPAT)
     message(FATAL "ENABLE_COMPAT is no longer supported, please remove this option")
-endif ()
-
-# Multiple routing managers
-if (ENABLE_MULTIPLE_ROUTING_MANAGERS)
-set (VSOMEIP_ENABLE_MULTIPLE_ROUTING_MANAGERS 1)
-else ()
-set (VSOMEIP_ENABLE_MULTIPLE_ROUTING_MANAGERS 0)
 endif ()
 
 # Security / Policy handling
@@ -254,11 +242,6 @@ else ()
     endif(NOT SystemD_FOUND)
 endif ()
 
-# Multiple routing managers
-if (VSOMEIP_ENABLE_MULTIPLE_ROUTING_MANAGERS EQUAL 1)
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DVSOMEIP_ENABLE_MULTIPLE_ROUTING_MANAGERS")
-endif ()
-
 ################################################################################
 # Directories
 ################################################################################
@@ -305,8 +288,6 @@ if (NOT GIT_BRANCH_RESULT EQUAL 0)
 endif()
 add_compile_definitions(VSOMEIP_GIT_COMMIT="${VSOMEIP_GIT_COMMIT}@${VSOMEIP_GIT_BRANCH}")
 
-
-
 if (MSVC)
     message("using MSVC Compiler")
     # add_definitions(-DVSOMEIP_DLL_COMPILATION) now it is controlled per target
@@ -340,32 +321,10 @@ set(VSOMEIP_INTERNAL_INCLUDE_DIRS ${VSOMEIP_CONFIG_INCLUDE_DIR} ${VSOMEIP_LOGGER
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
 ################################################################################
-# Configuration library
-################################################################################
-file(GLOB ${VSOMEIP_NAME}-cfg_SRC
-    "implementation/configuration/src/*.cpp"
-)
-list(SORT ${VSOMEIP_NAME}-cfg_SRC)
-if (VSOMEIP_ENABLE_MULTIPLE_ROUTING_MANAGERS EQUAL 0)
-    add_library(${VSOMEIP_NAME}-cfg-internal OBJECT ${${VSOMEIP_NAME}-cfg_SRC})
-    target_include_directories(${VSOMEIP_NAME}-cfg-internal PRIVATE ${VSOMEIP_INTERNAL_INCLUDE_DIRS})
-    target_link_libraries(${VSOMEIP_NAME}-cfg-internal ${VSOMEIP_NAME}-internal ${Boost_LIBRARIES} ${USE_RT} ${DL_LIBRARY} ${SystemD_LIBRARIES})
-
-    add_library(${VSOMEIP_NAME}-cfg SHARED $<TARGET_OBJECTS:${VSOMEIP_NAME}-cfg-internal>)
-    set_target_properties (${VSOMEIP_NAME}-cfg PROPERTIES VERSION ${VSOMEIP_VERSION} SOVERSION ${VSOMEIP_MAJOR_VERSION})
-    target_compile_features(${VSOMEIP_NAME}-cfg PRIVATE cxx_std_20)
-    if (MSVC)
-        set_target_properties(${VSOMEIP_NAME}-cfg-internal PROPERTIES COMPILE_DEFINITIONS "VSOMEIP_DLL_COMPILATION_PLUGIN")
-        set_target_properties(${VSOMEIP_NAME}-cfg PROPERTIES COMPILE_DEFINITIONS "VSOMEIP_DLL_COMPILATION_PLUGIN")
-    endif()
-
-    target_link_libraries(${VSOMEIP_NAME}-cfg ${VSOMEIP_NAME} ${Boost_LIBRARIES} ${USE_RT} ${DL_LIBRARY} ${SystemD_LIBRARIES})
-endif ()
-
-################################################################################
 # Base library
 ################################################################################
 file(GLOB ${VSOMEIP_NAME}_SRC
+    "implementation/configuration/src/*.cpp"
     "implementation/endpoints/src/*.cpp"
     "implementation/logger/src/*.cpp"
     "implementation/tracing/src/*.cpp"
@@ -375,12 +334,15 @@ file(GLOB ${VSOMEIP_NAME}_SRC
     "implementation/routing/src/*.cpp"
     "implementation/runtime/src/*.cpp"
     "implementation/security/src/*.cpp"
+    "implementation/service_discovery/src/*.cpp"
     "implementation/utility/src/*.cpp"
     "implementation/thread_manager/src/*.cpp"
 )
-if (VSOMEIP_ENABLE_MULTIPLE_ROUTING_MANAGERS EQUAL 1)
-list(APPEND ${VSOMEIP_NAME}_SRC "implementation/configuration/src/configuration_impl.cpp")
-endif()
+# e2e_protection has nested profile/ subdirectories, so glob it recursively
+file(GLOB_RECURSE ${VSOMEIP_NAME}-e2e_SRC
+    "implementation/e2e_protection/src/*.cpp"
+)
+list(APPEND ${VSOMEIP_NAME}_SRC ${${VSOMEIP_NAME}-e2e_SRC})
 
 if (WIN32)
 list(FILTER ${VSOMEIP_NAME}_SRC EXCLUDE REGEX ".*uds.*")
@@ -394,8 +356,6 @@ target_include_directories(${VSOMEIP_NAME}-internal PRIVATE ${VSOMEIP_INTERNAL_I
 target_link_libraries(${VSOMEIP_NAME}-internal ${Boost_LIBRARIES} ${USE_RT} ${DL_LIBRARY} ${DLT_LIBRARIES} ${SystemD_LIBRARIES} ${CMAKE_THREAD_LIBS_INIT})
 
 add_library(${VSOMEIP_NAME} SHARED $<TARGET_OBJECTS:${VSOMEIP_NAME}-internal>)
-# libvsomeip also `dlopens` other libs (cfg, sd, ..) so leave a rpath hint
-set_target_properties(${VSOMEIP_NAME} PROPERTIES BUILD_RPATH "${CMAKE_BINARY_DIR}")
 set_target_properties(${VSOMEIP_NAME} PROPERTIES VERSION ${VSOMEIP_VERSION} SOVERSION ${VSOMEIP_MAJOR_VERSION})
 target_compile_features(${VSOMEIP_NAME} PRIVATE cxx_std_20)
 if (MSVC)
@@ -430,56 +390,8 @@ if(NOT WIN32)
     target_link_options(${VSOMEIP_NAME} PRIVATE "LINKER:-as-needed")
 endif()
 
-################################################################################
-# Service Discovery library
-################################################################################
-file(GLOB ${VSOMEIP_NAME}-sd_SRC
-    "implementation/service_discovery/src/*.cpp"
-)
-list(SORT ${VSOMEIP_NAME}-sd_SRC)
-
-add_library(${VSOMEIP_NAME}-sd-internal OBJECT ${${VSOMEIP_NAME}-sd_SRC})
-target_include_directories(${VSOMEIP_NAME}-sd-internal PRIVATE ${VSOMEIP_INTERNAL_INCLUDE_DIRS})
-target_link_libraries(${VSOMEIP_NAME}-sd-internal ${VSOMEIP_NAME}-internal ${Boost_LIBRARIES} ${USE_RT} ${DL_LIBRARY} ${SystemD_LIBRARIES} ${CMAKE_THREAD_LIBS_INIT})
-
-add_library(${VSOMEIP_NAME}-sd SHARED $<TARGET_OBJECTS:${VSOMEIP_NAME}-sd-internal>)
-target_compile_features(${VSOMEIP_NAME}-sd PRIVATE cxx_std_20)
-set_target_properties (${VSOMEIP_NAME}-sd PROPERTIES VERSION ${VSOMEIP_VERSION} SOVERSION ${VSOMEIP_MAJOR_VERSION})
-if (MSVC)
-    set_target_properties(${VSOMEIP_NAME}-sd-internal PROPERTIES COMPILE_DEFINITIONS "VSOMEIP_DLL_COMPILATION_PLUGIN")
-    set_target_properties(${VSOMEIP_NAME}-sd PROPERTIES COMPILE_DEFINITIONS "VSOMEIP_DLL_COMPILATION_PLUGIN")
-endif ()
-
-target_link_libraries(${VSOMEIP_NAME}-sd ${VSOMEIP_NAME} ${Boost_LIBRARIES} ${USE_RT} ${DL_LIBRARY} ${SystemD_LIBRARIES} ${CMAKE_THREAD_LIBS_INIT})
-
-
-################################################################################
-# E2E library
-################################################################################
-file(GLOB_RECURSE ${VSOMEIP_NAME}-e2e_SRC
-    "implementation/e2e_protection/src/*.cpp"
-)
-list(SORT ${VSOMEIP_NAME}-e2e_SRC)
-
-add_library(${VSOMEIP_NAME}-e2e-internal OBJECT ${${VSOMEIP_NAME}-e2e_SRC})
-target_include_directories(${VSOMEIP_NAME}-e2e-internal PRIVATE ${VSOMEIP_INTERNAL_INCLUDE_DIRS})
-target_link_libraries(${VSOMEIP_NAME}-e2e-internal ${VSOMEIP_NAME}-internal ${Boost_LIBRARIES} ${USE_RT} ${DL_LIBRARY} ${SystemD_LIBRARIES})
-
-add_library(${VSOMEIP_NAME}-e2e SHARED $<TARGET_OBJECTS:${VSOMEIP_NAME}-e2e-internal>)
-target_compile_features(${VSOMEIP_NAME}-e2e PRIVATE cxx_std_20)
-set_target_properties (${VSOMEIP_NAME}-e2e PROPERTIES VERSION ${VSOMEIP_VERSION} SOVERSION ${VSOMEIP_MAJOR_VERSION})
-if (MSVC)
-    set_target_properties(${VSOMEIP_NAME}-e2e-internal PROPERTIES COMPILE_DEFINITIONS "VSOMEIP_DLL_COMPILATION_PLUGIN")
-    set_target_properties(${VSOMEIP_NAME}-e2e PROPERTIES COMPILE_DEFINITIONS "VSOMEIP_DLL_COMPILATION_PLUGIN")
-endif ()
-
-target_link_libraries(${VSOMEIP_NAME}-e2e ${VSOMEIP_NAME} ${Boost_LIBRARIES} ${USE_RT} ${DL_LIBRARY} ${SystemD_LIBRARIES})
-
 if(${CMAKE_SYSTEM_NAME} MATCHES "QNX")
     target_link_directories(${VSOMEIP_NAME} PUBLIC "${QNX_TARGET}/${CPUVARDIR}/io-sock/lib")
-    target_link_libraries(${VSOMEIP_NAME}-e2e socket)
-    target_link_libraries(${VSOMEIP_NAME}-cfg socket)
-    target_link_libraries(${VSOMEIP_NAME}-sd socket)
     target_link_libraries(${VSOMEIP_NAME} PRIVATE socket)
 endif()
 
@@ -575,26 +487,6 @@ install (
     LIBRARY DESTINATION "${INSTALL_LIB_DIR}" COMPONENT
     ARCHIVE DESTINATION "${INSTALL_LIB_DIR}"
     COMPONENT dev
-)
-
-install (
-    TARGETS ${VSOMEIP_NAME}-e2e
-    LIBRARY DESTINATION "${INSTALL_LIB_DIR}" COMPONENT shlib
-    RUNTIME DESTINATION "${INSTALL_BIN_DIR}" COMPONENT bin
-)
-
-if (VSOMEIP_ENABLE_MULTIPLE_ROUTING_MANAGERS EQUAL 0)
-install (
-    TARGETS ${VSOMEIP_NAME}-cfg
-    LIBRARY DESTINATION "${INSTALL_LIB_DIR}" COMPONENT shlib
-    RUNTIME DESTINATION "${INSTALL_BIN_DIR}" COMPONENT bin
-)
-endif ()
-
-install (
-    TARGETS ${VSOMEIP_NAME}-sd
-    LIBRARY DESTINATION "${INSTALL_LIB_DIR}" COMPONENT shlib
-    RUNTIME DESTINATION "${INSTALL_BIN_DIR}" COMPONENT bin
 )
 
 install (

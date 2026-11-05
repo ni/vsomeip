@@ -9,6 +9,7 @@
 #include <mutex>
 #include <atomic>
 #include <chrono>
+#include <optional>
 #include <span>
 #include <tuple>
 #include <vector>
@@ -72,7 +73,8 @@ public:
     using available_t = std::map<service_t, std::map<instance_t, std::map<major_version_t, minor_version_t>>>;
 
     routing_manager_client(routing_manager_host* _host, bool _client_side_logging,
-                           const std::set<std::tuple<service_t, instance_t>>& _client_side_logging_filter);
+                           const std::set<std::tuple<service_t, instance_t>>& _client_side_logging_filter,
+                           std::shared_ptr<trace::connector_impl> _trace_connector);
     virtual ~routing_manager_client();
 
     void init();
@@ -105,7 +107,6 @@ public:
 
     void on_routing_info(const byte_t* _data, uint32_t _size);
 
-    void register_client_error_handler(client_t _client, const std::shared_ptr<local_endpoint>& _endpoint, connection_role_e _role);
     void cleanup_client(client_t _client, bool _due_to_error, connection_role_e _role);
 
     // local_endpoint_manager_host
@@ -142,9 +143,7 @@ public:
     std::shared_ptr<event> find_consumed_event(service_t _service, instance_t _instance, event_t _event) const;
 
     std::string const& get_name() const;
-    std::string get_client_host() const;
     vsomeip_sec_client_t get_sec_client() const;
-    void set_sec_client_port(port_t _port);
 
     bool is_available(service_t _service, instance_t _instance, major_version_t _major, minor_version_t _minor) const;
     bool are_available(available_t& _available, service_t _service, instance_t _instance, major_version_t _major,
@@ -181,10 +180,10 @@ private:
                         event_t _event, const std::shared_ptr<debounce_filter_impl_t>& _filter);
 
     void send_subscribe_nack(client_t _subscriber, service_t _service, instance_t _instance, eventgroup_t _eventgroup, event_t _event,
-                             remote_subscription_id_t _id);
+                             remote_subscription_id_t _id, std::scoped_lock<std::mutex> const& _provider_lock);
 
     void send_subscribe_ack(client_t _subscriber, service_t _service, instance_t _instance, eventgroup_t _eventgroup, event_t _event,
-                            remote_subscription_id_t _id);
+                            remote_subscription_id_t _id, std::scoped_lock<std::mutex> const& _provider_lock);
 
     void update_subscription_state_and_notify(service_t _service, instance_t _instance, eventgroup_t _eventgroup, event_t _event,
                                               subscription_outcome_e _outcome);
@@ -247,8 +246,6 @@ private:
     /// Drops the remote subscribers of the services WE offer to @p _client and
     /// removes the accepted provider endpoint. Leaves all consumer-side state
     /// (available services, outbound consumer endpoint, re-request) untouched.
-    /// Additionally drops the shared client -> sec_client mapping, but only if the
-    /// consumer role also has no live endpoint (see remove_sec_client_mapping_if_orphaned).
     ///
     /// @param _client what client
     /// @param _due_to_error, true in case of error
@@ -259,25 +256,24 @@ private:
     /// Marks the services @p _client offered to us as unavailable and closes our
     /// outbound consumer endpoint to it. Leaves all provider-side state (the
     /// peer's subscriptions to our services, our accepted server endpoint) untouched.
-    /// Additionally drops the shared client -> sec_client mapping, but only if the
-    /// provider role also has no live endpoint (see remove_sec_client_mapping_if_orphaned).
     ///
     /// @param _client what client
     /// @param _due_to_error, true in case of error
     /// @param _requested_services what services were requested by us and offered by client;
     void remove_local_consumer(client_t _client, bool _due_to_error, local_service_table& _requested_services);
 
-    /// @brief Drops the shared client -> sec_client mapping for @p _client, but only once it has no
-    /// local endpoint left in either role (provider or consumer). Safe to call with no role mutex
-    /// held: it takes the endpoint-manager and consumer locks itself.
-    void remove_sec_client_mapping_if_orphaned(client_t _client);
-
     void cleanup_consumer();
+    void clear_provider_endpoints(std::scoped_lock<std::mutex> const& _provider_lock);
     void cleanup_subscriber(std::scoped_lock<std::mutex> const& _provider_lock);
 
     client_t find_local_client(service_t _service, instance_t _instance) const;
     bool send_event(client_t _client, std::shared_ptr<message> _message, bool _force) override;
     void remove_consumer_eventgroup_info(service_t _service, instance_t _instance, eventgroup_t _eventgroup);
+    std::shared_ptr<local_endpoint> find_provider_endpoint(client_t _client, std::scoped_lock<std::mutex> const& _provider_lock) const;
+    std::shared_ptr<local_endpoint> find_provider_endpoint_by_address(const boost::asio::ip::address& _peer_address, port_t _peer_port,
+                                                                      std::scoped_lock<std::mutex> const& _provider_lock) const;
+    uint32_t provider_token(client_t _client, std::scoped_lock<std::mutex> const& _provider_lock) const;
+
     /**
      * @brief insert subscription into events/eventgroups
      *
@@ -297,9 +293,50 @@ private:
     bool is_offered(service_t _service, instance_t _instance, std::scoped_lock<std::mutex> const&) const;
     // Lock-token overloads of the queries above: the caller must already hold the matching mutex
     // (provider_mutex_ for is_offered, consumer_mutex_ for is_requested/is_subscribed).
+    // is_requested/find_requested_major match both a concrete request for (_service, _instance)
+    // and a wildcard one for (_service, ANY_INSTANCE). Offers are always concrete, so is_offered
+    // and find_offered_major have no wildcard case.
     bool is_requested(service_t _service, instance_t _instance, std::scoped_lock<std::mutex> const&) const;
     bool is_subscribed(service_t _service, instance_t _instance, eventgroup_t _eventgroup, event_t _event,
                        std::scoped_lock<std::mutex> const&) const;
+
+    // An application offers/consumes at most one major per (service, instance), so the major it is
+    // talking about is recoverable from its own bookkeeping. ANY_MAJOR means "not deducible".
+    major_version_t find_offered_major(service_t _service, instance_t _instance, std::scoped_lock<std::mutex> const& _provider_lock) const;
+    major_version_t find_requested_major(service_t _service, instance_t _instance,
+                                         std::scoped_lock<std::mutex> const& _consumer_lock) const;
+    major_version_t find_subscribed_major(service_t _service, instance_t _instance,
+                                          std::scoped_lock<std::mutex> const& _consumer_lock) const;
+
+    /**
+     * @brief Writes _major into the pending provided-event registrations of (_service, _instance) and
+     * returns those that changed, i.e. the ones the routing manager has not been told about yet.
+     *
+     * The provider-side counterpart of release_consumed_event_registrations(), called by
+     * offer_service() - the point at which the offered major becomes known. Re-offering under the
+     * same major changes nothing and yields an empty result.
+     */
+    std::vector<protocol::register_event_data> stamp_provided_event_registrations(service_t _service, instance_t _instance,
+                                                                                  major_version_t _major,
+                                                                                  std::scoped_lock<std::mutex, std::mutex> const& _lock);
+
+    /// True while a pending provided registration still awaits its major, i.e. must not be put on the
+    /// wire yet. Provider-only: a provider never offers ANY_MAJOR, whereas a consumer may request it.
+    static bool awaits_major(protocol::register_event_data const& _registration) { return _registration.service_key_.major_ == ANY_MAJOR; }
+
+    /**
+     * @brief Moves the consumed-event registrations pending for (_service, _instance) into
+     * consumed_event_registrations_ with _major applied, and returns them for forwarding.
+     *
+     * The consumer-side counterpart of stamp_provided_event_registrations(), called by
+     * request_service() - the point at which the requested major becomes known. _instance ==
+     * ANY_INSTANCE releases the registrations pending for every instance of _service, matching the
+     * scope of the request that resolved them.
+     */
+    std::vector<protocol::register_event_data> release_consumed_event_registrations(service_t _service, instance_t _instance,
+                                                                                    major_version_t _major,
+                                                                                    std::scoped_lock<std::mutex> const& _lock);
+
     void register_provider_event(service_t _service, instance_t _instance, event_t _notifier, const std::set<eventgroup_t>& _eventgroups,
                                  const event_type_e _type, std::chrono::milliseconds _cycle, bool _change_resets_cycle,
                                  bool _update_on_change, epsilon_change_func_t _epsilon_change_func,
@@ -321,11 +358,12 @@ private:
     bool send_event_to(const client_t _client, const std::shared_ptr<endpoint_definition>& _target, std::shared_ptr<message> _message);
 
     // routing_host
-    client_t get_client() const override;
     void on_message(const byte_t* _data, length_t _length, const local_client_data& _peer_data) override;
     void lazy_load(const std::string& _client_host) override;
     std::shared_ptr<policy_manager_impl> get_policy_manager() const override;
     std::shared_ptr<security> get_security() const override;
+
+    client_t get_client() const;
 
     void collect_pending_subscriptions(service_t _service, instance_t _instance, major_version_t _major,
                                        std::vector<subscription_data_t>& _collected_subscriptions, std::scoped_lock<std::mutex> const&);
@@ -339,6 +377,9 @@ private:
     std::set<std::shared_ptr<provider_event>> find_provided_events_by_group(service_t _service, instance_t _instance, eventgroup_t _group,
                                                                             std::scoped_lock<std::mutex> const& _provider_lock) const;
 
+    void add_provider_endpoint(std::shared_ptr<local_endpoint> _ep, uint32_t _token, std::scoped_lock<std::mutex> const& _provider_lock);
+    void remove_provider_endpoint(client_t _client, bool _due_to_error, std::scoped_lock<std::mutex> const& _lock);
+
     void finish_shutdown();
 
     std::shared_ptr<local_endpoint> find_or_create_consumer_ep(client_t _client);
@@ -347,6 +388,7 @@ private:
     void remove_consumer(client_t _client, bool _due_to_error, std::scoped_lock<std::mutex> const& _consumer_lock);
 
     async::hook flush_consumer();
+    async::hook flush_provider();
 
 private:
     routing_manager_host* host_;
@@ -396,12 +438,25 @@ private:
     // is trying to accessing data relevant for its
     // "provider" side (offering of events, pending_offers, offered services etc.)
     mutable std::mutex provider_mutex_;
+
+    // Generation counter for accepted provider connections. Bumped as the first step of both
+    // stop() and reconnect() (under provider_mutex_) so that any connection accepted under a
+    // prior generation is recognized as stale and dropped instead of being installed.
+    uint32_t provider_token_{};
+    struct received_connection {
+        std::shared_ptr<local_endpoint> active_;
+        std::shared_ptr<local_endpoint> pending_;
+        uint32_t token_{};
+    };
+    // entries are not allowed to be removed (to avoid token collision)
+    std::unordered_map<client_t, received_connection> provider_endpoints_;
+
     // Set of services provided by this client
     service_instance_map<std::unordered_map<event_t, std::shared_ptr<provider_event>>> provided_events_;
     service_instance_map<std::map<eventgroup_t, uint32_t>> remote_subscriber_count_;
     local_service_table offered_services_;
-    // Event registrations offered by this client, awaiting (re)send to the routing manager.
-    std::vector<protocol::register_event_data> pending_provided_event_registrations_;
+    // Provided-event registrations, kept until unregister_event() and re-sent on every (re)registration; awaits_major() ones are skipped.
+    std::vector<protocol::register_event_data> provided_event_registrations_;
     // lc_count is bumped on every rmc::stop and on any reconnect invocation,
     // protected by the provider_mutex_, but it may be read during a start of the
     // sender at an arbitrary moment in time - although it shouldn't.
@@ -417,8 +472,13 @@ private:
         std::shared_ptr<local_endpoint> ep_;
         boost::asio::ip::address address_;
         port_t port_;
+        std::optional<vsomeip_sec_client_t> sec_client_;
     };
     std::unordered_map<client_t, consumer_data> consumer_;
+
+    /// @brief Returns the offering client's security identity as reported by the routing manager
+    /// host, or std::nullopt when unknown (no consumer entry, or the host did not report it).
+    [[nodiscard]] std::optional<vsomeip_sec_client_t> find_consumer_sec_client(client_t _client) const;
 
     bool request_debounce_timer_running_;
     boost::asio::steady_timer request_debounce_timer_;
@@ -456,11 +516,14 @@ private:
         }
     };
     std::set<subscription_data_t> pending_subscriptions_;
-    // Event registrations consumed (subscribed) by this client, awaiting (re)send to the routing manager.
+    // Consumed-event registrations, kept until unregister_event() and re-sent on every (re)registration. Unresolved ones are pending.
+    std::vector<protocol::register_event_data> consumed_event_registrations_;
+    // Consumed registrations of a not-yet-requested service. Membership here - not ANY_MAJOR, a legitimate request - marks them unresolved.
     std::vector<protocol::register_event_data> pending_consumed_event_registrations_;
 
     async::trigger on_sender_stopped_;
     async::trigger on_consumer_flushed_;
+    async::trigger on_provider_flushed_;
 };
 
 } // namespace vsomeip_v3

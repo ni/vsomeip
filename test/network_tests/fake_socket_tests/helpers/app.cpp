@@ -3,7 +3,13 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+#if __GNUC__ > 11 && !defined(__clang__)
+#pragma GCC diagnostic ignored "-Wstringop-overflow"
+#endif
+
 #include "app.hpp"
+
+#include <set>
 
 namespace vsomeip_v3::testing {
 app::app(std::string const& _name) : app_(vsomeip::runtime::get()->create_application(_name)) { }
@@ -28,6 +34,10 @@ app::~app() {
     app_->register_availability_handler(
             vsomeip::ANY_SERVICE, vsomeip::ANY_INSTANCE,
             std::bind(&app::on_availability, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3));
+    app_->register_subscription_status_handler(vsomeip::ANY_SERVICE, vsomeip::ANY_INSTANCE, vsomeip::ANY_EVENTGROUP, vsomeip::ANY_EVENT,
+                                               std::bind(&app::on_subscription_status_changed, this, std::placeholders::_1,
+                                                         std::placeholders::_2, std::placeholders::_3, std::placeholders::_4,
+                                                         std::placeholders::_5));
 
     runner_ = std::thread([this] { app_->start(); });
     return true;
@@ -38,6 +48,7 @@ void app::stop() {
         return;
     }
     is_running_ = false;
+    app_->unregister_subscription_status_handler(vsomeip::ANY_SERVICE, vsomeip::ANY_INSTANCE, vsomeip::ANY_EVENTGROUP, vsomeip::ANY_EVENT);
     app_->clear_all_handler();
     app_->stop();
     if (runner_.joinable()) {
@@ -147,9 +158,26 @@ void app::register_group_subscription_handler(event_ids const& _ei, subscription
     app_->register_subscription_handler(_ei.si_.service_, _ei.si_.instance_, _ei.eventgroup_id_, _handler);
 }
 
+void app::register_group_subscription_handler_sec(event_ids const& _ei, subscription_handler_sec_t const& _handler) {
+    TEST_LOG << "[app] \"" << app_->get_name() << "\" is installing a custom sec handler for: " << _ei;
+    app_->register_subscription_handler(_ei.si_.service_, _ei.si_.instance_, _ei.eventgroup_id_, _handler);
+}
+
 void app::unregister_group_subscription_handler(event_ids const& _ei) {
     TEST_LOG << "[app] \"" << app_->get_name() << "\" is uninstalling a custom handler for: " << _ei;
     app_->unregister_subscription_handler(_ei.si_.service_, _ei.si_.instance_, _ei.eventgroup_id_);
+}
+
+void app::unsubscribe(event_ids const& _ei) {
+    TEST_LOG << "[app] \"" << app_->get_name() << "\" is unsubscribing from: " << _ei;
+    app_->unsubscribe(_ei.si_.service_, _ei.si_.instance_, _ei.eventgroup_id_, _ei.event_id_);
+    app_->release_event(_ei.si_.service_, _ei.si_.instance_, _ei.event_id_);
+}
+
+void app::unsubscribe_eventgroup(event_ids const& _ei) {
+    TEST_LOG << "[app] \"" << app_->get_name() << "\" is unsubscribing from: " << _ei;
+    app_->unsubscribe(_ei.si_.service_, _ei.si_.instance_, _ei.eventgroup_id_, ANY_EVENT);
+    app_->release_event(_ei.si_.service_, _ei.si_.instance_, _ei.event_id_);
 }
 
 void app::answer_request(request const& _r, std::function<std::vector<unsigned char>()> _payload_creator) {
@@ -182,11 +210,18 @@ void app::register_availability_bool_handler(service_instance _si) {
     app_->register_availability_handler(_si.service_, _si.instance_, handler, _si.major_, _si.minor_);
 }
 
-void app::send_event(event_ids const& _ei, std::vector<unsigned char> const& _payload) {
+void app::send_event(event_ids const& _ei, std::vector<unsigned char> const& _payload, bool _force) {
     TEST_LOG << "[app] \"" << app_->get_name() << "\" is sending: " << _ei;
     auto payload = vsomeip::runtime::get()->create_payload();
     payload->set_data(_payload);
-    app_->notify(_ei.si_.service_, _ei.si_.instance_, _ei.event_id_, payload, false);
+    app_->notify(_ei.si_.service_, _ei.si_.instance_, _ei.event_id_, payload, _force);
+}
+
+void app::send_event_one(event_ids const& _ei, std::vector<unsigned char> const& _payload, client_t _client, bool _force) {
+    TEST_LOG << "[app] \"" << app_->get_name() << "\" is sending to client " << _client << ": " << _ei;
+    auto payload = vsomeip::runtime::get()->create_payload();
+    payload->set_data(_payload);
+    app_->notify_one(_ei.si_.service_, _ei.si_.instance_, _ei.event_id_, payload, _client, _force);
 }
 
 void app::send_request(request const& _req) {
@@ -214,9 +249,24 @@ void app::stop_offer_event(event_ids const& _ei) {
 }
 
 void app::update_security_policy_configuration(uid_t _uid, gid_t _gid) {
-    auto policy_ = std::make_shared<vsomeip::policy>();
+    auto its_policy = std::make_shared<vsomeip::policy>();
+    boost::icl::interval_set<gid_t> its_gids;
+    its_gids.insert(boost::icl::interval<gid_t>::closed(_gid, _gid));
+    its_policy->credentials_ += std::make_pair(boost::icl::interval<uid_t>::closed(_uid, _uid), its_gids);
+    its_policy->allow_who_ = true;
+    its_policy->allow_what_ = true;
+
+    // the payload is what the routing manager distributes to its clients, so it has to carry the
+    // very same policy - a client can only apply what it receives here
+    std::vector<byte_t> its_data;
     auto its_payload = vsomeip::runtime::get()->create_payload();
-    app_->update_security_policy_configuration(_uid, _gid, policy_, its_payload,
+    if (its_policy->serialize(its_data)) {
+        its_payload->set_data(its_data);
+    } else {
+        TEST_LOG << "[app] \"" << app_->get_name() << "\" could not serialize the policy for " << _uid << "/" << _gid;
+    }
+
+    app_->update_security_policy_configuration(_uid, _gid, its_policy, its_payload,
                                                [](vsomeip_v3::security_update_state_e /*_status*/) { /* no reaction required*/ });
 }
 
@@ -234,8 +284,8 @@ void app::on_message(const std::shared_ptr<vsomeip::message>& _message) {
         payload.push_back(*ptr);
     }
     auto m = message{client_session{_message->get_client(), _message->get_session()},
-                     service_instance{_message->get_service(), _message->get_instance()}, _message->get_method(),
-                     _message->get_message_type(), std::move(payload)};
+                     service_instance{_message->get_service(), _message->get_instance(), _message->get_interface_version()},
+                     _message->get_method(), _message->get_message_type(), std::move(payload)};
     TEST_LOG << "[app] \"" << app_->get_name() << "\" received: " << m;
     message_record_.record(m);
 }
@@ -261,13 +311,14 @@ void app::on_subscription_status_changed(vsomeip::service_t _service, vsomeip::i
     subscription_record_.record(event_sub);
 }
 
+void app::request_event(event_ids const& _ei, vsomeip::event_type_e _et) {
+    TEST_LOG << "[app] \"" << app_->get_name() << "\" is requesting event: " << _ei;
+    app_->request_event(_ei.si_.service_, _ei.si_.instance_, _ei.event_id_, {_ei.eventgroup_id_}, _et, _ei.reliability_);
+}
+
 void app::subscribe(event_ids const& _ei, vsomeip::event_type_e _et) {
     TEST_LOG << "[app] \"" << app_->get_name() << "\" is requesting: " << _ei;
     std::set<vsomeip::eventgroup_t> its_eventgroups;
-    app_->register_subscription_status_handler(_ei.si_.service_, _ei.si_.instance_, _ei.eventgroup_id_, _ei.event_id_,
-                                               std::bind(&app::on_subscription_status_changed, this, std::placeholders::_1,
-                                                         std::placeholders::_2, std::placeholders::_3, std::placeholders::_4,
-                                                         std::placeholders::_5));
 
     its_eventgroups.insert(_ei.eventgroup_id_);
 
@@ -279,10 +330,6 @@ void app::subscribe(event_ids const& _ei, vsomeip::event_type_e _et) {
 void app::subscribe_eventgroup(event_ids const& _ei, vsomeip::event_type_e _et) {
     TEST_LOG << "[app] \"" << app_->get_name() << "\" is requesting: " << _ei;
     std::set<vsomeip::eventgroup_t> its_eventgroups;
-    app_->register_subscription_status_handler(_ei.si_.service_, _ei.si_.instance_, _ei.eventgroup_id_, _ei.event_id_,
-                                               std::bind(&app::on_subscription_status_changed, this, std::placeholders::_1,
-                                                         std::placeholders::_2, std::placeholders::_3, std::placeholders::_4,
-                                                         std::placeholders::_5));
 
     its_eventgroups.insert(_ei.eventgroup_id_);
     app_->request_event(_ei.si_.service_, _ei.si_.instance_, _ei.event_id_, its_eventgroups, _et, _ei.reliability_);
@@ -294,10 +341,6 @@ void app::subscribe_eventgroup(event_ids const& _ei, vsomeip::event_type_e _et) 
 void app::subscribe_with_debounce(event_ids const& _ei, vsomeip::event_type_e _et, debounce_filter_t const& filter) {
     TEST_LOG << "[app] \"" << app_->get_name() << "\" is requesting: " << _ei;
     std::set<vsomeip::eventgroup_t> its_eventgroups;
-    app_->register_subscription_status_handler(_ei.si_.service_, _ei.si_.instance_, _ei.eventgroup_id_, _ei.event_id_,
-                                               std::bind(&app::on_subscription_status_changed, this, std::placeholders::_1,
-                                                         std::placeholders::_2, std::placeholders::_3, std::placeholders::_4,
-                                                         std::placeholders::_5));
 
     its_eventgroups.insert(_ei.eventgroup_id_);
     app_->request_event(_ei.si_.service_, _ei.si_.instance_, _ei.event_id_, its_eventgroups, _et, _ei.reliability_);
@@ -314,5 +357,9 @@ void app::offer(service_instance _si, event_spec const& _ei, vsomeip::event_type
 
 void app::set_routing_state(vsomeip::routing_state_e _state) {
     app_->set_routing_state(_state);
+}
+
+void app::register_sd_acceptance_handler(sd_acceptance_handler_t const& _handler) {
+    app_->register_sd_acceptance_handler(_handler);
 }
 }

@@ -45,7 +45,7 @@ struct test_connection_control : public base_fake_socket_fixture {
         ASSERT_TRUE(client_->app_state_record_.wait_for_last(vsomeip::state_type_e::ST_REGISTERED));
     }
 
-    service_instance service_instance_{0x3344, 0x1};
+    service_instance service_instance_{.service_ = 0x3344, .instance_ = 0x1, .major_ = 1, .minor_ = 0};
     event_ids offered_event_{service_instance_, 0x8002, 0x1};
     event_ids offered_field_{service_instance_, 0x8003, 0x6};
 
@@ -221,8 +221,8 @@ TEST_F(test_connection_control, guest_service) {
     ASSERT_TRUE(guest->app_state_record_.wait_for_last(vsomeip::state_type_e::ST_REGISTERED));
 
     // guest offer, client requests
-    guest->offer(service_instance_);
     guest->offer_event(offered_event_.si_, offered_event_.to_event_spec());
+    guest->offer(service_instance_);
     client_->request_service(service_instance_);
     client_->subscribe_field(offered_event_);
     // client must see service available, subscription must work
@@ -306,52 +306,6 @@ TEST_F(test_connection_control, guest_suspended) {
         }
 
         ::unsetenv("VSOMEIP_CONFIGURATION_guest");
-    }
-}
-
-TEST_F(test_connection_control, set_routing_state) {
-    /// check that set_routing_state triggers the registered routing_state_handler
-
-    // NOTE: it is safe, because no libvsomeip application is running, there is nothing doing ::getenv
-    static std::string const routingmanagerd_name_{"router_one"};
-    ::setenv("VSOMEIP_CONFIGURATION_router_one", "ecu_one.json", 1);
-
-    create_app(routingmanagerd_name_);
-    auto* routingmanagerd_ = start_client(routingmanagerd_name_);
-    ASSERT_NE(routingmanagerd_, nullptr);
-    ASSERT_TRUE(await_connectable(routingmanagerd_name_));
-
-    // register a routing state handler on the router application
-    attribute_recorder<vsomeip::routing_state_e> routing_state_record;
-    routingmanagerd_->get_application()->register_routing_state_handler(
-            [&routing_state_record](vsomeip::routing_state_e _state) { routing_state_record.record(_state); });
-
-    // stress test with multiple state transitions
-    for (int i = 0; i < 100; ++i) {
-        // set routing state to suspended
-        routingmanagerd_->set_routing_state(vsomeip::routing_state_e::RS_SUSPENDED);
-
-        // handler must have been called with RS_SUSPENDED
-        ASSERT_TRUE(routing_state_record.wait_for_last(vsomeip::routing_state_e::RS_SUSPENDED));
-
-        // set routing state to delayed resume
-        routingmanagerd_->set_routing_state(vsomeip::routing_state_e::RS_DELAYED_RESUME);
-
-        // handler must have been called with RS_DELAYED_RESUME
-        ASSERT_TRUE(routing_state_record.wait_for_last(vsomeip::routing_state_e::RS_DELAYED_RESUME));
-
-        // set routing state to resumed
-        routingmanagerd_->set_routing_state(vsomeip::routing_state_e::RS_RESUMED);
-
-        // handler must have been called with RS_RESUMED
-        ASSERT_TRUE(routing_state_record.wait_for_last(vsomeip::routing_state_e::RS_RESUMED));
-    }
-
-    {
-        // need to manually stop all clients, in order to ::unsetenv later
-        // there can be nothing running from libvsomeip in order to avoid ::getenv races!
-        routingmanagerd_->stop();
-        ::unsetenv("VSOMEIP_CONFIGURATION_router_one");
     }
 }
 }

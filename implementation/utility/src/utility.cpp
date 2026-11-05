@@ -14,11 +14,11 @@
 #else
 #include <dlfcn.h>
 #include <cerrno>
-#include <signal.h>
 #include <unistd.h>
 #include <fcntl.h>
 #include <sys/mman.h>
 #include <thread>
+#include <fstream>
 #include <sstream>
 #endif
 
@@ -289,16 +289,39 @@ std::string utility::get_base_path(const std::string& _network) {
     return base_path() + _network + "-";
 }
 
+client_t utility::get_client_id_base(diagnosis_t _diagnosis, diagnosis_t _mask) {
+    return static_cast<client_t>((_diagnosis << 8) & _mask);
+}
+
+bool utility::is_client_id_in_range(client_t _client, diagnosis_t _diagnosis, diagnosis_t _mask) {
+    return static_cast<client_t>(_client & _mask) == get_client_id_base(_diagnosis, _mask);
+}
+
+bool utility::is_valid_client_id(client_t _client, diagnosis_t _diagnosis, diagnosis_t _mask, message_type_e _type) {
+    const bool its_own_id = is_client_id_in_range(_client, _diagnosis, _mask);
+
+    // We only expect responses to requests sent by this host.
+    if (_type == message_type_e::MT_RESPONSE) {
+        return its_own_id;
+    }
+
+    // We only expect requests from other hosts.
+    if (_type == message_type_e::MT_REQUEST) {
+        return !its_own_id;
+    }
+
+    // Any id is valid or can be ignored in every other situation.
+    return true;
+}
+
 client_t utility::request_client_id(const std::shared_ptr<configuration>& _config, std::string_view _name, client_t _client) {
     std::scoped_lock its_lock(get_utility_mutex());
     auto& data = get_utility_data();
-    static const uint16_t its_max_num_clients = get_max_client_number(_config);
+    const uint16_t its_max_num_clients = get_max_client_number(_config);
 
-    static const uint16_t its_diagnosis_mask = _config->get_diagnosis_mask();
-    static const uint16_t its_client_mask = static_cast<uint16_t>(~its_diagnosis_mask);
-    static const client_t its_masked_diagnosis_address =
-            static_cast<client_t>((_config->get_diagnosis_address() << 8) & its_diagnosis_mask);
-    static const client_t its_smallest_client = its_masked_diagnosis_address;
+    const uint16_t its_diagnosis_mask = _config->get_diagnosis_mask();
+    const uint16_t its_client_mask = static_cast<uint16_t>(~its_diagnosis_mask);
+    const client_t its_smallest_client = get_client_id_base(_config->get_diagnosis_address(), its_diagnosis_mask);
 
     auto r = data.find(_config->get_network());
     if (r == data.end()) {
@@ -408,8 +431,14 @@ void utility::reset_client_ids(const std::string& _network) {
 
 void utility::set_thread_niceness(int _nice) noexcept {
 #if defined(__linux__)
+    // nice(0) cannot change the priority, but glibc still implements it as
+    // getpriority()+setpriority(), which a seccomp allow-list may reject with SIGSYS.
+    if (_nice == VSOMEIP_DEFAULT_IO_THREAD_NICE_LEVEL) {
+        return;
+    }
+
     errno = 0;
-    if ((nice(_nice) == -1) && (errno < 0)) {
+    if ((nice(_nice) == -1) && (errno != 0)) {
         VSOMEIP_WARNING << "Failed to set niceness for thread " << std::this_thread::get_id() << ", errno: " << errno;
         return;
     }
@@ -434,7 +463,7 @@ uint16_t utility::get_max_client_number(const std::shared_ptr<configuration>& _c
 }
 
 void utility::log_network_state(const std::shared_ptr<configuration>& _configuration, bool _tcp, bool _only_external) {
-#ifndef __linux__
+#if !defined(__linux__)
     (void)_tcp;
     (void)_only_external;
 #else
@@ -478,7 +507,9 @@ void utility::log_network_state(const std::shared_ptr<configuration>& _configura
             continue;
         }
 
-        if (_only_external && local_addr.substr(0, external_addr_hex.length()) != external_addr_hex) {
+        // sockets bound to 0.0.0.0 (e.g. multicast-receiving server endpoints) are always
+        // included, since they are not tied to a specific local/remote peer
+        if (_only_external && !local_addr.starts_with("00000000") && !local_addr.starts_with(external_addr_hex)) {
             continue;
         }
 

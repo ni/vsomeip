@@ -6,6 +6,7 @@
 #include <iomanip>
 
 #include "common/test_main.hpp"
+#include "common/timeout_scale.hpp"
 #include "multicast_group_test_globals.hpp"
 
 using namespace multicast_group_test;
@@ -20,12 +21,9 @@ TEST(MulticastGroupTest, ServiceOffersTheService) {
     ASSERT_TRUE(service_application) << "Should create a vsomeip application.";
     ASSERT_TRUE(service_application->init()) << "Should initialize application.";
 
-    // Offer the test service and client
-    service_application->offer_service(SERVICE_ID_MULTICAST, INSTANCE_ID, MAJOR_VERSION, MINOR_VERSION);
+    // Offer the events of the test service and client
     service_application->offer_event(SERVICE_ID_MULTICAST, INSTANCE_ID, EVENT_ID_MULTICAST, {EVENTGROUP_ID},
                                      vsomeip_v3::event_type_e::ET_EVENT);
-
-    service_application->offer_service(SERVICE_ID_UNICAST, INSTANCE_ID, MAJOR_VERSION, MINOR_VERSION);
     service_application->offer_event(SERVICE_ID_UNICAST, INSTANCE_ID, EVENT_ID_UNICAST, {EVENTGROUP_ID},
                                      vsomeip_v3::event_type_e::ET_EVENT);
 
@@ -46,6 +44,10 @@ TEST(MulticastGroupTest, ServiceOffersTheService) {
                 }
                 return true;
             });
+
+    // Offer the services, now that their events and handlers are in place
+    service_application->offer_service(SERVICE_ID_MULTICAST, INSTANCE_ID, MAJOR_VERSION, MINOR_VERSION);
+    service_application->offer_service(SERVICE_ID_UNICAST, INSTANCE_ID, MAJOR_VERSION, MINOR_VERSION);
 
     // Start the vsomeip application
     std::thread worker_thread([service_application] { service_application->start(); });
@@ -85,7 +87,7 @@ TEST(MulticastGroupTest, ServiceOffersTheService) {
     service_application->notify(SERVICE_ID_MULTICAST, INSTANCE_ID, EVENT_ID_MULTICAST, payload);
 
     // Sleep before stopping application
-    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    std::this_thread::sleep_for(common::scaled_timeout(std::chrono::milliseconds(100)));
 
     service_application->stop();
 

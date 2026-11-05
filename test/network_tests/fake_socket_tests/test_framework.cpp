@@ -24,8 +24,6 @@ std::string const router_one_name_ = "router_one";
 std::string const router_two_name_ = "router_two";
 std::string const ecu_two_server_name_ = "ecu_two_server";
 std::string const ecu_one_client_name_ = "ecu_one_client";
-std::string const ecu_one_server_name_ = "ecu_one_server";
-std::string const ecu_two_client_name_ = "ecu_two_client";
 
 struct test_sd_gate : public base_fake_socket_fixture {
 
@@ -61,7 +59,7 @@ TEST_F(test_sd_gate, test_sd_unicat_gate_early_loading) {
 
     // Create the gate and prepare the pipe, will be exchanged as soon as the SD unicast endpoint from ecu two is binded.
     std::shared_ptr<someip_gate> router_two_sd_gate = someip_gate::create();
-    ASSERT_TRUE(setup_data_pipe(ecu_two_.sd_endpoint(), router_two_name_, socket_role::server, router_two_sd_gate->get_data_pipe()));
+    ASSERT_TRUE(set_udp_data_pipe({ecu_two_.sd_endpoint(), router_two_name_}, udp_party::any(), router_two_sd_gate->get_data_pipe()));
 
     ecu_one_.start_apps();
     ecu_two_.start_apps();
@@ -104,8 +102,8 @@ TEST_F(test_sd_gate, test_sd_multicast_gate_late_loading) {
 
     // Create the gate and exchange the pipe immediatly.
     std::shared_ptr<someip_gate> router_one_sd_gate = someip_gate::create();
-    ASSERT_TRUE(setup_data_pipe(boost::asio::ip::udp::endpoint(boost::asio::ip::address_v4::any(), ecu_one_.sd_endpoint().port()),
-                                router_one_name_, socket_role::client, router_one_sd_gate->get_data_pipe()));
+    boost::asio::ip::udp::endpoint const multicast_ep{boost::asio::ip::make_address("224.224.224.0"), ecu_one_.sd_endpoint().port()};
+    ASSERT_TRUE(set_udp_data_pipe(udp_party::any(), {multicast_ep, router_one_name_}, router_one_sd_gate->get_data_pipe()));
 
     // Block the pipe when ecu one receved an offer.
     router_one_sd_gate->block_at({sd::entry_type_e::OFFER_SERVICE, 3}, 1);
@@ -157,8 +155,8 @@ struct test_someip_gate : public base_fake_socket_fixture {
         ecu_two_.start_apps();
         auto* server = ecu_two_.apps_[ecu_two_server_name_];
         ASSERT_NE(server, nullptr);
-        server->offer(si_);
         server->answer_request(_req, [_rsp_payload] { return _rsp_payload; });
+        server->offer(si_);
 
         // Consumer routing manager up, then the keeper (keeps the remote service referenced).
         ecu_one_.start_router();
@@ -356,9 +354,9 @@ TEST_F(test_someip_gate, blocks_request_then_response) {
 
     request const req{si_, method_, vsomeip::message_type_e::MT_REQUEST, false /* UDP */, req_payload};
 
-    // Server offers the service and registers a handler that replies with rsp_payload.
-    ecu_two_server_->offer(si_);
+    // Server registers a handler that replies with rsp_payload and offers the service.
     ecu_two_server_->answer_request(req, [rsp_payload] { return rsp_payload; });
+    ecu_two_server_->offer(si_);
 
     // Client discovers the service via SD.
     router_one->request_service(si_);
@@ -370,9 +368,9 @@ TEST_F(test_someip_gate, blocks_request_then_response) {
     auto response_gate = someip_gate::create();
 
     // request_gate on the receiver pipe: blocks REQUESTs arriving at router_two's socket.
-    ASSERT_TRUE(setup_data_pipe(svc_ep_, router_two_name_, socket_role::client, request_gate->get_data_pipe()));
+    ASSERT_TRUE(set_udp_data_pipe(udp_party::any(), {svc_ep_, router_two_name_}, request_gate->get_data_pipe()));
     // response_gate on the sender pipe: blocks RESPONSEs leaving router_two's socket.
-    ASSERT_TRUE(setup_data_pipe(svc_ep_, router_two_name_, socket_role::server, response_gate->get_data_pipe()));
+    ASSERT_TRUE(set_udp_data_pipe({svc_ep_, router_two_name_}, udp_party::any(), response_gate->get_data_pipe()));
 
     // --- Phase 1: block the REQUEST ---
     request_gate->block_at({.service_ = si_.service_, .method_ = method_, .type_ = vsomeip::message_type_e::MT_REQUEST});
@@ -430,7 +428,7 @@ TEST_F(test_someip_gate, orphan_response_after_client_id_reuse_is_dropped) {
 
     // Hold the RESPONSE at the provider's egress so it cannot reach the consumer yet.
     auto response_gate = someip_gate::create();
-    ASSERT_TRUE(setup_data_pipe(svc_ep_, router_two_name_, socket_role::server, response_gate->get_data_pipe()));
+    ASSERT_TRUE(set_udp_data_pipe({svc_ep_, router_two_name_}, udp_party::any(), response_gate->get_data_pipe()));
     response_gate->block_at({.service_ = si_.service_, .method_ = method_, .type_ = vsomeip::message_type_e::MT_RESPONSE});
 
     client_a->send_request(req);
@@ -480,7 +478,7 @@ TEST_F(test_someip_gate, orphan_response_after_release_service_is_dropped) {
 
     // Hold the RESPONSE at the provider's egress.
     auto response_gate = someip_gate::create();
-    ASSERT_TRUE(setup_data_pipe(svc_ep_, router_two_name_, socket_role::server, response_gate->get_data_pipe()));
+    ASSERT_TRUE(set_udp_data_pipe({svc_ep_, router_two_name_}, udp_party::any(), response_gate->get_data_pipe()));
     response_gate->block_at({.service_ = si_.service_, .method_ = method_, .type_ = vsomeip::message_type_e::MT_RESPONSE});
 
     consumer->send_request(req);

@@ -6,9 +6,7 @@
 #include "base_fake_socket_fixture.hpp"
 #include "test_logging.hpp"
 
-#include "../../../../implementation/configuration/include/configuration_plugin.hpp"
-
-#include <vsomeip/internal/plugin_manager.hpp>
+#include "../../../../implementation/configuration/include/configuration_plugin_impl.hpp"
 
 #include "internal.hpp"
 
@@ -51,12 +49,7 @@ void base_fake_socket_fixture::reset_socket_manager() {
 }
 
 void base_fake_socket_fixture::reset_configuration_cache() {
-    // The configuration plugin is loaded lazily by application_impl::init(), and get_plugin() does
-    // not load it: before the first application is created there is simply nothing to clear.
-    auto its_plugin = plugin_manager::get()->get_plugin(plugin_type_e::CONFIGURATION_PLUGIN, VSOMEIP_CFG_LIBRARY);
-    if (auto its_configuration_plugin = std::dynamic_pointer_cast<configuration_plugin>(its_plugin)) {
-        its_configuration_plugin->clear_configurations();
-    }
+    configuration_plugin_impl::get()->clear_configurations();
 }
 
 void base_fake_socket_fixture::use_configuration(std::string const& file_name) {
@@ -203,9 +196,8 @@ bool base_fake_socket_fixture::setup_data_pipe(std::string const& _client, std::
     return socket_manager_->setup_data_pipe(_client, _server, _applied_on, _pipe);
 }
 
-bool base_fake_socket_fixture::setup_data_pipe(boost::asio::ip::udp::endpoint const& _ep, std::string const& _app_name,
-                                               socket_role _applied_on, std::shared_ptr<data_pipe> const& _pipe) {
-    return socket_manager_->setup_data_pipe(_ep, _app_name, _applied_on, _pipe);
+bool base_fake_socket_fixture::set_udp_data_pipe(udp_party _sender, udp_party _receiver, std::shared_ptr<data_pipe> const& _pipe) {
+    return socket_manager_->set_udp_data_pipe(std::move(_sender), std::move(_receiver), _pipe);
 }
 
 [[nodiscard]] bool base_fake_socket_fixture::wait_for_command(std::string const& _client, std::string const& _server, protocol::id_e _id,
@@ -235,6 +227,10 @@ void base_fake_socket_fixture::fail_on_udp_port_bind(port_t _port, bool _fail) {
 }
 void base_fake_socket_fixture::fail_on_tcp_port_bind(port_t _port, bool _fail) {
     socket_manager_->fail_on_tcp_port_bind(_port, _fail);
+}
+
+void base_fake_socket_fixture::react_on_unassigned_udp_port(bool _react) {
+    socket_manager_->react_on_unassigned_udp_port(_react);
 }
 
 void base_fake_socket_fixture::set_ignore_broken_pipe(std::string const& _app_name, bool _set) {
@@ -289,6 +285,9 @@ void base_fake_socket_fixture::ignore_router_all_multicast_joins(std::string _ro
 
 void base_fake_socket_fixture::send_someip_sd_message(std::vector<unsigned char> const& _buffer, boost::asio::ip::udp::endpoint const& _src,
                                                       boost::asio::ip::udp::endpoint const& _dst) {
-    socket_manager_->send_someip(_buffer, _src, _dst);
+    // Bypasses udp_pipe_rules_ deliberately -- this injects synthetic traffic on a (possibly
+    // spoofed) sender endpoint, which must land regardless of any gate a test registered on that
+    // endpoint for the real application's own sends.
+    socket_manager_->deliver_udp_someip(_buffer, _src, _dst);
 }
 }

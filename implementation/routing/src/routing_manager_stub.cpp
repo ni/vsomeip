@@ -42,8 +42,9 @@ namespace vsomeip_v3 {
 
 #define VSOMEIP_LOG_PREFIX "rms"
 
-routing_manager_stub::routing_manager_stub(routing_manager_stub_host* _host, const std::shared_ptr<configuration>& _configuration) :
-    host_(_host), io_(_host->get_io()), configuration_(_configuration), is_socket_activated_(false),
+routing_manager_stub::routing_manager_stub(routing_manager_stub_host* _host, const std::shared_ptr<configuration>& _configuration,
+                                           const std::string& _env) :
+    host_(_host), io_(_host->get_io()), env_(_env), configuration_(_configuration), is_socket_activated_(false),
     routing_mode_(configuration_->is_local_routing()           ? routing_mode_e::UDS_ONLY
                           : configuration_->is_uds_preferred() ? routing_mode_e::UDS_AND_TCP
                                                                : routing_mode_e::TCP_ONLY),
@@ -54,9 +55,12 @@ routing_manager_stub::~routing_manager_stub() { }
 std::string routing_manager_stub::get_client_info(client_t _client) const {
     std::stringstream its_info;
     its_info << "[" << hex4(_client) << ", '" << utility::get_client_name(configuration_, _client) << "'";
-    if (vsomeip_sec_client_t its_sec_client;
-        get_policy_manager()->get_client_to_sec_client_mapping(_client, its_sec_client) && its_sec_client.port == VSOMEIP_SEC_PORT_UNUSED) {
-        its_info << ", uid " << its_sec_client.user;
+    if (auto its_endpoint = find_local_routing_endpoint(_client); its_endpoint) {
+        if (auto const its_sec_client = its_endpoint->get_sec_client(); its_sec_client.port == VSOMEIP_SEC_PORT_UNUSED) {
+            its_info << ", uid " << its_sec_client.user;
+        } else {
+            its_info << ", " << its_endpoint->peer_endpoint();
+        }
     }
     its_info << "]";
     return its_info.str();
@@ -68,10 +72,20 @@ void routing_manager_stub::init() {
 
 void routing_manager_stub::start() {
 
-    auto start_root = [](auto& root) {
+    auto start_root = [this](auto& root) {
         if (root) {
             root->set_id(VSOMEIP_ROUTING_CLIENT);
-            root->start();
+            root->start([weak_self = weak_from_this(), token = lc_token_.load()](auto ep) {
+                if (auto const self = weak_self.lock(); self) {
+                    if (auto epm = self->host_->get_endpoint_manager(); epm) {
+                        if (self->lc_token_ == token) {
+                            epm->add_local_routing_endpoint(ep);
+                        } else {
+                            ep->stop(true);
+                        }
+                    }
+                }
+            });
         }
     };
 
@@ -91,7 +105,7 @@ void routing_manager_stub::stop() {
             local_server = nullptr;
         }
     };
-
+    ++lc_token_;
     // Stop routing roots
     if (!is_socket_activated_) {
         stop_local_server(uds_root_);
@@ -166,9 +180,9 @@ void routing_manager_stub::on_message(const byte_t* _data, length_t _size, const
         if (protocol::service_data its_service_data;
             protocol::deserialize(its_service_data, _data + parsed_hdr_bytes, _size - parsed_hdr_bytes)) {
 
-            auto its_service = its_service_data.service_;
-            auto its_instance = its_service_data.instance_;
-            auto its_major = its_service_data.major_version_;
+            auto its_service = its_service_data.key_.service_;
+            auto its_instance = its_service_data.key_.instance_;
+            auto its_major = its_service_data.key_.major_;
             auto its_minor = its_service_data.minor_version_;
 
             if (its_id == protocol::id_e::OFFER_SERVICE_ID) {
@@ -192,10 +206,10 @@ void routing_manager_stub::on_message(const byte_t* _data, length_t _size, const
         if (protocol::subscribe_with_filter_data its_data;
             protocol::deserialize(its_data, _data + parsed_hdr_bytes, _size - parsed_hdr_bytes)) {
 
-            auto its_service = its_data.data_.service_;
-            auto its_instance = its_data.data_.instance_;
+            auto its_service = its_data.data_.service_key_.service_;
+            auto its_instance = its_data.data_.service_key_.instance_;
             auto its_eventgroup = its_data.data_.eventgroup_;
-            auto its_major = its_data.data_.major_;
+            auto its_major = its_data.data_.service_key_.major_;
             auto its_notifier = its_data.data_.event_;
             auto its_filter = its_data.filter_;
 
@@ -231,7 +245,8 @@ void routing_manager_stub::on_message(const byte_t* _data, length_t _size, const
 
     case protocol::id_e::UNSUBSCRIBE_ID: {
         if (protocol::subscribe_data its_data; protocol::deserialize(its_data, _data + parsed_hdr_bytes, _size - parsed_hdr_bytes)) {
-            host_->unsubscribe(its_client, its_data.service_, its_data.instance_, its_data.eventgroup_, its_data.event_);
+            host_->unsubscribe(its_client, its_data.service_key_.service_, its_data.service_key_.instance_, its_data.eventgroup_,
+                               its_data.event_);
         } else {
             VSOMEIP_ERROR_P << "Deserializing unsubscribe failed: " << utility::dump(_data, _size);
         }
@@ -241,11 +256,11 @@ void routing_manager_stub::on_message(const byte_t* _data, length_t _size, const
     case protocol::id_e::SUBSCRIBE_ACK_ID: {
         if (protocol::subscribe_answer_data its_data; protocol::deserialize(its_data, _data + parsed_hdr_bytes, _size - parsed_hdr_bytes)) {
 
-            host_->on_subscribe_ack(its_data.subscriber_, its_data.service_, its_data.instance_, its_data.eventgroup_, its_data.event_,
-                                    its_data.pending_id_);
+            host_->on_subscribe_ack(its_data.subscriber_, its_data.service_key_.service_, its_data.service_key_.instance_,
+                                    its_data.eventgroup_, its_data.event_, its_data.pending_id_);
 
-            VSOMEIP_INFO << "SUBSCRIBE ACK(" << hex4(its_client) << "): [" << hex4(its_data.service_) << "." << hex4(its_data.instance_)
-                         << "." << hex4(its_data.eventgroup_) << "." << hex4(its_data.event_) << "] id=" << hex4(its_data.pending_id_);
+            VSOMEIP_INFO << "SUBSCRIBE ACK(" << hex4(its_client) << "): [" << its_data.service_key_ << "." << hex4(its_data.eventgroup_)
+                         << "." << hex4(its_data.event_) << "] id=" << hex4(its_data.pending_id_);
         } else {
             VSOMEIP_ERROR_P << "Deserializing subscribe ack failed: " << utility::dump(_data, _size);
         }
@@ -256,11 +271,11 @@ void routing_manager_stub::on_message(const byte_t* _data, length_t _size, const
     case protocol::id_e::SUBSCRIBE_NACK_ID: {
         if (protocol::subscribe_answer_data its_data; protocol::deserialize(its_data, _data + parsed_hdr_bytes, _size - parsed_hdr_bytes)) {
 
-            host_->on_subscribe_nack(its_data.subscriber_, its_data.service_, its_data.instance_, its_data.eventgroup_, false,
-                                     its_data.pending_id_);
+            host_->on_subscribe_nack(its_data.subscriber_, its_data.service_key_.service_, its_data.service_key_.instance_,
+                                     its_data.eventgroup_, false, its_data.pending_id_);
 
-            VSOMEIP_INFO << "SUBSCRIBE NACK(" << hex4(its_client) << "): [" << hex4(its_data.service_) << "." << hex4(its_data.instance_)
-                         << "." << hex4(its_data.eventgroup_) << "." << hex4(its_data.event_) << "] id=" << hex4(its_data.pending_id_);
+            VSOMEIP_INFO << "SUBSCRIBE NACK(" << hex4(its_client) << "): [" << its_data.service_key_ << "." << hex4(its_data.eventgroup_)
+                         << "." << hex4(its_data.event_) << "] id=" << hex4(its_data.pending_id_);
         } else {
             VSOMEIP_ERROR_P << "Deserializing subscribe nack failed :" << utility::dump(_data, _size);
         }
@@ -271,15 +286,15 @@ void routing_manager_stub::on_message(const byte_t* _data, length_t _size, const
     case protocol::id_e::UNSUBSCRIBE_ACK_ID: {
         if (protocol::unsubscribe_ack_data its_data; protocol::deserialize(its_data, _data + parsed_hdr_bytes, _size - parsed_hdr_bytes)) {
 
-            auto its_service = its_data.service_;
-            auto its_instance = its_data.instance_;
+            auto its_service = its_data.service_key_.service_;
+            auto its_instance = its_data.service_key_.instance_;
             auto its_eventgroup = its_data.eventgroup_;
             auto its_subscription_id = its_data.pending_id_;
 
             host_->on_unsubscribe_ack(its_client, its_service, its_instance, its_eventgroup, its_subscription_id);
 
-            VSOMEIP_INFO << "UNSUBSCRIBE ACK(" << hex4(its_client) << "): [" << hex4(its_service) << "." << hex4(its_instance) << "."
-                         << hex4(its_eventgroup) << "] id=" << hex4(its_subscription_id);
+            VSOMEIP_INFO << "UNSUBSCRIBE ACK(" << hex4(its_client) << "): [" << its_data.service_key_ << "." << hex4(its_eventgroup)
+                         << "] id=" << hex4(its_subscription_id);
         } else {
             VSOMEIP_ERROR_P << "Deserializing unsubscribe ack failed, memory: " << utility::dump(_data, _size);
         }
@@ -366,19 +381,20 @@ void routing_manager_stub::on_message(const byte_t* _data, length_t _size, const
 
             std::set<protocol::service> its_allowed_requests;
             for (const auto& r : its_services) {
-                if (VSOMEIP_SEC_OK == get_security()->is_client_allowed_to_request(&_peer_data.sec_client_, r.service_, r.instance_)) {
-                    if (host_->has_client_requested(its_client, r.service_, r.instance_)) {
-                        VSOMEIP_WARNING_P << " Client 0x" << hex4(its_client) << " has already requested service [" << hex4(r.service_)
-                                          << "." << hex4(r.instance_) << "]";
-                        if (!host_->handle_service_rerequest(its_client, r.service_, r.instance_, r.major_version_)) {
+                if (VSOMEIP_SEC_OK
+                    == get_security()->is_client_allowed_to_request(&_peer_data.sec_client_, r.key_.service_, r.key_.instance_)) {
+                    if (host_->has_client_requested(its_client, r.key_.service_, r.key_.instance_)) {
+                        VSOMEIP_WARNING_P << " Client 0x" << hex4(its_client) << " has already requested service [" << hex4(r.key_.service_)
+                                          << "." << hex4(r.key_.instance_) << "]";
+                        if (!host_->handle_service_rerequest(its_client, r.key_.service_, r.key_.instance_, r.key_.major_)) {
                             continue;
                         }
                     }
-                    host_->request_service(its_client, r.service_, r.instance_, r.major_version_, r.minor_version_);
-                    its_allowed_requests.insert(protocol::service(r.service_, r.instance_, r.major_version_, r.minor_version_));
+                    host_->request_service(its_client, r.key_.service_, r.key_.instance_, r.key_.major_, r.minor_version_);
+                    its_allowed_requests.insert(protocol::service(r.key_.service_, r.key_.instance_, r.key_.major_, r.minor_version_));
                 } else {
-                    VSOMEIP_ERROR << "vSomeIP Security: Client 0x" << hex4(get_client()) << " received a request from client 0x"
-                                  << hex4(its_client) << " to service/instance " << hex4(r.service_) << "/" << hex4(r.instance_)
+                    VSOMEIP_ERROR << "vSomeIP Security: Client 0x" << hex4(VSOMEIP_ROUTING_CLIENT) << " received a request from client 0x"
+                                  << hex4(its_client) << " to service/instance " << hex4(r.key_.service_) << "/" << hex4(r.key_.instance_)
                                   << " ~> skip message!";
                 }
             }
@@ -395,7 +411,7 @@ void routing_manager_stub::on_message(const byte_t* _data, length_t _size, const
     }
 
     case protocol::id_e::RELEASE_SERVICE_ID: {
-        if (protocol::release_service_data its_release_data;
+        if (protocol::service_key its_release_data;
             protocol::deserialize(its_release_data, _data + parsed_hdr_bytes, _size - parsed_hdr_bytes)) {
             host_->release_service(its_client, its_release_data.service_, its_release_data.instance_);
         } else {
@@ -409,8 +425,8 @@ void routing_manager_stub::on_message(const byte_t* _data, length_t _size, const
             protocol::deserialize(its_registrations, _data + parsed_hdr_bytes, _size - parsed_hdr_bytes)) {
 
             for (auto const& reg : its_registrations) {
-                auto its_service = reg.service_;
-                auto its_instance = reg.instance_;
+                auto its_service = reg.service_key_.service_;
+                auto its_instance = reg.service_key_.instance_;
 
                 if (reg.is_provided_ && !configuration_->is_offered_remote(its_service, its_instance)) {
                     continue;
@@ -420,9 +436,9 @@ void routing_manager_stub::on_message(const byte_t* _data, length_t _size, const
                                              std::set<eventgroup_t>{reg.eventgroups_.begin(), reg.eventgroups_.end()}, reg.event_type_,
                                              reg.reliability_, reg.is_provided_, reg.is_cyclic_);
 
-                VSOMEIP_INFO << "REGISTER EVENT(" << hex4(its_client) << "): [" << hex4(its_service) << "." << hex4(its_instance) << "."
-                             << hex4(reg.event_) << ":eventtype=" << static_cast<int>(reg.event_type_) << ":is_provided=" << std::boolalpha
-                             << reg.is_provided_ << ":reliable=" << static_cast<int>(reg.reliability_) << "]";
+                VSOMEIP_INFO << "REGISTER EVENT(" << hex4(its_client) << "): [" << protocol::event_key{reg.service_key_, reg.event_}
+                             << ":eventtype=" << static_cast<int>(reg.event_type_) << ":is_provided=" << std::boolalpha << reg.is_provided_
+                             << ":reliable=" << static_cast<int>(reg.reliability_) << "]";
             }
 
         } else {
@@ -434,10 +450,11 @@ void routing_manager_stub::on_message(const byte_t* _data, length_t _size, const
     case protocol::id_e::UNREGISTER_EVENT_ID: {
         if (protocol::unregister_event_data its_data; protocol::deserialize(its_data, _data + parsed_hdr_bytes, _size - parsed_hdr_bytes)) {
 
-            host_->unregister_shadow_event(its_client, its_data.service_, its_data.instance_, its_data.event_, its_data.is_provided_);
+            host_->unregister_shadow_event(its_client, its_data.service_key_.service_, its_data.service_key_.instance_, its_data.event_,
+                                           its_data.is_provided_);
 
-            VSOMEIP_INFO << "UNREGISTER EVENT(" << hex4(its_client) << "): [" << hex4(its_data.service_) << "." << hex4(its_data.instance_)
-                         << "." << hex4(its_data.event_) << ":is_provider=" << std::boolalpha << its_data.is_provided_ << "]";
+            VSOMEIP_INFO << "UNREGISTER EVENT(" << hex4(its_client) << "): [" << protocol::event_key{its_data.service_key_, its_data.event_}
+                         << ":is_provider=" << std::boolalpha << its_data.is_provided_ << "]";
         } else {
             VSOMEIP_ERROR_P << "Unregister event deserialization failed, memory: " << utility::dump(_data, _size);
         }
@@ -492,7 +509,7 @@ void routing_manager_stub::lazy_load(const std::string& _client_host) {
     if (configuration_->is_security_enabled() && !configuration_->is_security_external()) {
         auto& pm = *get_policy_manager();
         configuration_->lazy_load_security(_client_host, pm);
-        configuration_->lazy_load_security(host_->get_client_host(), pm); // necessary for lazy loading from inside android container
+        configuration_->lazy_load_security(env_, pm); // necessary for lazy loading from inside android container
     }
 #endif
 }
@@ -511,8 +528,8 @@ void routing_manager_stub::on_deregister_application(client_t _client) {
     std::unique_lock its_lock{routing_info_mutex_};
     auto its_info = routing_info_.find(_client);
     if (its_info != routing_info_.end()) {
-        for (const auto& [si, version] : its_info->second) {
-            services_to_report.push_back(std::make_tuple(si.service, si.instance, version.first, version.second));
+        for (const auto& [si, minor] : its_info->second) {
+            services_to_report.push_back(std::make_tuple(si.service, si.instance, si.major, minor));
         }
     }
 
@@ -534,18 +551,16 @@ void routing_manager_stub::on_offered_service_request(client_t _client, offer_ty
     for (const auto& found_client : routing_info_) {
         // skip services which are offered on remote hosts
         if (found_client.first != VSOMEIP_ROUTING_CLIENT) {
-            for (const auto& [si, version] : found_client.second) {
-                const auto& [its_service, its_instance] = si;
+            for (const auto& [si, minor] : found_client.second) {
+                const auto& [its_service, its_instance, its_major] = si;
                 uint16_t its_reliable_port = configuration_->get_reliable_port(its_service, its_instance);
                 uint16_t its_unreliable_port = configuration_->get_unreliable_port(its_service, its_instance);
                 bool has_port = (its_reliable_port != ILLEGAL_PORT || its_unreliable_port != ILLEGAL_PORT);
 
                 if (_offer_type == offer_type_e::OT_ALL || (_offer_type == offer_type_e::OT_LOCAL && !has_port)
                     || (_offer_type == offer_type_e::OT_REMOTE && has_port)) {
-                    table.insert(protocol::service_data{.service_ = its_service,
-                                                        .instance_ = its_instance,
-                                                        .major_version_ = version.first,
-                                                        .minor_version_ = version.second});
+                    table.insert(protocol::service_data{.key_ = {.service_ = its_service, .instance_ = its_instance, .major_ = its_major},
+                                                        .minor_version_ = minor});
                 }
             }
         }
@@ -575,13 +590,10 @@ void routing_manager_stub::on_register_application(client_t _client, const boost
     // distribute updated security config to new clients
     send_cached_security_policies(_client);
     if (configuration_->is_local_routing()) {
-        vsomeip_sec_client_t its_sec_client;
         std::set<std::shared_ptr<policy>> its_policies;
-
-        bool has_mapping = get_policy_manager()->get_client_to_sec_client_mapping(_client, its_sec_client);
-        if (has_mapping) {
-            if (its_sec_client.port == VSOMEIP_SEC_PORT_UNUSED) {
-                get_requester_policies(its_sec_client.user, its_sec_client.group, its_policies);
+        if (auto const its_sec_client = find_sec_client(_client); its_sec_client) {
+            if (its_sec_client->port == VSOMEIP_SEC_PORT_UNUSED) {
+                get_requester_policies(its_sec_client->user, its_sec_client->group, its_policies);
             }
 
             if (!its_policies.empty()) {
@@ -590,6 +602,14 @@ void routing_manager_stub::on_register_application(client_t _client, const boost
         }
     }
 #endif // !VSOMEIP_DISABLE_SECURITY
+
+    // Must be sent after the security credentials, so the client only checks
+    // security policies after it has received its credentials.
+    if (auto ep = find_local_routing_endpoint(_client); ep) {
+        ep->send(protocol::create_assign_client_ack_cmd(VSOMEIP_ROUTING_CLIENT, _client));
+    } else {
+        VSOMEIP_ERROR_P << "Failed to send ASSIGN_CLIENT_ACK to client 0x" << hex4(_client) << ", as no routing connection was given";
+    }
 }
 
 void routing_manager_stub::remove_client_connections(client_t client_id) {
@@ -604,7 +624,7 @@ void routing_manager_stub::init_routing_endpoint() {
         if (_root) {
             return; // already initialised, skip
         }
-        if (!ep_mgr->create_routing_root(_root, _protocol, is_socket_activated_, shared_from_this())) {
+        if (!ep_mgr->create_routing_root(_root, _protocol, is_socket_activated_, shared_from_this(), env_)) {
             is_successful = false;
         }
     };
@@ -632,7 +652,7 @@ void routing_manager_stub::on_offer_service_unlocked(client_t _client, service_t
     VSOMEIP_INFO << "ON_OFFER_SERVICE(" << hex4(_client) << "): [" << hex4(_service) << "." << hex4(_instance) << ":"
                  << static_cast<int>(_major) << "." << _minor << "]";
 
-    routing_info_[_client][{_service, _instance}] = std::make_pair(_major, _minor);
+    routing_info_[_client][{_service, _instance, _major}] = _minor;
     if (configuration_->is_security_enabled()) {
         distribute_credentials(_client, _service, _instance);
     }
@@ -665,9 +685,8 @@ void routing_manager_stub::on_stop_offer_service_unlocked(client_t _client, serv
                  << static_cast<int>(_major) << "." << _minor << "]";
 
     if (auto found_client = routing_info_.find(_client); found_client != routing_info_.end()) {
-        if (auto found_si = found_client->second.find({_service, _instance}); found_si != found_client->second.end()) {
-            const auto& [found_major, found_minor] = found_si->second;
-            if ((_major == found_major && _minor == found_minor) || (_major == DEFAULT_MAJOR && _minor == DEFAULT_MINOR)) {
+        if (auto found_si = found_client->second.find({_service, _instance, _major}); found_si != found_client->second.end()) {
+            if (_minor == found_si->second) {
                 found_client->second.erase(found_si);
                 inform_requesters(_client, _service, _instance, _major, _minor,
                                   protocol::routing_info_entry_type_e::RIE_DELETE_SERVICE_INSTANCE);
@@ -706,18 +725,15 @@ void routing_manager_stub::distribute_credentials(client_t _hoster, service_t _s
     std::set<client_t> its_requesting_clients = host_->collect_requesters(_service, _instance, ANY_MAJOR);
 
     // search for UID / GID linked with the client ID that offers the requested services
-    vsomeip_sec_client_t its_sec_client;
-    if (get_policy_manager()->get_client_to_sec_client_mapping(_hoster, its_sec_client)) {
+    if (auto const its_sec_client = find_sec_client(_hoster); its_sec_client) {
         std::pair<uid_t, gid_t> its_uid_gid;
-        its_uid_gid.first = its_sec_client.user;
-        its_uid_gid.second = its_sec_client.group;
+        its_uid_gid.first = its_sec_client->user;
+        its_uid_gid.second = its_sec_client->group;
         its_credentials.insert(its_uid_gid);
         for (auto its_requesting_client : its_requesting_clients) {
-            vsomeip_sec_client_t its_requester_sec_client;
-            if (get_policy_manager()->get_client_to_sec_client_mapping(its_requesting_client, its_requester_sec_client)) {
-                if (!utility::compare(its_sec_client, its_requester_sec_client)) {
-                    send_client_credentials(its_requesting_client, its_credentials);
-                }
+            auto const its_requester_sec_client = find_sec_client(its_requesting_client);
+            if (its_requester_sec_client && !utility::compare(*its_sec_client, *its_requester_sec_client)) {
+                send_client_credentials(its_requesting_client, its_credentials);
             }
         }
     }
@@ -727,7 +743,13 @@ void routing_manager_stub::inform_requesters(client_t _hoster, service_t _servic
                                              minor_version_t _minor, protocol::routing_info_entry_type_e _type) {
 
     boost::asio::ip::address its_address;
-    port_t its_port;
+    port_t its_port{0};
+    bool has_guest_address{false};
+    std::optional<vsomeip_sec_client_t> its_sec_client;
+    if (_type == protocol::routing_info_entry_type_e::RIE_ADD_SERVICE_INSTANCE) {
+        has_guest_address = host_->get_endpoint_manager()->get_guest(_hoster, its_address, its_port);
+        its_sec_client = find_sec_client(_hoster);
+    }
 
     for (const client_t its_requester : host_->collect_requesters(_service, _instance, _major)) {
         if (its_requester == VSOMEIP_ROUTING_CLIENT) {
@@ -736,12 +758,15 @@ void routing_manager_stub::inform_requesters(client_t _hoster, service_t _servic
         protocol::routing_info_entry_data its_entry;
         its_entry.type_ = _type;
         its_entry.client_ = _hoster;
-        if (_type == protocol::routing_info_entry_type_e::RIE_ADD_SERVICE_INSTANCE
-            && host_->get_endpoint_manager()->get_guest(_hoster, its_address, its_port)) {
+        if (has_guest_address) {
             its_entry.address_ = its_address.to_v4();
             its_entry.port_ = its_port;
         }
-        its_entry.services_.push_back({_service, _instance, _major, _minor});
+        if (its_sec_client) {
+            its_entry.uid_ = its_sec_client->user;
+            its_entry.gid_ = its_sec_client->group;
+        }
+        its_entry.services_.push_back({.key_ = {_service, _instance, _major}, .minor_version_ = _minor});
         send_client_routing_info(its_requester, std::move(its_entry));
     }
 }
@@ -750,13 +775,13 @@ void routing_manager_stub::send_subscribe_ack(client_t _client, service_t _servi
                                               event_t _event) {
 
     if (auto its_target = find_local_routing_endpoint(_client); its_target) {
-        its_target->send(protocol::create_subscribe_ack_cmd(VSOMEIP_ROUTING_CLIENT,
-                                                            protocol::subscribe_answer_data{.service_ = _service,
-                                                                                            .instance_ = _instance,
-                                                                                            .eventgroup_ = _eventgroup,
-                                                                                            .subscriber_ = _client,
-                                                                                            .event_ = _event,
-                                                                                            .pending_id_ = 0x0}));
+        its_target->send(protocol::create_subscribe_ack_cmd(
+                VSOMEIP_ROUTING_CLIENT,
+                protocol::subscribe_answer_data{.service_key_ = {.service_ = _service, .instance_ = _instance, .major_ = ANY_MAJOR},
+                                                .eventgroup_ = _eventgroup,
+                                                .subscriber_ = _client,
+                                                .event_ = _event,
+                                                .pending_id_ = 0x0}));
     }
 }
 
@@ -769,10 +794,8 @@ bool routing_manager_stub::contained_in_routing_info(client_t _client, service_t
 bool routing_manager_stub::contained_in_routing_info_unlocked(client_t _client, service_t _service, instance_t _instance,
                                                               major_version_t _major, minor_version_t _minor) const {
     if (auto found_client = routing_info_.find(_client); found_client != routing_info_.end()) {
-        if (auto found_si = found_client->second.find({_service, _instance}); found_si != found_client->second.end()) {
-            if (found_si->second.first == _major && found_si->second.second == _minor) {
-                return true;
-            }
+        if (auto found_si = found_client->second.find({_service, _instance, _major}); found_si != found_client->second.end()) {
+            return found_si->second == _minor;
         }
     }
     return false;
@@ -902,16 +925,11 @@ bool routing_manager_stub::is_registered(client_t _client) const {
 }
 
 void routing_manager_stub::deregister_client(client_t _client) {
-    get_policy_manager()->remove_client_to_sec_client_mapping(_client);
     VSOMEIP_INFO << "Application/Client " << hex4(_client) << " is deregistering";
     on_deregister_application(_client);
     remove_from_pinged_clients(_client);
     remove_client_connections(_client);
     utility::release_client_id(configuration_->get_network(), _client);
-}
-
-client_t routing_manager_stub::get_client() const {
-    return host_->get_client();
 }
 
 void routing_manager_stub::handle_credentials(const client_t _client, std::set<protocol::service>& _requests) {
@@ -921,8 +939,7 @@ void routing_manager_stub::handle_credentials(const client_t _client, std::set<p
 
     std::scoped_lock its_guard{routing_info_mutex_};
     std::set<std::pair<uid_t, gid_t>> its_credentials;
-    vsomeip_sec_client_t its_requester_sec_client;
-    if (get_policy_manager()->get_client_to_sec_client_mapping(_client, its_requester_sec_client)) {
+    if (auto const its_requester_sec_client = find_sec_client(_client); its_requester_sec_client) {
         // determine credentials of offering clients using current routing info
         std::set<client_t> its_offering_clients;
 
@@ -938,12 +955,10 @@ void routing_manager_stub::handle_credentials(const client_t _client, std::set<p
 
         // search for UID / GID linked with the client ID that offers the requested services
         for (auto its_offering_client : its_offering_clients) {
-            vsomeip_sec_client_t its_sec_client;
-            if (get_policy_manager()->get_client_to_sec_client_mapping(its_offering_client, its_sec_client)) {
-                if (its_sec_client.port == VSOMEIP_SEC_PORT_UNUSED && !utility::compare(its_sec_client, its_requester_sec_client)) {
-
-                    its_credentials.insert(std::make_pair(its_sec_client.user, its_sec_client.group));
-                }
+            auto const its_sec_client = find_sec_client(its_offering_client);
+            if (its_sec_client && its_sec_client->port == VSOMEIP_SEC_PORT_UNUSED
+                && !utility::compare(*its_sec_client, *its_requester_sec_client)) {
+                its_credentials.insert(std::make_pair(its_sec_client->user, its_sec_client->group));
             }
         }
 
@@ -961,7 +976,7 @@ void routing_manager_stub::handle_requests(const client_t _client, std::set<prot
     }
 
     boost::asio::ip::address its_address;
-    port_t its_port;
+    port_t its_port{0};
 
     std::vector<protocol::routing_info_entry_data> its_entries;
     std::scoped_lock its_guard{routing_info_mutex_};
@@ -975,33 +990,49 @@ void routing_manager_stub::handle_requests(const client_t _client, std::set<prot
         its_clients.insert(VSOMEIP_ROUTING_CLIENT);
         for (const client_t c : its_clients) {
             if (const auto found_client = routing_info_.find(c); found_client != routing_info_.end()) {
+                bool const has_guest_address = host_->get_endpoint_manager()->get_guest(c, its_address, its_port);
+                auto const its_sec_client = find_sec_client(c);
+                auto const fill = [&](protocol::routing_info_entry_data& _entry) {
+                    _entry.type_ = protocol::routing_info_entry_type_e::RIE_ADD_SERVICE_INSTANCE;
+                    _entry.client_ = c;
+                    if (has_guest_address) {
+                        _entry.address_ = its_address.to_v4();
+                        _entry.port_ = its_port;
+                    }
+                    if (its_sec_client) {
+                        _entry.uid_ = its_sec_client->user;
+                        _entry.gid_ = its_sec_client->group;
+                    }
+                };
+
                 if (request.instance_ == ANY_INSTANCE) {
-                    for (const auto& [si, version] : found_client->second) {
-                        if (si.service == request.service_ && (version.first == request.major_ || request.major_ == ANY_MAJOR)) {
+                    for (const auto& [si, minor] : found_client->second) {
+                        if (si.service == request.service_ && (si.major == request.major_ || request.major_ == ANY_MAJOR)) {
                             protocol::routing_info_entry_data its_entry;
-                            its_entry.type_ = protocol::routing_info_entry_type_e::RIE_ADD_SERVICE_INSTANCE;
-                            its_entry.client_ = c;
-                            if (host_->get_endpoint_manager()->get_guest(c, its_address, its_port)) {
-                                its_entry.address_ = its_address.to_v4();
-                                its_entry.port_ = its_port;
-                            }
-                            its_entry.services_.push_back({request.service_, si.instance, version.first, version.second});
+                            fill(its_entry);
+                            its_entry.services_.push_back({.key_ = {request.service_, si.instance, si.major}, .minor_version_ = minor});
+                            its_entries.emplace_back(std::move(its_entry));
+                        }
+                    }
+                } else if (request.major_ == ANY_MAJOR) {
+                    // No specific major requested: report every major currently offered for this
+                    // (service, instance) -- there may be more than one.
+                    for (const auto& [si, minor] : found_client->second) {
+                        if (si.service == request.service_ && si.instance == request.instance_) {
+                            protocol::routing_info_entry_data its_entry;
+                            fill(its_entry);
+                            its_entry.services_.push_back(
+                                    {.key_ = {request.service_, request.instance_, si.major}, .minor_version_ = minor});
                             its_entries.emplace_back(std::move(its_entry));
                         }
                     }
                 } else {
-                    if (auto found_si = found_client->second.find({request.service_, request.instance_});
-                        found_si != found_client->second.end()
-                        && (found_si->second.first == request.major_ || request.major_ == ANY_MAJOR)) {
+                    if (auto found_si = found_client->second.find({request.service_, request.instance_, request.major_});
+                        found_si != found_client->second.end()) {
                         protocol::routing_info_entry_data its_entry;
-                        its_entry.type_ = protocol::routing_info_entry_type_e::RIE_ADD_SERVICE_INSTANCE;
-                        its_entry.client_ = c;
-                        if (host_->get_endpoint_manager()->get_guest(c, its_address, its_port)) {
-                            its_entry.address_ = its_address.to_v4();
-                            its_entry.port_ = its_port;
-                        }
+                        fill(its_entry);
                         its_entry.services_.push_back(
-                                {request.service_, request.instance_, found_si->second.first, found_si->second.second});
+                                {.key_ = {request.service_, request.instance_, request.major_}, .minor_version_ = found_si->second});
                         its_entries.emplace_back(std::move(its_entry));
                     }
                 }
@@ -1115,11 +1146,16 @@ bool routing_manager_stub::add_requester_policies(uid_t _uid, gid_t _gid, const 
         requester_policies_[_uid][_gid] = _policies;
     }
 
-    // Check whether clients with uid/gid are already registered.
+    // Check whether clients with uid/gid are already connected.
     // If yes, update their policy
     std::unordered_set<client_t> its_clients;
-    get_policy_manager()->get_clients(_uid, _gid, its_clients);
-
+    if (auto epm = host_->get_endpoint_manager(); epm) {
+        for (auto const& [its_client, its_sec_client] : epm->get_connected_clients()) {
+            if (its_sec_client.port == VSOMEIP_SEC_PORT_UNUSED && its_sec_client.user == _uid && its_sec_client.group == _gid) {
+                its_clients.insert(its_client);
+            }
+        }
+    }
     if (!its_clients.empty()) {
         return send_requester_policies(its_clients, _policies);
     }
@@ -1288,9 +1324,10 @@ bool routing_manager_stub::update_security_policy_configuration(uid_t _uid, gid_
 
     // determine currently connected clients
     std::unordered_set<client_t> its_clients_to_inform;
-    auto its_epm = host_->get_endpoint_manager();
-    if (its_epm) {
-        its_clients_to_inform = its_epm->get_connected_clients();
+    if (auto its_epm = host_->get_endpoint_manager(); its_epm) {
+        for (auto const& [its_client, _] : its_epm->get_connected_clients()) {
+            its_clients_to_inform.insert(its_client);
+        }
     }
 
     // add handler
@@ -1345,9 +1382,10 @@ bool routing_manager_stub::remove_security_policy_configuration(uid_t _uid, gid_
 
             // determine currently connected clients
             std::unordered_set<client_t> its_clients_to_inform;
-            auto its_epm = host_->get_endpoint_manager();
-            if (its_epm) {
-                its_clients_to_inform = its_epm->get_connected_clients();
+            if (auto its_epm = host_->get_endpoint_manager(); its_epm) {
+                for (auto const& [its_client, _] : its_epm->get_connected_clients()) {
+                    its_clients_to_inform.insert(its_client);
+                }
             }
 
             if (!its_clients_to_inform.empty()) {
@@ -1472,6 +1510,13 @@ std::shared_ptr<local_endpoint> routing_manager_stub::find_local_routing_endpoin
         return epm->find_routing_endpoint(_client);
     }
     return nullptr;
+}
+
+std::optional<vsomeip_sec_client_t> routing_manager_stub::find_sec_client(client_t _client) const {
+    if (auto its_endpoint = find_local_routing_endpoint(_client); its_endpoint) {
+        return its_endpoint->get_sec_client();
+    }
+    return std::nullopt;
 }
 
 bool routing_manager_stub::send_local(std::shared_ptr<local_endpoint> const& _ep, std::vector<byte_t> const& _data) {

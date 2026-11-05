@@ -25,22 +25,20 @@ class service_discovery {
 public:
     virtual ~service_discovery() { }
 
-    virtual boost::asio::io_context& get_io() = 0;
-
     virtual void init() = 0;
     virtual void start() = 0;
     virtual void stop() = 0;
     virtual void suspend() = 0;
 
     virtual void request_service(service_t _service, instance_t _instance, major_version_t _major, minor_version_t _minor, ttl_t _ttl) = 0;
-    virtual void release_service(service_t _service, instance_t _instance) = 0;
+    virtual void release_service(service_t _service, instance_t _instance, major_version_t _major) = 0;
 
     virtual void subscribe(service_t _service, instance_t _instance, eventgroup_t _eventgroup, major_version_t _major, ttl_t _ttl,
                            client_t _client, const std::shared_ptr<eventgroupinfo>& _info) = 0;
     virtual void unsubscribe(service_t _service, instance_t _instance, eventgroup_t _eventgroup, client_t _client) = 0;
     virtual void unsubscribe_all(service_t _service, instance_t _instance) = 0;
     virtual void unsubscribe_all_on_suspend() = 0;
-    virtual void reset_request_sent_counter(service_t _service, instance_t _instance) = 0;
+    virtual void reset_request_sent_counter(service_t _service, instance_t _instance, major_version_t _major) = 0;
 
     virtual bool send(bool _is_announcing) = 0;
 
@@ -61,7 +59,7 @@ public:
 
     virtual void register_sd_acceptance_handler(const sd_acceptance_handler_t& _handler) = 0;
     virtual void register_reboot_notification_handler(const reboot_notification_handler_t& _handler) = 0;
-    virtual std::recursive_mutex& get_subscribed_mutex() = 0;
+    virtual void remove_remote_offer_type_by_ip(const boost::asio::ip::address& _address, uint16_t _port, bool _reliable) = 0;
 };
 
 } // namespace sd

@@ -40,9 +40,9 @@ struct test_debounce_helper : public base_fake_socket_fixture {
     void start_server() {
         server_ = start_client(server_name_);
         ASSERT_TRUE(server_ && server_->app_state_record_.wait_for_last(vsomeip::state_type_e::ST_REGISTERED));
-        server_->offer(service_instance_);
         server_->offer_event(offered_event_.si_, offered_event_.to_event_spec());
         server_->offer_field(offered_field_.si_, offered_field_.to_event_spec());
+        server_->offer(service_instance_);
     }
 
     void start_client_app() {
@@ -67,8 +67,8 @@ struct test_debounce_helper : public base_fake_socket_fixture {
         return client_->subscription_record_.wait_for_last(event_subscription::successfully_subscribed_to(offered_field_));
     }
 
-    service_instance service_instance_{0x3344, 0x1};
-    service_instance service_instance_two_{0x3345, 0x1};
+    service_instance service_instance_{.service_ = 0x3344, .instance_ = 0x1, .major_ = 1, .minor_ = 0};
+    service_instance service_instance_two_{.service_ = 0x3345, .instance_ = 0x1, .major_ = 1, .minor_ = 0};
     event_ids offered_event_{service_instance_, 0x8002, 0x1};
     event_ids offered_field_{service_instance_, 0x8003, 0x6};
 
@@ -113,10 +113,10 @@ TEST_F(test_debounce_helper, router_debounce_on_change) {
     // router offers several events, which happen to have the same event-id
     event_ids offered_field{service_instance_, 0x8001, 0x1};
     event_ids offered_field_two{service_instance_two_, 0x8001, 0x02};
-    routingmanagerd_->offer(service_instance_);
-    routingmanagerd_->offer(service_instance_two_);
     routingmanagerd_->offer_field(offered_field.si_, offered_field.to_event_spec());
     routingmanagerd_->offer_event(offered_field_two.si_, offered_field_two.to_event_spec());
+    routingmanagerd_->offer(service_instance_);
+    routingmanagerd_->offer(service_instance_two_);
 
     routingmanagerd_->send_event(offered_field, {0x00});
     routingmanagerd_->send_event(offered_field_two, {0xF0});
@@ -158,8 +158,8 @@ TEST_F(test_debounce_helper, debounce_default) {
 
     start_apps();
 
-    // default `filter`, so.. essentially the same as a normal subscribe
-    // no "on-change", no interval, nothing
+    // default `filter`: no "on-change", no interval, nothing. Such a filter has no trigger, so it
+    // does not debounce at all and behaves like a normal subscribe.
     debounce_filter_t filter;
 
     ASSERT_TRUE(subscribe_to_event(filter));
@@ -169,10 +169,7 @@ TEST_F(test_debounce_helper, debounce_default) {
     server_->send_event(offered_event_, {0x00});
     server_->send_event(offered_event_, {0x01, 0x01});
     server_->send_event(offered_event_, {0x02});
-    // currently receive nothing
-    // TODO: FIXME!
-    ASSERT_FALSE(client_->wait_for_messages({{0x00}, {0x00}, {0x01, 0x01}, {0x02}}, std::chrono::milliseconds(10)));
-    ASSERT_TRUE(client_->wait_for_messages({}));
+    ASSERT_TRUE(client_->wait_for_messages({{0x00}, {0x00}, {0x01, 0x01}, {0x02}})) << client_->message_record_;
 }
 
 TEST_F(test_debounce_helper, debounce_interval) {

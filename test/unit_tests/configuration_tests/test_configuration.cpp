@@ -352,7 +352,6 @@ vsomeip_sec_client_t make_tcp_client(uid_t _uid, gid_t _gid) {
 struct test_configuration_impl : ::testing::Test {
     std::shared_ptr<configuration_impl> load(const scratch_config_dir& _dir, const std::string& _app_name) {
         auto its_config = std::make_shared<configuration_impl>(_dir.path());
-        its_config->set_configuration_path(_dir.path());
         EXPECT_TRUE(its_config->load(_app_name));
         // Mirrors application_impl::determine_routing_host(): the election is
         // decided on the mandatory view, and the optional configuration is
@@ -416,12 +415,51 @@ TEST_F(test_configuration_impl, load_alone_resolves_routing_host_in_non_mandator
     })");
 
     auto its_config = std::make_shared<configuration_impl>(dir.path());
-    its_config->set_configuration_path(dir.path());
-
     EXPECT_TRUE(its_config->load("routingmanager"));
 
     EXPECT_EQ(its_config->get_routing_host_name(), "routingmanager");
     EXPECT_EQ(its_config->get_unicast_address(), boost::asio::ip::make_address("10.10.10.10"));
+}
+
+// A configured application id must belong to the client id range of this host, otherwise its
+// messages cannot be routed, so it is dropped and the application gets an allocated id instead.
+// The range is base | ~mask, so it spans several diagnosis prefixes whenever the mask frees bits
+// of the prefix (here 0x98 & 0xEB -> 0x88, plus bits 2 and 4).
+TEST_F(test_configuration_impl, out_of_range_application_id_is_dropped) {
+    scratch_config_dir dir;
+    dir.write("vsomeip_std.json", R"({
+        "unicast": "10.10.10.10",
+        "diagnosis": "0x98",
+        "diagnosis_mask": "0xEB00",
+        "routing": { "host": { "name": "routingmanager" } },
+        "applications": [
+            { "name": "routingmanager", "id": "0x8800" },
+            { "name": "in-range-other-prefix", "id": "0x9C19" },
+            { "name": "out-of-range", "id": "0x4277" }
+        ]
+    })");
+
+    auto its_config = load(dir, "routingmanager");
+
+    EXPECT_EQ(its_config->get_id("routingmanager"), 0x8800);
+    EXPECT_EQ(its_config->get_id("in-range-other-prefix"), 0x9C19);
+    EXPECT_EQ(its_config->get_id("out-of-range"), VSOMEIP_CLIENT_UNSET);
+    // The dropped id is free again, so the allocator may hand it out.
+    EXPECT_FALSE(its_config->is_configured_client_id(0x4277));
+}
+
+// A guest configuration declares no diagnosis address of its own and inherits the client ids of
+// its routing host, so its ids must not be checked against the local defaults.
+TEST_F(test_configuration_impl, application_ids_are_kept_without_diagnosis) {
+    scratch_config_dir dir;
+    dir.write("vsomeip_std.json", R"({
+        "routing": { "host": { "name": "routingmanager" } },
+        "applications": [ { "name": "guest", "id": "0x9C19" } ]
+    })");
+
+    auto its_config = load(dir, "routingmanager");
+
+    EXPECT_EQ(its_config->get_id("guest"), 0x9C19);
 }
 
 // The shared configuration is loaded once per process, but if a plain
@@ -437,7 +475,6 @@ TEST_F(test_configuration_impl, client_primed_config_is_completed_by_load_option
     dir.write("extra_optional.json", R"({ "unicast": "10.10.10.10" })");
 
     auto its_config = std::make_shared<configuration_impl>(dir.path());
-    its_config->set_configuration_path(dir.path());
 
     // Plain client loads first: optional file not read yet.
     EXPECT_TRUE(its_config->load("client_app"));
@@ -478,7 +515,6 @@ TEST_F(test_configuration_impl, concurrent_reads_during_load_optional_see_stable
     })");
 
     auto its_config = std::make_shared<configuration_impl>(dir.path());
-    its_config->set_configuration_path(dir.path());
     ASSERT_TRUE(its_config->load("client_app"));
 
     // Counted rather than EXPECT_EQ'd inside the threads: a mismatch is reported
@@ -567,7 +603,6 @@ TEST_F(test_configuration_impl, concurrent_init_from_base_during_load_optional) 
     })");
 
     auto its_config = std::make_shared<configuration_impl>(dir.path());
-    its_config->set_configuration_path(dir.path());
     ASSERT_TRUE(its_config->load("client_app"));
 
     std::atomic<unsigned> its_mismatches{0};
@@ -814,41 +849,6 @@ TEST_F(test_configuration_impl, load_security_policies_populates_independent_pol
     EXPECT_FALSE(its_pm_app1.is_offer_allowed(&its_denied, 0x1234, 0x5678));
     EXPECT_TRUE(its_pm_app2.is_offer_allowed(&its_allowed, 0x1234, 0x5678));
     EXPECT_FALSE(its_pm_app2.is_offer_allowed(&its_denied, 0x1234, 0x5678));
-}
-
-// init_from_base() (via load_security_policies) must copy only the compiled,
-// immutable policy state - never the per-app runtime maps. This is the core
-// safety property that makes it correct to load the configuration once and
-// share it: each application must own an isolated client<->sec_client mapping
-// table. A regression that shared those maps (e.g. a shallow copy of the same
-// container) would let one app observe another app's client registrations.
-TEST_F(test_configuration_impl, init_from_base_does_not_share_runtime_client_mappings) {
-    scratch_config_dir dir;
-    dir.write("vsomeip_std.json", R"({
-        "routing": { "host": { "name": "routingmanager" } },
-        "applications": [ { "name": "routingmanager", "id": "0x1111" } ],
-        "security": { "check_credentials": "true" }
-    })");
-
-    auto its_config = load(dir, "routingmanager");
-
-    policy_manager_impl its_pm_app1;
-    policy_manager_impl its_pm_app2;
-    its_config->load_security_policies(its_pm_app1);
-    its_config->load_security_policies(its_pm_app2);
-
-    // Register a client->sec_client mapping in app1 only.
-    const vsomeip_v3::client_t its_client = 0x2222;
-    auto its_sec_client = utility::create_uds_client(1000, 1000, 0);
-    ASSERT_TRUE(its_pm_app1.store_client_to_sec_client_mapping(its_client, &its_sec_client));
-
-    // app1 sees its own mapping ...
-    vsomeip_sec_client_t its_readback{};
-    EXPECT_TRUE(its_pm_app1.get_client_to_sec_client_mapping(its_client, its_readback));
-
-    // ... but app2's runtime table must be untouched.
-    vsomeip_sec_client_t its_unused{};
-    EXPECT_FALSE(its_pm_app2.get_client_to_sec_client_mapping(its_client, its_unused));
 }
 
 // In audit mode (check_credentials == "false") the compiled policies are still

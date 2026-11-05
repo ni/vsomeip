@@ -105,17 +105,30 @@ endfunction()
 #   NAME my_test_name
 #   COMMAND ${CMAKE_CURRENT_BINARY_DIR}/my_test_starter.sh ARG1 ARG2...
 #   SLAVES 1 # Number of slave containers needed (0 = none, default 0)
+#   PROCESSES 6 # Test processes alive for most of the test, master and slave
+#               # side together. Default: 1 + SLAVES for a plain binary,
+#               # 2 + SLAVES for a starter script.
+#   SKIP_VALGRIND # Do not register this test when VALGRIND_TYPE is set.
+#   SKIP_SANITIZERS # Do not register this test in sanitizer builds.
 #   ENVIRONMENT VSOMEIP_CONFIGURATION=my_test_config.json # Optional.
 # )
 function(add_custom_test)
-    set(options)
-    set(oneValueArgs NAME TIMEOUT SLAVES)
+    set(options SKIP_VALGRIND SKIP_SANITIZERS)
+    set(oneValueArgs NAME TIMEOUT SLAVES PROCESSES)
     set(multiValueArgs COMMAND ENVIRONMENT)
     cmake_parse_arguments(MY_TEST
         "${options}" "${oneValueArgs}" "${multiValueArgs}" ${ARGN}
     )
 
-    # Skip valgrind
+    if(MY_TEST_SKIP_VALGRIND AND DEFINED VALGRIND_TYPE AND NOT VALGRIND_TYPE STREQUAL "")
+        return()
+    endif()
+
+    if(MY_TEST_SKIP_SANITIZERS AND (ENABLE_SANITIZERS OR ENABLE_THREAD_SANITIZER))
+        return()
+    endif()
+
+    # Configure valgrind exclusions for child processes.
     if(DEFINED VALGRIND_TYPE AND NOT VALGRIND_TYPE STREQUAL "")
         set(TEST_ENTRYPOINT
             ${TEST_ENTRYPOINT} --trace-children-skip=*/ssh${SUBPROCESSES},/usr/bin/seq,/usr/bin/sleep,/usr/bin/netstat,/usr/bin/awk,/usr/bin/mawk,/usr/bin/grep,/usr/bin/wc,/usr/bin/pgrep,/usr/bin/python3,*/python3,/usr/sbin/iptables,*/xtables-nft-multi,/usr/bin/mktemp
@@ -134,9 +147,22 @@ function(add_custom_test)
     )
 
     # Tell CTest that this test needs slave containers, if applicable.
-    if(DEFINED MY_TEST_SLAVES AND MY_TEST_SLAVES GREATER 0)
+    if(NOT DEFINED MY_TEST_SLAVES)
+        set(MY_TEST_SLAVES 0)
+    endif()
+    if(MY_TEST_SLAVES GREATER 0)
         set_tests_properties(${MY_TEST_NAME} PROPERTIES RESOURCE_GROUPS "${MY_TEST_SLAVES},slaves:1")
     endif()
+
+    if(NOT DEFINED MY_TEST_PROCESSES)
+        list(GET MY_TEST_COMMAND 0 MY_TEST_EXECUTABLE)
+        if(MY_TEST_EXECUTABLE MATCHES "\\.sh$")
+            math(EXPR MY_TEST_PROCESSES "2 + ${MY_TEST_SLAVES}")
+        else()
+            math(EXPR MY_TEST_PROCESSES "1 + ${MY_TEST_SLAVES}")
+        endif()
+    endif()
+    set_tests_properties(${MY_TEST_NAME} PROPERTIES PROCESSORS ${MY_TEST_PROCESSES})
 
     # Set a timeout for the test.
     # Under valgrind/sanitizers, processes run significantly slower; TEST_TIMEOUT_SCALE allows to scale the CTest timeout accordingly.
@@ -176,46 +202,47 @@ configure_files("setup_test.sh")
 configure_files("test_helpers.sh")
 
 ### ADD TESTS SUBDIRECTORIES ###
-if(NOT ${TESTS_BAT})
-    add_subdirectory(availability_handler_tests)
-    add_subdirectory(cached_event_tests)
-    add_subdirectory(client_id_tests)
-    add_subdirectory(configuration_tests)
-    add_subdirectory(connection_timeout_sub_ack_tests)
-    add_subdirectory(cpu_load_tests)
-    add_subdirectory(debounce_epsilon_tests)
-    add_subdirectory(debounce_filter_tests)
-    add_subdirectory(debounce_frequency_tests)
-    add_subdirectory(debounce_tests)
-    add_subdirectory(dispatch_app_stop_tests)
-    add_subdirectory(e2e_tests)
-    add_subdirectory(event_tests)
-    add_subdirectory(fake_socket_tests)
-    add_subdirectory(hostname_tests)
-    add_subdirectory(initial_event_tests)
-    add_subdirectory(lazy_load_tests)
-    add_subdirectory(magic_cookies_tests)
-    add_subdirectory(malicious_data_tests)
+add_subdirectory(availability_handler_tests)
+add_subdirectory(cached_event_tests)
+add_subdirectory(client_id_tests)
+add_subdirectory(configuration_tests)
+add_subdirectory(connection_timeout_sub_ack_tests)
+add_subdirectory(cpu_load_tests)
+add_subdirectory(debounce_epsilon_tests)
+add_subdirectory(debounce_filter_tests)
+add_subdirectory(debounce_frequency_tests)
+add_subdirectory(debounce_tests)
+add_subdirectory(dispatch_app_stop_tests)
+add_subdirectory(e2e_tests)
+add_subdirectory(event_tests)
+add_subdirectory(fake_socket_tests)
+add_subdirectory(hostname_tests)
+add_subdirectory(initial_event_tests)
+add_subdirectory(lazy_load_tests)
+add_subdirectory(magic_cookies_tests)
+add_subdirectory(malicious_data_tests)
+# The memory tests rely on Linux-only RSS sampling (/proc/self/statm) and
+# glibc's malloc_trim, which are not available on QNX.
+if(NOT ${CMAKE_SYSTEM_NAME} MATCHES "QNX")
     add_subdirectory(memory_tests)
-    add_subdirectory(multicast_group_tests)
-    add_subdirectory(offer_stop_offer_test)
-    add_subdirectory(offer_tests)
-    add_subdirectory(offered_services_info_tests)
-    add_subdirectory(pending_subscription_tests)
-    add_subdirectory(regression_tests)
-    add_subdirectory(restart_routing_tests)
-    add_subdirectory(reuse_client_id_tests)
-    add_subdirectory(second_address_tests)
-    add_subdirectory(security_tests)
-    add_subdirectory(someip_tp_tests)
-    add_subdirectory(subscribe_notify_one_tests)
-    add_subdirectory(subscribe_notify_tests)
-    add_subdirectory(suspend_resume_tests)
-    add_subdirectory(start_stop_start_tests)
-    add_subdirectory(shutdown_tests)
-    add_subdirectory(tcp_user_timeout_tests)
 endif()
-
+add_subdirectory(multicast_group_tests)
+add_subdirectory(offer_stop_offer_test)
+add_subdirectory(offer_tests)
+add_subdirectory(offered_services_info_tests)
+add_subdirectory(pending_subscription_tests)
+add_subdirectory(regression_tests)
+add_subdirectory(restart_routing_tests)
+add_subdirectory(reuse_client_id_tests)
+add_subdirectory(second_address_tests)
+add_subdirectory(security_tests)
+add_subdirectory(someip_tp_tests)
+add_subdirectory(subscribe_notify_one_tests)
+add_subdirectory(subscribe_notify_tests)
+add_subdirectory(suspend_resume_tests)
+add_subdirectory(start_stop_start_tests)
+add_subdirectory(shutdown_tests)
+add_subdirectory(tcp_user_timeout_tests)
 add_subdirectory(application_tests)
 add_subdirectory(big_payload_tests)
 add_subdirectory(cyclic_event_tests)

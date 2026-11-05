@@ -52,9 +52,6 @@ add_executable(offer_test_external_sd_msg_sender
     offer_test_external_sd_msg_sender.cpp
 )
 
-# offer_test_external_sd_msg_sender.cpp directly uses some sd symbols
-target_link_libraries(offer_test_external_sd_msg_sender vsomeip3-sd-test)
-
 add_executable(offer_test_big_sd_msg_service
     offer_test_big_sd_msg_service.cpp
 )
@@ -87,6 +84,7 @@ targets_link_default_libraries("${executables}")
 add_custom_test(
     NAME offer_test_local
     COMMAND ${CMAKE_CURRENT_BINARY_DIR}/offer_test_local_starter.sh
+    PROCESSES 5
 )
 
 add_custom_test(

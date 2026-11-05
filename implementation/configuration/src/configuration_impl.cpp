@@ -48,8 +48,8 @@ namespace vsomeip_v3 {
 namespace cfg {
 
 configuration_impl::configuration_impl(const std::string& _path) :
-    default_unicast_{"local"}, is_loaded_{false}, is_logging_loaded_{false}, prefix_{VSOMEIP_PREFIX}, diagnosis_{VSOMEIP_DIAGNOSIS_ADDRESS},
-    diagnosis_mask_{0xFF00}, has_console_log_{true}, has_file_log_{false}, has_dlt_log_{false}, logfile_{"/tmp/vsomeip.log"},
+    default_unicast_{"local"}, is_loaded_{false}, is_logging_loaded_{false}, diagnosis_{VSOMEIP_DIAGNOSIS_ADDRESS}, diagnosis_mask_{0xFF00},
+    has_console_log_{true}, has_file_log_{false}, has_dlt_log_{false}, logfile_{"/tmp/vsomeip.log"},
     loglevel_{vsomeip_v3::logger::level_e::LL_INFO}, is_suppress_events_enabled_{false}, is_sd_enabled_{VSOMEIP_SD_DEFAULT_ENABLED},
     sd_protocol_{VSOMEIP_SD_DEFAULT_PROTOCOL}, sd_multicast_{VSOMEIP_SD_DEFAULT_MULTICAST}, sd_port_{VSOMEIP_SD_DEFAULT_PORT},
     sd_initial_delay_min_{VSOMEIP_SD_DEFAULT_INITIAL_DELAY_MIN}, sd_initial_delay_max_{VSOMEIP_SD_DEFAULT_INITIAL_DELAY_MAX},
@@ -64,20 +64,20 @@ configuration_impl::configuration_impl(const std::string& _path) :
     buffer_shrink_threshold_{VSOMEIP_DEFAULT_BUFFER_SHRINK_THRESHOLD}, trace_{std::make_shared<trace>()}, log_version_{true},
     log_version_interval_{VSOMEIP_DEFAULT_LOG_NETWORK_HOST}, permissions_uds_{VSOMEIP_DEFAULT_UDS_PERMISSIONS}, network_{"vsomeip"},
     e2e_enabled_{false}, log_memory_{false}, log_memory_interval_{0}, log_status_interval_{VSOMEIP_DEFAULT_LOG_STATUS},
-    endpoint_queue_limit_external_{QUEUE_SIZE_UNLIMITED}, endpoint_queue_limit_local_{QUEUE_SIZE_UNLIMITED},
-    local_tcp_user_timeout_{VSOMEIP_DEFAULT_TCP_USER_TIMEOUT}, local_tcp_keepidle_{VSOMEIP_DEFAULT_TCP_KEEPIDLE},
-    local_tcp_keepintvl_{VSOMEIP_DEFAULT_TCP_KEEPINTVL}, local_tcp_keepcnt_{VSOMEIP_DEFAULT_TCP_KEEPCNT},
-    external_tcp_user_timeout_{VSOMEIP_DEFAULT_TCP_USER_TIMEOUT}, external_tcp_keepidle_{VSOMEIP_DEFAULT_TCP_KEEPIDLE},
-    external_tcp_keepintvl_{VSOMEIP_DEFAULT_TCP_KEEPINTVL}, external_tcp_keepcnt_{VSOMEIP_DEFAULT_TCP_KEEPCNT},
-    tcp_restart_aborts_max_{VSOMEIP_MAX_TCP_RESTART_ABORTS}, tcp_connect_time_max_{VSOMEIP_MAX_TCP_CONNECT_TIME},
-    has_issued_methods_warning_{false}, has_issued_clients_warning_{false}, udp_receive_buffer_size_{VSOMEIP_DEFAULT_UDP_RCV_BUFFER_SIZE},
+    log_network_state_interval_{VSOMEIP_DEFAULT_LOG_NETWORK}, endpoint_queue_limit_external_{QUEUE_SIZE_UNLIMITED},
+    endpoint_queue_limit_local_{QUEUE_SIZE_UNLIMITED}, local_tcp_user_timeout_{VSOMEIP_DEFAULT_TCP_USER_TIMEOUT},
+    local_tcp_keepidle_{VSOMEIP_DEFAULT_TCP_KEEPIDLE}, local_tcp_keepintvl_{VSOMEIP_DEFAULT_TCP_KEEPINTVL},
+    local_tcp_keepcnt_{VSOMEIP_DEFAULT_TCP_KEEPCNT}, external_tcp_user_timeout_{VSOMEIP_DEFAULT_TCP_USER_TIMEOUT},
+    external_tcp_keepidle_{VSOMEIP_DEFAULT_TCP_KEEPIDLE}, external_tcp_keepintvl_{VSOMEIP_DEFAULT_TCP_KEEPINTVL},
+    external_tcp_keepcnt_{VSOMEIP_DEFAULT_TCP_KEEPCNT}, tcp_restart_aborts_max_{VSOMEIP_MAX_TCP_RESTART_ABORTS},
+    tcp_connect_time_max_{VSOMEIP_MAX_TCP_CONNECT_TIME}, udp_receive_buffer_size_{VSOMEIP_DEFAULT_UDP_RCV_BUFFER_SIZE},
     npdu_default_debounce_requ_{VSOMEIP_DEFAULT_NPDU_DEBOUNCING_NANO}, npdu_default_debounce_resp_{VSOMEIP_DEFAULT_NPDU_DEBOUNCING_NANO},
     npdu_default_max_retention_requ_{VSOMEIP_DEFAULT_NPDU_MAXIMUM_RETENTION_NANO},
     npdu_default_max_retention_resp_{VSOMEIP_DEFAULT_NPDU_MAXIMUM_RETENTION_NANO}, log_statistics_{true},
     statistics_interval_{VSOMEIP_DEFAULT_STATISTICS_INTERVAL}, statistics_min_freq_{VSOMEIP_DEFAULT_STATISTICS_MIN_FREQ},
     statistics_max_messages_{VSOMEIP_DEFAULT_STATISTICS_MAX_MSG}, max_remote_subscribers_{VSOMEIP_DEFAULT_MAX_REMOTE_SUBSCRIBERS},
     path_{_path}, is_security_enabled_{false}, is_security_external_{false}, is_security_audit_{false}, is_remote_access_allowed_{true},
-    initial_routing_state_{routing_state_e::RS_UNKNOWN}, request_debounce_time_{VSOMEIP_REQUEST_DEBOUNCE_TIME},
+    initial_routing_state_{routing_state_internal_e::RESUMED}, request_debounce_time_{VSOMEIP_REQUEST_DEBOUNCE_TIME},
     default_max_dispatch_time_{VSOMEIP_DEFAULT_MAX_DISPATCH_TIME}, default_max_dispatchers_{VSOMEIP_DEFAULT_MAX_DISPATCHERS} {
 
     unicast_ = boost::asio::ip::make_address(VSOMEIP_UNICAST_ADDRESS);
@@ -92,104 +92,6 @@ configuration_impl::configuration_impl(const std::string& _path) :
     routing_.guests_.unicast_ = routing_.host_.unicast_;
     routing_.guests_.ports_[{ANY_UID, ANY_GID}].emplace(31492, 31999);
 #endif
-}
-
-configuration_impl::configuration_impl(const configuration_impl& _other) :
-    std::enable_shared_from_this<configuration_impl>(_other), default_unicast_{_other.default_unicast_}, is_loaded_{_other.is_loaded_},
-    is_logging_loaded_{_other.is_logging_loaded_}, mandatory_{_other.mandatory_}, has_console_log_{_other.has_console_log_.load()},
-    has_file_log_{_other.has_file_log_.load()}, has_dlt_log_{_other.has_dlt_log_.load()},
-    max_configured_message_size_{_other.max_configured_message_size_}, max_local_message_size_{_other.max_local_message_size_},
-    max_reliable_message_size_{_other.max_reliable_message_size_}, max_unreliable_message_size_{_other.max_unreliable_message_size_},
-    buffer_shrink_threshold_{_other.buffer_shrink_threshold_}, permissions_uds_{VSOMEIP_DEFAULT_UDS_PERMISSIONS},
-    endpoint_queue_limit_external_{_other.endpoint_queue_limit_external_}, endpoint_queue_limit_local_{_other.endpoint_queue_limit_local_},
-    tcp_restart_aborts_max_{_other.tcp_restart_aborts_max_}, tcp_connect_time_max_{_other.tcp_connect_time_max_},
-    udp_receive_buffer_size_{_other.udp_receive_buffer_size_}, npdu_default_debounce_requ_{_other.npdu_default_debounce_requ_},
-    npdu_default_debounce_resp_{_other.npdu_default_debounce_resp_},
-    npdu_default_max_retention_requ_{_other.npdu_default_max_retention_requ_},
-    npdu_default_max_retention_resp_{_other.npdu_default_max_retention_resp_}, path_{_other.path_},
-    initial_routing_state_{_other.initial_routing_state_}, request_debounce_time_{_other.request_debounce_time_},
-    default_max_dispatch_time_{_other.default_max_dispatch_time_}, default_max_dispatchers_{_other.default_max_dispatchers_} {
-
-    applications_.insert(_other.applications_.begin(), _other.applications_.end());
-    client_identifiers_ = _other.client_identifiers_;
-    services_.insert(_other.services_.begin(), _other.services_.end());
-    clients_ = _other.clients_;
-
-    unicast_ = _other.unicast_;
-    netmask_ = _other.netmask_;
-    device_ = _other.device_;
-    diagnosis_ = _other.diagnosis_;
-    diagnosis_mask_ = _other.diagnosis_mask_;
-
-    logfile_ = _other.logfile_;
-
-    loglevel_ = _other.loglevel_;
-
-    routing_ = _other.routing_;
-
-    is_sd_enabled_ = _other.is_sd_enabled_;
-    sd_multicast_ = _other.sd_multicast_;
-    sd_port_ = _other.sd_port_;
-    sd_protocol_ = _other.sd_protocol_;
-
-    is_suppress_events_enabled_ = _other.is_suppress_events_enabled_;
-
-    sd_initial_delay_min_ = _other.sd_initial_delay_min_;
-    sd_initial_delay_max_ = _other.sd_initial_delay_max_;
-    sd_repetitions_base_delay_ = _other.sd_repetitions_base_delay_;
-    sd_repetitions_max_ = _other.sd_repetitions_max_;
-    sd_ttl_ = _other.sd_ttl_;
-    sd_cyclic_offer_delay_ = _other.sd_cyclic_offer_delay_;
-    sd_find_initial_debounce_reps_ = _other.sd_find_initial_debounce_reps_;
-    sd_find_initial_debounce_time_ = _other.sd_find_initial_debounce_time_;
-    sd_offer_debounce_time_ = _other.sd_offer_debounce_time_;
-    sd_find_debounce_time_ = _other.sd_find_debounce_time_;
-    sd_wait_route_netlink_notification_ = _other.sd_wait_route_netlink_notification_;
-
-    trace_ = std::make_shared<trace>(*_other.trace_);
-    supported_selective_addresses = _other.supported_selective_addresses;
-    internal_service_ranges_ = _other.internal_service_ranges_;
-    log_version_ = _other.log_version_;
-    log_version_interval_ = _other.log_version_interval_;
-
-    magic_cookies_.insert(_other.magic_cookies_.begin(), _other.magic_cookies_.end());
-    message_sizes_ = _other.message_sizes_;
-
-    for (auto i = 0; i < ET_MAX; i++) {
-        is_configured_[i] = _other.is_configured_[i];
-    }
-
-    network_ = _other.network_;
-    configuration_path_ = _other.configuration_path_;
-
-    e2e_enabled_ = _other.e2e_enabled_;
-    e2e_configuration_ = _other.e2e_configuration_;
-
-    log_memory_ = _other.log_memory_;
-    log_memory_interval_ = _other.log_memory_interval_;
-    log_status_interval_ = _other.log_status_interval_;
-
-    ttl_factors_offers_ = _other.ttl_factors_offers_;
-    ttl_factors_subscriptions_ = _other.ttl_factors_subscriptions_;
-
-    debounces_ = _other.debounces_;
-    endpoint_queue_limits_ = _other.endpoint_queue_limits_;
-
-    sd_acceptance_rules_ = _other.sd_acceptance_rules_;
-
-    has_issued_methods_warning_ = _other.has_issued_methods_warning_;
-    has_issued_clients_warning_ = _other.has_issued_clients_warning_;
-
-    log_statistics_ = _other.log_statistics_;
-    statistics_interval_ = _other.statistics_interval_;
-    statistics_min_freq_ = _other.statistics_min_freq_;
-    statistics_max_messages_ = _other.statistics_max_messages_;
-    max_remote_subscribers_ = _other.max_remote_subscribers_;
-
-    is_security_enabled_ = _other.is_security_enabled_.load();
-    is_security_external_ = _other.is_security_external_.load();
-    is_security_audit_ = _other.is_security_audit_.load();
-    is_remote_access_allowed_ = _other.is_remote_access_allowed_.load();
 }
 
 configuration_impl::~configuration_impl() { }
@@ -292,6 +194,8 @@ bool configuration_impl::load(const std::string& _name) {
         logger::logger_impl::init(shared_from_this());
     }
 
+    validate_client_identifiers();
+
     // Log about reading of configuration file(s) that failed.
     // (This may fail if the logger configuration is incomplete/missing).
     for (const auto& f : its_failed) {
@@ -372,6 +276,7 @@ void configuration_impl::load_optional() {
     read_data(input_, its_optional_elements, its_failed, false);
     load_data(its_mandatory_elements, false, true);
     load_data(its_optional_elements, true, true);
+    validate_client_identifiers();
 
     for (const auto& f : its_failed) {
         VSOMEIP_WARNING << "Reading of configuration file \"" << f << "\" failed. Configuration may be incomplete.";
@@ -637,7 +542,6 @@ bool configuration_impl::load_data(const std::vector<configuration_element>& _el
             load_npdu_default_timings(e);
             load_internal_services(e);
             load_clients(e);
-            load_selective_broadcasts_support(e);
             load_e2e(e);
             load_debounce(e);
             load_acceptances(e);
@@ -697,21 +601,23 @@ bool configuration_impl::load_logging(const configuration_element& _element, std
                     _warnings.insert("Multiple definitions for logging.level. Ignoring definition from " + _element.name_);
                 } else {
                     std::string its_value(i->second.data());
-                    std::scoped_lock lock(mutex_loglevel_);
-                    loglevel_ =
-                            (its_value == "trace"
-                                     ? vsomeip_v3::logger::level_e::LL_VERBOSE
-                                     : (its_value == "debug"
-                                                ? vsomeip_v3::logger::level_e::LL_DEBUG
-                                                : (its_value == "info"
-                                                           ? vsomeip_v3::logger::level_e::LL_INFO
-                                                           : (its_value == "warning"
-                                                                      ? vsomeip_v3::logger::level_e::LL_WARNING
-                                                                      : (its_value == "error"
-                                                                                 ? vsomeip_v3::logger::level_e::LL_ERROR
-                                                                                 : (its_value == "fatal"
-                                                                                            ? vsomeip_v3::logger::level_e::LL_FATAL
-                                                                                            : vsomeip_v3::logger::level_e::LL_INFO))))));
+                    if (its_value == "trace") {
+                        loglevel_ = vsomeip_v3::logger::level_e::LL_VERBOSE;
+                    } else if (its_value == "debug") {
+                        loglevel_ = vsomeip_v3::logger::level_e::LL_DEBUG;
+                    } else if (its_value == "info") {
+                        loglevel_ = vsomeip_v3::logger::level_e::LL_INFO;
+                    } else if (its_value == "warning") {
+                        loglevel_ = vsomeip_v3::logger::level_e::LL_WARNING;
+                    } else if (its_value == "error") {
+                        loglevel_ = vsomeip_v3::logger::level_e::LL_ERROR;
+                    } else if (its_value == "fatal") {
+                        loglevel_ = vsomeip_v3::logger::level_e::LL_FATAL;
+                    } else {
+                        _warnings.insert("Unrecognized logging level '" + its_value + "', will default to 'info'");
+                        loglevel_ = vsomeip_v3::logger::level_e::LL_INFO;
+                    }
+
                     is_configured_[ET_LOGGING_LEVEL] = true;
                 }
             } else if (its_key == "version") {
@@ -738,6 +644,14 @@ bool configuration_impl::load_logging(const configuration_element& _element, std
                 // on the config in seconds, and here is converted to milliseconds
                 // for more precision, set it on application level
                 log_status_interval_ *= 1000;
+            } else if (its_key == "network_state_log_interval") {
+                std::stringstream its_converter;
+                its_converter << std::dec << i->second.data();
+                its_converter >> log_network_state_interval_;
+                // for compatibility reasons, this value has to be set
+                // on the config in seconds, and here is converted to milliseconds
+                // for more precision, set it on application level
+                log_network_state_interval_ *= 1000;
             } else if (its_key == "memory_log_interval") {
                 std::stringstream its_converter;
                 its_converter << std::dec << i->second.data();
@@ -1039,6 +953,29 @@ std::set<std::pair<port_t, port_t>> configuration_impl::load_routing_guest_port_
     }
 
     return its_ranges;
+}
+
+void configuration_impl::validate_client_identifiers() {
+    // Only meaningful once this configuration declares a diagnosis address of its own: a guest
+    // configuration has none and inherits the client ids of its routing host.
+    if (!is_configured_[ET_DIAGNOSIS]) {
+        return;
+    }
+
+    for (auto& [its_name, its_application] : applications_) {
+        const client_t its_id = its_application.client_;
+        if (its_id == VSOMEIP_CLIENT_UNSET || utility::is_client_id_in_range(its_id, diagnosis_, diagnosis_mask_)) {
+            continue;
+        }
+        // A mask that clears bits of the diagnosis prefix is valid: it enlarges the client id
+        // block, which then spans several prefixes starting at the masked diagnosis address.
+        VSOMEIP_ERROR << "Configured Client ID 0x" << hex4(its_id) << " of application " << its_name
+                      << " is outside the Client ID range of this host (starting at 0x"
+                      << hex4(utility::get_client_id_base(diagnosis_, diagnosis_mask_)) << ", mask 0x" << hex4(diagnosis_mask_)
+                      << "). Ignoring the configuration for application " << its_name;
+        its_application.client_ = VSOMEIP_CLIENT_UNSET;
+        client_identifiers_.erase(its_id);
+    }
 }
 
 bool configuration_impl::load_applications(const configuration_element& _element) {
@@ -1390,15 +1327,9 @@ void configuration_impl::load_trace_filter_expressions(const boost::property_tre
             _filter->matches_.push_back(its_match);
         }
     } else if (_criteria == "methods") {
-        if (!has_issued_methods_warning_) {
-            VSOMEIP_ERROR_P << "\"method\" entry in filter configuration has no effect!";
-            has_issued_methods_warning_ = true;
-        }
+        VSOMEIP_ERROR_P << "\"method\" entry in filter configuration has no effect!";
     } else if (_criteria == "clients") {
-        if (!has_issued_clients_warning_) {
-            VSOMEIP_ERROR_P << "\"clients\" entry in filter configuration has no effect!";
-            has_issued_clients_warning_ = true;
-        }
+        VSOMEIP_ERROR_P << "\"clients\" entry in filter configuration has no effect!";
     } else if (_criteria == "matches") {
         for (auto i = _tree.begin(); i != _tree.end(); ++i) {
             vsomeip_v3::trace::match_t its_match;
@@ -1662,27 +1593,9 @@ void configuration_impl::load_netmask(const configuration_element& _element) {
         auto its_value = _element.tree_.get_optional<std::string>("netmask");
         if (its_value) {
             if (is_configured_[ET_NETMASK]) {
-                VSOMEIP_WARNING << "Multiple definitions for netmask/prefix. Ignoring netmask definition from " << _element.name_;
+                VSOMEIP_WARNING << "Multiple definitions for netmask. Ignoring definition from " << _element.name_;
             } else {
                 netmask_ = boost::asio::ip::make_address(*its_value);
-                is_configured_[ET_NETMASK] = true;
-            }
-        }
-
-        its_value = _element.tree_.get_optional<std::string>("prefix");
-        if (its_value) {
-            if (is_configured_[ET_NETMASK]) {
-                VSOMEIP_WARNING << "Multiple definitions for prefix/netmask. Ignoring prefix definition from " << _element.name_;
-            } else {
-                std::stringstream its_converter;
-                its_converter << *its_value;
-                its_converter >> std::dec >> prefix_;
-
-                // Convert to netmask as this is used for IPv4.
-                uint32_t its_netmask = (std::numeric_limits<uint32_t>::max() << (std::numeric_limits<uint32_t>::digits - prefix_))
-                        & std::numeric_limits<uint32_t>::max();
-                netmask_ = boost::asio::ip::address_v4(its_netmask);
-
                 is_configured_[ET_NETMASK] = true;
             }
         }
@@ -1748,12 +1661,6 @@ void configuration_impl::load_diagnosis_address(const configuration_element& _el
             }
             its_converter >> diagnosis_mask_;
             is_configured_[ET_DIAGNOSIS_MASK] = true;
-        }
-        if (is_configured_[ET_DIAGNOSIS] && is_configured_[ET_DIAGNOSIS_MASK]
-            && (static_cast<uint16_t>(diagnosis_ << 8) & diagnosis_mask_) != static_cast<uint16_t>(diagnosis_ << 8)) {
-            VSOMEIP_WARNING << "Diagnosis mask masks bits of diagnosis prefix! Client IDs will start at 0x"
-                            << hex4(static_cast<uint16_t>(diagnosis_ << 8) & diagnosis_mask_) << " not at 0x"
-                            << hex4(static_cast<uint16_t>(diagnosis_ << 8));
         }
     } catch (...) {
         // intentionally left empty
@@ -1964,9 +1871,9 @@ void configuration_impl::load_service_discovery(const configuration_element& _el
                                     << _element.name_;
                 } else {
                     if (its_value == "suspended") {
-                        initial_routing_state_ = routing_state_e::RS_SUSPENDED;
+                        initial_routing_state_ = routing_state_internal_e::SUSPENDED;
                     } else if (its_value == "resumed") {
-                        initial_routing_state_ = routing_state_e::RS_RESUMED;
+                        initial_routing_state_ = routing_state_internal_e::RESUMED;
                     }
                 }
             } else if (its_key == "wait_route_netlink_notification") {
@@ -2062,10 +1969,8 @@ void configuration_impl::load_service(const boost::property_tree::ptree& _tree, 
     try {
         bool is_loaded(true);
         bool use_magic_cookies(false);
-        service_t service_id(0);
-        instance_t instance_id(0);
 
-        auto its_service = std::make_shared<service>(service_id, instance_id);
+        auto its_service = std::make_shared<service>(0, 0);
         its_service->reliable_ = its_service->unreliable_ = ILLEGAL_PORT;
         its_service->unicast_address_ = _unicast_address;
         its_service->protocol_ = "someip";
@@ -2120,15 +2025,12 @@ void configuration_impl::load_service(const boost::property_tree::ptree& _tree, 
                 }
 
                 if (its_key == "service") {
-                    its_converter >> service_id;
+                    its_converter >> its_service->service_instance_.service;
                 } else if (its_key == "instance") {
-                    its_converter >> instance_id;
+                    its_converter >> its_service->service_instance_.instance;
                 }
             }
         }
-
-        // Initialize service_instance_ from the loaded service and instance values
-        its_service->service_instance_ = service_instance_t{service_id, instance_id};
 
         if (services_.count(its_service->service_instance_) > 0) {
             VSOMEIP_WARNING << "Multiple configurations for service [" << its_service->service_instance_ << "]";
@@ -2222,14 +2124,16 @@ void configuration_impl::load_event(std::shared_ptr<service>& _service, const bo
             } else {
                 // If event reliability type was not configured,
                 if (its_reliability == reliability_type_e::RT_UNKNOWN) {
+                    const char* its_reliability_name = "RT_UNKNOWN";
                     if (_service->unreliable_ != ILLEGAL_PORT) {
                         its_reliability = reliability_type_e::RT_UNRELIABLE;
+                        its_reliability_name = "RT_UNRELIABLE";
                     } else if (_service->reliable_ != ILLEGAL_PORT) {
                         its_reliability = reliability_type_e::RT_RELIABLE;
+                        its_reliability_name = "RT_RELIABLE";
                     }
                     VSOMEIP_WARNING << "Reliability type for event [" << _service->service_instance_ << "." << hex4(its_event_id)
-                                    << "] was not configured Using : "
-                                    << ((its_reliability == reliability_type_e::RT_RELIABLE) ? "RT_RELIABLE" : "RT_UNRELIABLE");
+                                    << "] was not configured Using : " << its_reliability_name;
                 }
 
                 auto its_event = std::make_shared<event>(its_event_id, its_is_field, its_reliability, its_cycle, its_change_resets_cycle,
@@ -2698,18 +2602,6 @@ void configuration_impl::load_security(const configuration_element& _element) {
     }
 }
 
-void configuration_impl::load_selective_broadcasts_support(const configuration_element& _element) {
-    try {
-        auto its_service_discovery = _element.tree_.get_child("supports_selective_broadcasts");
-        for (auto i = its_service_discovery.begin(); i != its_service_discovery.end(); ++i) {
-            std::string its_value(i->second.data());
-            supported_selective_addresses.insert(its_value);
-        }
-    } catch (...) {
-        // intentionally left empty
-    }
-}
-
 void configuration_impl::load_partitions(const configuration_element& _element) {
 
     try {
@@ -2767,7 +2659,6 @@ void configuration_impl::load_partition(const boost::property_tree::ptree& _tree
         }
 
         if (!its_partition_members.empty()) {
-            std::scoped_lock its_lock(partitions_mutex_);
             its_partition_id++;
 
             std::stringstream its_log;
@@ -2837,10 +2728,6 @@ const boost::asio::ip::address& configuration_impl::get_netmask() const {
     return netmask_;
 }
 
-unsigned short configuration_impl::get_prefix() const {
-    return prefix_;
-}
-
 const std::string& configuration_impl::get_device() const {
     return device_;
 }
@@ -2878,7 +2765,6 @@ const std::string& configuration_impl::get_logfile() const {
 }
 
 vsomeip_v3::logger::level_e configuration_impl::get_loglevel() const {
-    std::unique_lock its_lock(mutex_loglevel_);
     return loglevel_;
 }
 
@@ -3105,6 +2991,10 @@ uint32_t configuration_impl::get_version_log_interval(const std::string& _name, 
     } else {
         return VSOMEIP_DEFAULT_LOG_NETWORK;
     }
+}
+
+uint32_t configuration_impl::get_network_state_log_interval() const {
+    return log_network_state_interval_;
 }
 
 uint32_t configuration_impl::get_status_log_interval(const std::string& _name, bool _is_host) const {
@@ -3526,10 +3416,6 @@ uint32_t configuration_impl::get_buffer_shrink_threshold() const {
     return buffer_shrink_threshold_;
 }
 
-bool configuration_impl::supports_selective_broadcasts(const boost::asio::ip::address& _address) const {
-    return supported_selective_addresses.count(_address.to_string()) > 0;
-}
-
 bool configuration_impl::log_version() const {
     return log_version_;
 }
@@ -3640,10 +3526,6 @@ std::map<plugin_type_e, std::set<std::string>> configuration_impl::get_plugins(c
     }
 
     return its_plugins;
-}
-
-void configuration_impl::set_configuration_path(const std::string& _path) {
-    configuration_path_ = _path;
 }
 
 std::map<std::string, std::string> configuration_impl::get_additional_data(const std::string& _application_name,
@@ -4375,7 +4257,6 @@ void configuration_impl::load_udp_receive_buffer_size(const configuration_elemen
 }
 
 void configuration_impl::load_secure_services(const configuration_element& _element) {
-    std::scoped_lock its_lock(secure_services_mutex_);
     try {
         auto its_services = _element.tree_.get_child("secure-services");
         for (auto i = its_services.begin(); i != its_services.end(); ++i) {
@@ -4743,7 +4624,6 @@ void configuration_impl::set_sd_acceptance_rules_active(const boost::asio::ip::a
 }
 
 bool configuration_impl::is_secure_service(service_t _service, instance_t _instance) const {
-    std::scoped_lock its_lock(secure_services_mutex_);
     const auto its_service = secure_services_.find(_service);
     if (its_service != secure_services_.end()) {
         return (its_service->second.count(_instance) > 0);
@@ -4841,7 +4721,6 @@ partition_id_t configuration_impl::get_partition_id(service_t _service, instance
 
     partition_id_t its_id(VSOMEIP_DEFAULT_PARTITION_ID);
 
-    std::scoped_lock its_lock(partitions_mutex_);
     const auto search = partitions_.find(service_instance_t{_service, _instance});
     if (search != partitions_.end()) {
         its_id = search->second;
@@ -4870,7 +4749,7 @@ bool configuration_impl::is_remote_access_allowed() const {
     return is_remote_access_allowed_;
 }
 
-routing_state_e configuration_impl::get_initial_routing_state() const {
+routing_state_internal_e configuration_impl::get_initial_routing_state() const {
     return initial_routing_state_;
 }
 

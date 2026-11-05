@@ -7,9 +7,6 @@ project ("benchmark_tests_bin" LANGUAGES CXX)
 
 file (GLOB SRCS main.cpp **/*.cpp)
 
-set(THREADS_PREFER_PTHREAD_FLAG ON)
-
-
 # ----------------------------------------------------------------------------
 # Executable and libraries to link
 # ----------------------------------------------------------------------------
@@ -17,7 +14,6 @@ add_executable (${PROJECT_NAME} ${SRCS} )
 target_link_libraries (
     ${PROJECT_NAME}
     vsomeip3-test
-    vsomeip3-cfg-test
     Threads::Threads
     ${Boost_LIBRARIES}
     ${DL_LIBRARY}

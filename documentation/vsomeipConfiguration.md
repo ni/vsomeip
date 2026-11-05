@@ -55,6 +55,7 @@
     - **interval** - Configures interval in seconds to log the vsomeip version. The default value is `10` sec.
   - **memory_log_interval** - Configures interval in seconds in which the routing manager logs its used memory. Setting a value greater than zero enables the logging. The default value is `0` sec.
   - **status_log_interval** - Configures interval in seconds in which the routing manager logs its internal status. Setting a value greater than zero enables the logging. The default value is `0` sec.
+  - **network_state_log_interval** - Configures interval in seconds in which the routing manager logs the network state. Setting a value greater than zero enables the logging. The default value is `0` sec.
   - **statistics**
     - **interval** - How often to report statistics data (received messages/events) in ms. The minimum possible interval is `1000`, for configured values below, 1000 will be used. The default value is `10000` ms (10sec).
     - **min-frequency** - Minimum frequency of reported events. The default value is `50` Hz.
@@ -233,7 +234,7 @@ The following example assumes that different machines (i.e., with different IP a
     - **name** - The name of the plug-in.
     - **type** - The plug-in type (valid values: `application_plugin`). An application plug-in extends the functionality on application level. It gets informed by vsomeip over the basic application states (INIT/START/STOP) and can, based on these notifications, access the standard "application"-API via the runtime.
     - **additional** - Generic way to define configuration data for plugins.
-  - **debounce** - Client/Application specific configuration of debouncing.
+  - **debounce** - Client/Application specific configuration of debouncing. Uses the same format as the global [Debounce](#debounce) section and replaces the global configuration for the listed events for this application only. An event entry that uses the default values for both `on_change` and `interval` disables debouncing, so the application receives the event at its original rate.
   - **has_session_handling** - Configures the session handling. Mostly used for E2E use cases when the application handles the CRC calculation over the SOME/IP header by themself, and need the ability to switch off the session handling as otherwise their calculated checksum does not match reality after vsomeip inserts the session identifier. Valid values are `true` or `false`. The default value is `true`.
 
 <details><summary>Example of Applications configuration</summary>
@@ -280,7 +281,7 @@ The following example assumes that different machines (i.e., with different IP a
 
     Setting the mask to `0xFE00` doubles client ID range to 511 clients as the Hamming weight of the inverted mask is greater by one. With a diagnosis address of 0x45 the start value of client IDs is 0x4401 as bit 8 in 0x4500 is masked out. This then yields a client ID range of 0x4400 to 0x45ff.
 - **unicast** (optional) - The IP address of the host system.
-- **netmask** (optional) - The netmask to specify the subnet of the host system.
+- **netmask** (optional) - The netmask to specify the subnet of the host system. The default value is `255.255.255.0`. It determines which remote addresses are considered part of the local subnet.
 - **device** (optional) - If specified, IP endpoints will be bound to this device.
 
 <details><summary>Example of Network configuration!</summary>
@@ -1346,22 +1347,6 @@ Debounce time for requests to the service on 192.168.1.9 should have a:
 
 </details>
 
-## Selective Broadcasts Support
-
-- **supports_selective_broadcasts** (optional array) - This nodes allow to add a list of IP addresses on which CAPI-Selective-Broadcasts feature is supported. If not specified the feature can't be used and the subscription behavior of the stack is same as with normal events.
-    - **address** - Specifies an IP-Address (in IPv4 or IPv6 notation) on which the "selective"-feature is supported. Multiple addresses can be configured.
-
-<details><summary>Selective Broadcasts Support configuration</summary>
-
-```json
-"supports_selective_broadcasts" :
-{
-    "address" : "10.10.3.10"
-}
-```
-
-</details>
-
 ## E2E
 
 - **e2e** - Used to configure the E2E protection for the specified events
@@ -1564,7 +1549,9 @@ Debounce time for requests to the service on 192.168.1.9 should have a:
 
 ## Debounce
 
-- **debounce** (optional array) - Events/fields sent by external devices will be forwarded to the applications only if a configurable function evaluates to true. The function checks whether the event/field payload has changed and whether a specified interval has been elapsed since the last forwarding.
+It is common that events/fields are emitted cyclically, often at high frequencies (e.g., >100Hz). In order to reduce the load, these can be debounced in the routing manager, so that client applications receive fewer messages (and fewer wakeups). The debouncing parameters below functions conceptually as a filter - emitted events either pass or are blocked by the debouncing filter. A bit of care with the parameters is necessary - for example, an **interval** that matches the cycle frequency is inherently racy, as events/field will either pass or be blocked dependencing on clock accuracy.
+
+- **debounce** (optional array) - Events/fields sent will be forwarded to the applications only if a configurable function evaluates to true. The function checks whether the event/field payload has changed and whether a specified interval has elapsed since the last forwarding.
     - **service** - Service ID which hosts the events to be debounced.
     - **instance** - Instance ID which hosts the events to be debounced.
     - **events** - Array of events which shall be debounced based on the following configuration options.
@@ -1574,10 +1561,22 @@ Debounce time for requests to the service on 192.168.1.9 should have a:
             - **index** - Payload index to be checked with given bitmask.
             - **mask** - 1 Byte bitmask applied to byte at given payload index. **Example mask**: 0x0f ignores payload changes in low nibble of the byte at given index.
         - **interval** - Specifies if the event shall be debounced based on elapsed time interval. (valid values: `time in ms`, `never`). The default value is  `never`.
+          **NOTE**: avoid setting an **interval** that is a multiple of the event frequency, as this causes non-deterministic debouncing behavior. It is recommended that the interval is always "off by half the cycle".
         - **on_change_resets_interval** (optional) - Specifies if interval timer is reset when payload change was detected, valid values are `false`, `true`. The default value is `false`.
 
+    An event entry that neither sets `on_change` to `true` nor specifies an `interval` has no forwarding trigger and does not debounce: every notification is forwarded. Use such an entry in an application's `debounce` section to override the global debounce configuration and receive the event at its original rate.
+
+A couple of technical notes:
+- these debounce filters will also apply if a local application is offering the service, and another local application consumes. In that case, of course, it is the offering application that applies the debouncing, not the routing manager.
+- these debounce filters can also be done at runtime using `vsomeip_v3::application::subscribe_with_debounce`
 
 <details><summary>Debounce configuration</summary>
+
+For the example, assume that service 0x7530 has several high-frequency events:
+- 0x8001 is an event emitted at 100Hz, but we want only 50Hz => we set a 15ms debounce interval (lower than 20ms to avoid having a multiple of the cycle time).
+- 0x8002 is an event emitted at 500Hz, but we only want changes => we set **on_change** to true.
+- 0x8005 is an event emitted at 50Hz, but we want changes, and otherwise only 1Hz => we set both **on_change** to true + a 990ms interval.
+- 0x8006 is an event emitted at 10Hz, but we want changes, and never equal values faster than 1Hz => we set **on_change** + **on_change_resets_interval** to true + a 950ms interval.
 
 ```json
 "debounce" :
@@ -1590,27 +1589,22 @@ Debounce time for requests to the service on 192.168.1.9 should have a:
             {
                 "event" : "0x8001",
                 "on_change" : "false",
-                "interval" : "50"
+                "interval" : "15"
             },
             {
                 "event" : "0x8002",
-                "on_change" : "false",
-                "interval" : "50"
+                "on_change" : "true"
             },
             {
                 "event" : "0x8005",
-                "on_change" : "false",
-                "interval" : "50"
+                "on_change" : "true",
+                "interval" : "990"
             },
             {
                 "event" : "0x8006",
-                "on_change" : "false",
-                "interval" : "100"
-            },
-            {
-                "event" : "0x8009",
-                "on_change" : "false",
-                "interval" : "100"
+                "on_change" : "true",
+                "interval" : "950",
+                "on_change_resets_interval": true
             }
         ]
     }
@@ -1795,7 +1789,7 @@ To enable service-specific logs, provide a space- or colon-separated list of Ser
         Environment=VSOMEIP_CLIENTSIDELOGGING="b003.0001 f013.000a 1001 1002"
         Environment=VSOMEIP_CLIENTSIDELOGGING="b003.0001:f013.000a:1001:1002"
 
-- **VSOMEIP_E2E_PROTECTION_MODULE** - Used to load external E2E modules. Defaults to `libvsomeip3-e2e.so.@VSOMEIP_MAJOR_VERSION@`, `vsomeip3-e2e.dll`(WIN), and `libvsomeip_e2e.so` (Android).
+- **VSOMEIP_E2E_PROTECTION_MODULE** - Used to load external E2E modules. Defaults to `libvsomeip3-e2e.so.@VSOMEIP_MAJOR_VERSION@`, `vsomeip3-e2e.dll`(WIN), and `libvsomeip_e2e.so` (Android). **Deprecated since version 3.8**: the E2E implementation is part of `libvsomeip3` and this variable is ignored.
 
 <details><summary>Using environment variables</summary>
 

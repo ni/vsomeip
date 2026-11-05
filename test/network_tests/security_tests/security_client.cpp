@@ -5,6 +5,7 @@
 
 #include <iomanip>
 #include "common/test_main.hpp"
+#include "common/timeout_scale.hpp"
 
 #include "security_client.hpp"
 
@@ -48,13 +49,14 @@ void security_client::start() {
 void security_client::stop() {
     VSOMEIP_INFO << "Stopping...";
 
-    if (is_remote_client_allowed_ || is_offer_test_) {
+    bool const its_request_shutdown = is_offer_test_ ? offer_allowed_ : is_remote_client_allowed_;
+    if (its_request_shutdown) {
         shutdown_service();
 
         // Wait for the service to become unavailable, confirming the shutdown
         // message was received and processed before we tear down.
         std::unique_lock its_lock(mutex_);
-        if (!condition_.wait_for(its_lock, std::chrono::seconds(5), [this] { return !is_available_; })) {
+        if (!condition_.wait_for(its_lock, common::scaled_timeout(std::chrono::seconds(5)), [this] { return !is_available_; })) {
             GTEST_NONFATAL_FAILURE_("Service didn't become unavailable within time");
         }
     }
@@ -144,7 +146,7 @@ void security_client::on_message(const std::shared_ptr<vsomeip::message>& _respo
 void security_client::run() {
     {
         std::unique_lock its_lock(mutex_);
-        if (!condition_.wait_for(its_lock, std::chrono::seconds(10), [this] { return is_available_; })) {
+        if (!condition_.wait_for(its_lock, common::scaled_timeout(std::chrono::seconds(10)), [this] { return is_available_; })) {
             ADD_FAILURE() << "Service did not become available";
         }
     }
@@ -167,25 +169,24 @@ void security_client::run() {
     std::this_thread::sleep_for(std::chrono::milliseconds(250));
 
     if (is_offer_test_) {
-        // The consumer authorizes (allow) or omits (deny) the provider's offer.
-        // When missing, every response/notification is dropped by the receive-side
-        // offer check.
+        // The consumer authorizes (allow) or omits (deny) the provider's offer. When missing, the
+        // send-side offer check already skips the requests, so no response can come back either.
         if (offer_allowed_) {
             EXPECT_EQ(vsomeip_test::NUMBER_OF_MESSAGES_TO_SEND_SECURITY_TESTS, received_responses_);
-            EXPECT_EQ(received_allowed_events_, (uint32_t)0x01);
+            EXPECT_GE(received_allowed_events_, (uint32_t)0x01); // can be >= 1 due to multiple initial notifications
         } else {
             EXPECT_EQ((uint32_t)0, received_responses_);
             EXPECT_EQ((uint32_t)0, received_allowed_events_);
         }
     } else if (!test_external_communication_) {
         EXPECT_EQ(vsomeip_test::NUMBER_OF_MESSAGES_TO_SEND_SECURITY_TESTS, received_responses_);
-        EXPECT_EQ(received_allowed_events_, (uint32_t)0x01);
+        EXPECT_GE(received_allowed_events_, (uint32_t)0x01); // can be >= 1 due to multiple initial notifications
     } else if (test_external_communication_ && !is_remote_client_allowed_) {
         EXPECT_EQ((uint32_t)0, received_responses_);
         EXPECT_EQ((uint32_t)0, received_allowed_events_);
     } else if (test_external_communication_ && is_remote_client_allowed_) {
         EXPECT_EQ(vsomeip_test::NUMBER_OF_MESSAGES_TO_SEND_SECURITY_TESTS, received_responses_);
-        EXPECT_EQ(received_allowed_events_, (uint32_t)0x01);
+        EXPECT_GE(received_allowed_events_, (uint32_t)0x01); // can be >= 1 due to multiple initial notifications
     }
     stop();
 }
