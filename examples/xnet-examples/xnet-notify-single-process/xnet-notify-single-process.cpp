@@ -7,6 +7,7 @@
 #include <iostream>
 #include <memory>
 #include <set>
+#include <string>
 #include <thread>
 
 #include <vsomeip/vsomeip.hpp>
@@ -80,8 +81,10 @@ void on_message(const std::shared_ptr<vsomeip::message>& _response) {
 }
 
 std::shared_ptr<vsomeip::application> create_app(const char* name, nxIpStackRef_t stack) {
+    const std::string config_path = std::string("./configurations/") + name + ".json";
+
     // Create a vsomeip application
-    auto app = vsomeip::runtime::get()->create_application(name);
+    auto app = vsomeip::runtime::get()->create_application(name, config_path);
 
     // Initialize the application on its XNET IP stack
     if (!app->init(stack)) {

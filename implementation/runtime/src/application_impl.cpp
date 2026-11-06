@@ -387,7 +387,7 @@ bool application_impl::register_ip_stack(const nxIpStackRef_t _stack) {
         error_init("Application is already initialized, IP stack must be registered before init().");
         return false;
     }
-    
+
     if (nullptr == _stack) {
         error_init("Invalid IP stack reference provided for application.");
         return false;
@@ -396,18 +396,18 @@ bool application_impl::register_ip_stack(const nxIpStackRef_t _stack) {
     auto socket_factory = abstract_socket_factory::get();
     if (!socket_factory->is_xnet_backend()) {
         error_init("The XNET socket factory is not being used.");
-        return false;  
+        return false;
     }
     // All sockets of this application (local routing and network) are created on io_.
     // The auxiliary context of the routing host is bound to the same stack when it is created during init().
     socket_factory->register_ip_stack(io_, _stack);
 
-    VSOMEIP_INFO_P << "IP stack registered for application \"" << name_ << "\".";
+    std::cerr << "IP stack registered for application \"" << name_ << "\"." << std::endl;
     return true;
 }
 
 void application_impl::error_init(const char* _message) const {
-    VSOMEIP_ERROR_P << "Failed to initialize application \"" << name_ << "\". " << _message;
+    std::cerr << "Failed to initialize application \"" << name_ << "\". " << _message << std::endl;
 }
 // --- NI modification: END ---
 

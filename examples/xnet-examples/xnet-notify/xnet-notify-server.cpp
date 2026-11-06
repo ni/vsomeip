@@ -99,6 +99,9 @@ void notify() {
 }
 
 int main() {
+    // Use the XNET socket factory for vsomeip
+    vsomeip::use_xnet_socket_factory();
+
     // Setup the vsomeip application
     if (!setup_application()) {
         return 1;

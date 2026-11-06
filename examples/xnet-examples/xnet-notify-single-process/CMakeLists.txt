@@ -57,7 +57,7 @@ else()
     set(CONFIG_PREFIX "xnet-notify-udp")
 endif()
 
-set(CONFIG_DIR "${CMAKE_CURRENT_SOURCE_DIR}/configurations")
+set(CONFIG_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../xnet-notify/configurations")
 set(xnet-notify-client_CONFIG "${CONFIG_DIR}/xnet-notify-client.json")
 set(xnet-notify-server_CONFIG "${CONFIG_DIR}/${CONFIG_PREFIX}-server.json")
 
@@ -73,23 +73,24 @@ set_target_properties(${sample} PROPERTIES
 # make the per-application configurations available next to the executable
 add_custom_command(TARGET ${sample} POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E rm -rf "$<TARGET_FILE_DIR:${sample}>/vsomeip"
-    COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:${sample}>/vsomeip"
-    COMMAND ${CMAKE_COMMAND} -E copy "${xnet-notify-client_CONFIG}" "$<TARGET_FILE_DIR:${sample}>/vsomeip/xnet-notify-client.json"
-    COMMAND ${CMAKE_COMMAND} -E copy "${xnet-notify-server_CONFIG}" "$<TARGET_FILE_DIR:${sample}>/vsomeip/xnet-notify-server.json"
+    COMMAND ${CMAKE_COMMAND} -E rm -rf "$<TARGET_FILE_DIR:${sample}>/configurations"
+    COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:${sample}>/configurations"
+    COMMAND ${CMAKE_COMMAND} -E copy "${xnet-notify-client_CONFIG}" "$<TARGET_FILE_DIR:${sample}>/configurations/xnet-notify-client.json"
+    COMMAND ${CMAKE_COMMAND} -E copy "${xnet-notify-server_CONFIG}" "$<TARGET_FILE_DIR:${sample}>/configurations/xnet-notify-server.json"
     COMMENT "Copying XNET configurations for ${sample}"
 )
 
 install(
     TARGETS ${sample}
-    RUNTIME DESTINATION "${INSTALL_DIR}/${sample}" COMPONENT bin
+    RUNTIME DESTINATION "${INSTALL_DIR}" COMPONENT bin
 )
 install(
     FILES "${xnet-notify-client_CONFIG}"
-    DESTINATION "${INSTALL_DIR}/${sample}/vsomeip" COMPONENT config
+    DESTINATION "${INSTALL_DIR}/configurations"
     RENAME "xnet-notify-client.json"
 )
 install(
     FILES "${xnet-notify-server_CONFIG}"
-    DESTINATION "${INSTALL_DIR}/${sample}/vsomeip" COMPONENT config
+    DESTINATION "${INSTALL_DIR}/configurations"
     RENAME "xnet-notify-server.json"
 )
