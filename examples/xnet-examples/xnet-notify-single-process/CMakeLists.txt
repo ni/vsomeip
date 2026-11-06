@@ -1,0 +1,95 @@
+cmake_minimum_required(VERSION 3.13)
+
+project(xnet-notify-single-process)
+
+set(CMAKE_CXX_STANDARD 20)
+
+set(VSOMEIP_NAME "vsomeip3")
+
+if(NOT TARGET ${VSOMEIP_NAME})
+	find_package(${VSOMEIP_NAME} REQUIRED)
+	find_package(Boost COMPONENTS filesystem REQUIRED)
+endif()
+
+include_directories (
+    ${VSOMEIP_INCLUDE_DIRS}
+    ${CMAKE_CURRENT_SOURCE_DIR}/../common/includes
+)
+
+include_directories (SYSTEM ${Boost_INCLUDE_DIRS})
+
+# NI-XNET library
+# When built as part of the vsomeip tree, NIXNET_INCLUDE_DIR/NIXNET_LIBRARY are
+# already resolved by the top-level CMakeLists.txt. Only detect them here when
+# this example is configured standalone.
+if(NOT NIXNET_LIBRARY)
+    if(DEFINED ENV{NIEXTCCOMPILERSUPP} AND NOT "$ENV{NIEXTCCOMPILERSUPP}" STREQUAL "")
+        set(NIXNET_INCLUDE_DIR "$ENV{NIEXTCCOMPILERSUPP}/include")
+        if(MSVC)
+            set(NIXNET_LIBRARY_DIR "$ENV{NIEXTCCOMPILERSUPP}/lib64/msvc")
+        else()
+            set(NIXNET_LIBRARY_DIR "$ENV{NIEXTCCOMPILERSUPP}/lib64")
+        endif()
+    elseif(MSVC)
+        message(FATAL_ERROR "NIEXTCCOMPILERSUPP is not set. Cannot locate nxsocket.h/nixntipstack.")
+    endif()
+
+    if(MSVC)
+        set(NIXNET_LIBRARY "${NIXNET_LIBRARY_DIR}/nixntipstack.lib")
+    else()
+        # On Linux the headers and library may be system-installed
+        find_library(NIXNET_LIBRARY nixntipstack HINTS "${NIXNET_LIBRARY_DIR}")
+        if(NOT NIXNET_LIBRARY)
+            message(FATAL_ERROR "nixntipstack library was not found.")
+        endif()
+    endif()
+endif()
+
+if(NIXNET_INCLUDE_DIR)
+    include_directories (SYSTEM ${NIXNET_INCLUDE_DIR})
+endif()
+
+# Select the configurations to use (UDP by default, TCP when USE_TCP is ON)
+option(USE_TCP "Use the TCP configuration instead of UDP" OFF)
+if(USE_TCP)
+    set(CONFIG_PREFIX "xnet-notify-tcp")
+else()
+    set(CONFIG_PREFIX "xnet-notify-udp")
+endif()
+
+set(CONFIG_DIR "${CMAKE_CURRENT_SOURCE_DIR}/configurations")
+set(xnet-notify-client_CONFIG "${CONFIG_DIR}/xnet-notify-client.json")
+set(xnet-notify-server_CONFIG "${CONFIG_DIR}/${CONFIG_PREFIX}-server.json")
+
+set(sample xnet-notify-single-process)
+set(INSTALL_DIR "examples/xnet-examples/${PROJECT_NAME}")
+
+add_executable(${sample} ${CMAKE_CURRENT_SOURCE_DIR}/${sample}.cpp)
+target_link_libraries(${sample} PRIVATE ${VSOMEIP_NAME} ${NIXNET_LIBRARY})
+set_target_properties(${sample} PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY "$<1:${CMAKE_CURRENT_BINARY_DIR}/${sample}>"
+)
+
+# make the per-application configurations available next to the executable
+add_custom_command(TARGET ${sample} POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E rm -rf "$<TARGET_FILE_DIR:${sample}>/vsomeip"
+    COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:${sample}>/vsomeip"
+    COMMAND ${CMAKE_COMMAND} -E copy "${xnet-notify-client_CONFIG}" "$<TARGET_FILE_DIR:${sample}>/vsomeip/xnet-notify-client.json"
+    COMMAND ${CMAKE_COMMAND} -E copy "${xnet-notify-server_CONFIG}" "$<TARGET_FILE_DIR:${sample}>/vsomeip/xnet-notify-server.json"
+    COMMENT "Copying XNET configurations for ${sample}"
+)
+
+install(
+    TARGETS ${sample}
+    RUNTIME DESTINATION "${INSTALL_DIR}/${sample}" COMPONENT bin
+)
+install(
+    FILES "${xnet-notify-client_CONFIG}"
+    DESTINATION "${INSTALL_DIR}/${sample}/vsomeip" COMPONENT config
+    RENAME "xnet-notify-client.json"
+)
+install(
+    FILES "${xnet-notify-server_CONFIG}"
+    DESTINATION "${INSTALL_DIR}/${sample}/vsomeip" COMPONENT config
+    RENAME "xnet-notify-server.json"
+)

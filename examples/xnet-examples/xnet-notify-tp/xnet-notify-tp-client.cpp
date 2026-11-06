@@ -7,11 +7,13 @@
 
 #include <vsomeip/vsomeip.hpp>
 #include <vsomeip/xnet.hpp>
+#include "nxsocket.h"
 #include "nixnet.h"
 
 #include "xnet-stack-configuration.h"
 
 std::shared_ptr<vsomeip::application> app;
+const char* app_name = "xnet-notify-tp-client";
 
 void stop_application([[maybe_unused]] int exit_code) {
     std::cout << "\nShutting down application..." << std::endl;
@@ -27,7 +29,7 @@ void stop_application([[maybe_unused]] int exit_code) {
 bool setup_xnet_stack(nxIpStackRef_t& xnet_stack) {
     // Initialize the xnet IP stack with the provided configuration
     nxStatus_t status{};
-    status = nxIpStackCreate("xnet-notify-tp-client", client::xnet_ip_stack_config, &xnet_stack);
+    status = nxIpStackCreate(app_name, client::xnet_ip_stack_config, &xnet_stack);
     if (status != 0) {
         std::cerr << "Failed to create XNET IP stack. Status code: " << status << std::endl;
         return false;
@@ -67,7 +69,7 @@ bool setup_application() {
     }
 
     // Create a vsomeip application
-    app = vsomeip::runtime::get()->create_application("xnet-notify-tp-client");
+    app = vsomeip::runtime::get()->create_application(app_name);
 
     // Initialize the application
     if (!app->init(xnet_stack)) {
