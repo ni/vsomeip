@@ -152,6 +152,12 @@ public:
     void update_security_policy_configuration(uid_t _uid, gid_t _gid);
 
     /**
+     * Forwards the request to vsomeip::application::request_event() only, without subscribing.
+     * Lets a test drive request_event() and request_service() in either order.
+     */
+    void request_event(event_ids const& _ei, vsomeip::event_type_e _et = vsomeip::event_type_e::ET_EVENT);
+
+    /**
      * 1. registers a subscription handler to record subscription events with @see
      * subscription_record_.
      * 2. calls vsomeip::application::request_event()
@@ -225,9 +231,28 @@ public:
     void register_group_subscription_handler(event_ids const& _ei, subscription_handler_ext_t const& _handler);
 
     /*
+     * registers the sec_client-aware subscription handler with the application
+     */
+    void register_group_subscription_handler_sec(event_ids const& _ei, subscription_handler_sec_t const& _handler);
+
+    /*
      * unregisters the subscription handler with the application
      */
     void unregister_group_subscription_handler(event_ids const& _ei);
+
+    /**
+     * 1. calls vsomeip::application::unsubscribe()
+     * 2. unregister subscription handler
+     * 3. calls vsomeip::application::release_event()
+     */
+    void unsubscribe(event_ids const& _ei);
+
+    /**
+     * 1. calls vsomeip::application::unsubscribe(), with only the event group
+     * 2. unregister subscription handler
+     * 3. calls vsomeip::application::release_event()
+     */
+    void unsubscribe_eventgroup(event_ids const& _ei);
 
     /**
      * registers a message handler that will
@@ -241,7 +266,12 @@ public:
     /**
      * Forwards the event payload to the vsomeip::application::notify()
      */
-    void send_event(event_ids const& _ei, std::vector<unsigned char> const& _payload);
+    void send_event(event_ids const& _ei, std::vector<unsigned char> const& _payload, bool _force = false);
+
+    /**
+     * Forwards the event payload to the vsomeip::application::notify_one()
+     */
+    void send_event_one(event_ids const& _ei, std::vector<unsigned char> const& _payload, client_t _client, bool _force = false);
 
     /**
      * Wait for message (payloads!) to reach given state
@@ -269,6 +299,13 @@ public:
      * Sets the routing state of the application
      */
     void set_routing_state(vsomeip::routing_state_e _state);
+
+    template<class... Args>
+    void set_sd_acceptance_required(Args... args) {
+        app_->set_sd_acceptance_required(std::forward<Args>(args)...);
+    }
+
+    void register_sd_acceptance_handler(sd_acceptance_handler_t const& _handler);
 
     /**
      * After app::start() has been called this helper can be used to await the registration

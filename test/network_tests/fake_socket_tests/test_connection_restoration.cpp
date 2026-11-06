@@ -14,14 +14,23 @@
 #include "helpers/availability_checker.hpp"
 #include "helpers/command_gate.hpp"
 #include "../../../implementation/protocol/include/serialize.hpp"
+#include "../../../implementation/runtime/include/application_impl.hpp"
 
 #include "sample_interfaces.hpp"
+
+#include "common/timeout_scale.hpp"
 
 #include <boost/asio/error.hpp>
 #include <vsomeip/vsomeip.hpp>
 #include <gtest/gtest.h>
 
+#include <algorithm>
+#include <condition_variable>
 #include <cstdlib>
+#include <mutex>
+#include <set>
+#include <thread>
+#include <vector>
 
 namespace vsomeip_v3::testing {
 static std::string const routingmanager_name_{"routingmanagerd"};
@@ -43,13 +52,17 @@ struct test_connection_restoration : public base_fake_socket_fixture {
         ASSERT_TRUE(await_connectable(routingmanager_name_));
     }
 
-    void start_server() {
+    // _before_offer runs after the registration, but still before the offer goes out.
+    void start_server(std::function<void()> const& _before_offer = {}) {
         server_ = start_client(server_name_);
         ASSERT_NE(server_, nullptr);
         ASSERT_TRUE(server_->app_state_record_.wait_for_last(vsomeip::state_type_e::ST_REGISTERED));
-        server_->offer(service_instance_);
         server_->offer_event(offered_event_.si_, offered_event_.to_event_spec());
         server_->offer_field(offered_field_.si_, offered_field_.to_event_spec());
+        if (_before_offer) {
+            _before_offer();
+        }
+        server_->offer(service_instance_);
     }
 
     void start_client_app() {
@@ -58,9 +71,9 @@ struct test_connection_restoration : public base_fake_socket_fixture {
         ASSERT_TRUE(client_->app_state_record_.wait_for_last(vsomeip::state_type_e::ST_REGISTERED));
     }
 
-    void start_apps() {
+    void start_apps(std::function<void()> const& _before_offer = {}) {
         start_router();
-        start_server();
+        start_server(_before_offer);
         start_client_app();
     }
 
@@ -91,8 +104,8 @@ struct test_connection_restoration : public base_fake_socket_fixture {
         return _app->availability_record_.wait_for_last(service_availability::available(_si));
     }
 
-    service_instance service_instance_{0x3344, 0x1};
-    service_instance service_instance_two_{0x3345, 0x1};
+    service_instance service_instance_{.service_ = 0x3344, .instance_ = 0x1, .major_ = 1, .minor_ = 0};
+    service_instance service_instance_two_{.service_ = 0x3345, .instance_ = 0x1, .major_ = 1, .minor_ = 0};
     event_ids offered_event_{service_instance_, 0x8002, 0x1};
     message first_expected_message_{
             client_session{0, 1}, service_instance_, offered_event_.event_id_, vsomeip::message_type_e::MT_NOTIFICATION, {}};
@@ -108,9 +121,17 @@ struct test_connection_restoration : public base_fake_socket_fixture {
     message expected_request_{client_session{0x3490 /*client id*/, 1}, service_instance_, method_, vsomeip::message_type_e::MT_REQUEST, {}};
     message expected_reply_{client_session{0x3490 /*client id*/, 1}, service_instance_, method_, vsomeip::message_type_e::MT_RESPONSE, {}};
 
-    std::vector<service_instance> service_instances{{0x3344, 0x1}, {0x3345, 0x1}, {0x3346, 0x1}, {0x3347, 0x1},
-                                                    {0x3348, 0x1}, {0x3349, 0x1}, {0x334A, 0x1}, {0x334B, 0x1},
-                                                    {0x334C, 0x1}, {0x334D, 0x1}, {0x334E, 0x1}};
+    std::vector<service_instance> service_instances{{.service_ = 0x3344, .instance_ = 0x1, .major_ = 0x1, .minor_ = 0},
+                                                    {.service_ = 0x3345, .instance_ = 0x1, .major_ = 0x1, .minor_ = 0},
+                                                    {.service_ = 0x3346, .instance_ = 0x1, .major_ = 0x1, .minor_ = 0},
+                                                    {.service_ = 0x3347, .instance_ = 0x1, .major_ = 0x1, .minor_ = 0},
+                                                    {.service_ = 0x3348, .instance_ = 0x1, .major_ = 0x1, .minor_ = 0},
+                                                    {.service_ = 0x3349, .instance_ = 0x1, .major_ = 0x1, .minor_ = 0},
+                                                    {.service_ = 0x334A, .instance_ = 0x1, .major_ = 0x1, .minor_ = 0},
+                                                    {.service_ = 0x334B, .instance_ = 0x1, .major_ = 0x1, .minor_ = 0},
+                                                    {.service_ = 0x334C, .instance_ = 0x1, .major_ = 0x1, .minor_ = 0},
+                                                    {.service_ = 0x334D, .instance_ = 0x1, .major_ = 0x1, .minor_ = 0},
+                                                    {.service_ = 0x334E, .instance_ = 0x1, .major_ = 0x1, .minor_ = 0}};
 
     app* routingmanagerd_{};
     app* client_{};
@@ -211,6 +232,21 @@ TEST_F(test_connection_restoration, re_registered_client_deletes_client_info) {
     // the state
     ASSERT_FALSE(wait_for_command(client_name_, routingmanager_name_, protocol::id_e::ROUTING_INFO_ID, socket_role::client,
                                   std::chrono::milliseconds(10)));
+}
+
+TEST_F(test_connection_restoration, when_a_client_reconnects_pending_connections_are_promoted) {
+    start_apps();
+    ASSERT_TRUE(subscribe_to_field());
+
+    // send and await the field message to have a "stable state" in which the server does not detect the broken connection itself
+    send_field_message();
+    ASSERT_TRUE(client_->message_record_.wait_for(field_checker_));
+    client_->message_record_.clear();
+
+    // don't tell the server about this
+    ASSERT_TRUE(disconnect(client_name_, boost::asio::error::timed_out, server_name_, std::nullopt));
+
+    EXPECT_TRUE(client_->message_record_.wait_for(field_checker_));
 }
 
 TEST_F(test_connection_restoration, when_a_client_connection_is_broken_just_after_accept_then_it_can_be_cleand_up) {
@@ -882,9 +918,7 @@ struct test_reoffer_on_connection_breaking : test_connection_restoration {
 
     void setup() {
         ASSERT_TRUE(setup_data_pipe(client_name_, routingmanager_name_, socket_role::client, router_to_client_gate_->get_data_pipe()));
-        start_apps();
-        request_service(); // do not subscribe to an event!
-        answer_requests_with(expected_payload_);
+        start_apps([this] { answer_requests_with(expected_payload_); });
         auto c = client_->get_application();
         // let the client always dispatch a request on availability
         c->register_availability_handler(
@@ -899,6 +933,7 @@ struct test_reoffer_on_connection_breaking : test_connection_restoration {
                         TEST_LOG << "Client received service state: UNAVAILABLE";
                     }
                 });
+        request_service(); // do not subscribe to an event!
     }
 
     // setup the control to be in control when the routing_info is received by the client
@@ -1065,7 +1100,8 @@ TEST_F(test_connection_restoration, atomic_stop_offer_tests) {
     ASSERT_TRUE(setup_data_pipe("dummy_client", routingmanager_name_, socket_role::client, dummy_client_to_router_gate->get_data_pipe()));
 
     for (int i = 0; i < services_to_be_offered_num; ++i) {
-        services_to_be_offered.push_back({static_cast<vsomeip::service_t>(0x4000 + i), 0x1});
+        services_to_be_offered.push_back(
+                {.service_ = static_cast<vsomeip::service_t>(0x4000 + i), .instance_ = 0x1, .major_ = 0x1, .minor_ = 0});
     }
 
     // 1.
@@ -1246,10 +1282,9 @@ struct test_single_connection_breakdown : test_connection_restoration,
 TEST_P(test_single_connection_breakdown, ensure_that_every_dropped_connection_is_restored_with_request_reply) {
 
     auto [from, to] = GetParam();
-    start_apps();
+    start_apps([this] { answer_requests_with({0x2, 0x3}); });
     ASSERT_TRUE(subscribe_to_event());
 
-    answer_requests_with({0x2, 0x3});
     client_->send_request(request_);
     ASSERT_TRUE(server_->message_record_.wait_for_last(expected_request_));
     ASSERT_TRUE(client_->message_record_.wait_for_last(expected_reply_));
@@ -1348,9 +1383,9 @@ TEST_F(test_connection_restoration, double_assign_client_ack_id_diff_ids) {
     // Start the server without checking if it is registered
     server_ = start_client(server_name_);
     ASSERT_NE(server_, nullptr);
-    server_->offer(service_instance_);
     server_->offer_event(offered_event_.si_, offered_event_.to_event_spec());
     server_->offer_field(offered_field_.si_, offered_field_.to_event_spec());
+    server_->offer(service_instance_);
     server_->request_service(service_instance_);
 
     EXPECT_TRUE(router_to_server_gate->wait_for_blocked());
@@ -1367,6 +1402,109 @@ TEST_F(test_connection_restoration, double_assign_client_ack_id_diff_ids) {
     // Check if the server registered and received the service availability
     EXPECT_TRUE(server_->app_state_record_.wait_for_last(vsomeip::state_type_e::ST_REGISTERED));
     EXPECT_TRUE(server_->availability_record_.wait_for_last(service_availability::available(service_instance_)));
+}
+
+/**
+ * Records the client-id carried by the commands this test cares about, on whichever connection
+ * they leave by. Runs inline on the thread writing into the peer socket, so it only copies.
+ *
+ * Recording stops at the first ASSIGN_CLIENT_ID: that command begins a *new* registration, and
+ * anything after it carries a different id.
+ */
+class client_id_recorder {
+public:
+    bool operator()(command_message const& _command) {
+        std::scoped_lock lock{mtx_};
+        if (_command.id_ == protocol::id_e::ASSIGN_CLIENT_ID) {
+            reregistering_ = true;
+        } else if (!reregistering_
+                   && (_command.id_ == protocol::id_e::UNSUBSCRIBE_ID || _command.id_ == protocol::id_e::RELEASE_SERVICE_ID
+                       || _command.id_ == protocol::id_e::UNREGISTER_EVENT_ID)) {
+            seen_.emplace_back(_command.id_, _command.header_.client_);
+            cv_.notify_all();
+        }
+        return false;
+    }
+
+    /// Waits until every id in _expected has been seen at least once, so it does
+    /// not catch a code path that silently stopped emitting one of them. This also gives the
+    /// remaining, not-yet-observed commands' cleanup work time to finish on another thread
+    /// before the caller returns into teardown.
+    [[nodiscard]] bool wait_for_ids(std::set<protocol::id_e> const& _expected,
+                                    std::chrono::milliseconds _timeout = common::scaled_timeout(std::chrono::seconds(2))) {
+        std::unique_lock lock{mtx_};
+        return cv_.wait_for(lock, _timeout, [this, &_expected] {
+            return std::all_of(_expected.begin(), _expected.end(), [this](protocol::id_e _id) {
+                return std::any_of(seen_.begin(), seen_.end(), [_id](auto const& _entry) { return _entry.first == _id; });
+            });
+        });
+    }
+
+    [[nodiscard]] std::vector<std::pair<protocol::id_e, client_t>> seen() {
+        std::scoped_lock lock{mtx_};
+        return seen_;
+    }
+
+private:
+    std::mutex mtx_;
+    std::condition_variable cv_;
+    std::vector<std::pair<protocol::id_e, client_t>> seen_;
+    bool reregistering_{false};
+};
+
+/**
+ * NTWALL-1304: an UNSUBSCRIBE / RELEASE_SERVICE / UNREGISTER_EVENT must never carry a client-id
+ * other than the one this registration was established with. The routing manager drops any
+ * mismatch as a security violation, silently and with no NACK, so the client believes it
+ * unsubscribed while the router keeps the subscription and keeps delivering events.
+ *
+ * on_client_assign_ack() calls host_->set_client() unconditionally and without any lock, before
+ * the ST_REGISTERING guard rejects the message. A stray ASSIGN_CLIENT_ACK therefore moves
+ * application_impl::client_ - the value get_client() returns - while the state machine still
+ * holds the id the routing manager bound, and while the state is still ST_REGISTERED. A send in
+ * that window stamps an id the connection was never bound to.
+ *
+ */
+TEST_F(test_connection_restoration, commands_never_carry_an_unregistered_client_id) {
+
+    constexpr client_t its_stray_id{0xcafe};
+
+    start_apps();
+    ASSERT_TRUE(subscribe_to_event());
+
+    auto its_impl = std::dynamic_pointer_cast<application_impl>(client_->get_application());
+    ASSERT_NE(its_impl, nullptr);
+
+    client_t const its_registered_id = its_impl->get_client();
+    ASSERT_NE(its_registered_id, its_stray_id);
+    ASSERT_NE(its_registered_id, VSOMEIP_CLIENT_UNSET);
+
+    client_id_recorder its_recorder;
+    set_custom_command_handler(client_name_, routingmanager_name_, std::ref(its_recorder), socket_role::client);
+    set_custom_command_handler(client_name_, server_name_, std::ref(its_recorder), socket_role::client);
+
+    struct restore_client_on_exit {
+        std::shared_ptr<application_impl> impl_;
+        client_t original_;
+        ~restore_client_on_exit() { impl_->set_client(original_); }
+    } const its_restore{its_impl, its_registered_id};
+
+    its_impl->set_client(its_stray_id);
+    ASSERT_EQ(its_stray_id, its_impl->get_client());
+
+    client_->unsubscribe(offered_event_); // also triggers unregister_event
+    client_->release_service(service_instance_);
+
+    // Wait for these 3 specific commands
+    std::set<protocol::id_e> const its_expected_ids{protocol::id_e::UNSUBSCRIBE_ID, protocol::id_e::UNREGISTER_EVENT_ID,
+                                                    protocol::id_e::RELEASE_SERVICE_ID};
+    ASSERT_TRUE(its_recorder.wait_for_ids(its_expected_ids))
+            << "not all of UNSUBSCRIBE_ID, UNREGISTER_EVENT_ID, RELEASE_SERVICE_ID were emitted, so nothing was fully verified";
+    for (auto const& [its_id, its_sent] : its_recorder.seen()) {
+        EXPECT_EQ(its_registered_id, its_sent) << to_string(its_id)
+                                               << " went out with an id the routing manager never bound to this connection "
+                                                  "~> routing_manager_stub drops it as a security mismatch";
+    }
 }
 
 INSTANTIATE_TEST_SUITE_P(test_all_permutations, test_single_connection_breakdown,

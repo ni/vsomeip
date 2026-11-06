@@ -7,8 +7,6 @@ project("unit_tests_policy_manager_impl_tests" LANGUAGES CXX)
 
 file(GLOB SRCS ../main.cpp *.cpp)
 
-set(THREADS_PREFER_PTHREAD_FLAG ON)
-
 # ----------------------------------------------------------------------------
 # Executable and libraries to link
 # ----------------------------------------------------------------------------
@@ -21,7 +19,6 @@ target_compile_definitions(${PROJECT_NAME}
 target_link_libraries(
     ${PROJECT_NAME}
     vsomeip3-test
-    vsomeip3-cfg-test
     ${Boost_LIBRARIES}
     ${DL_LIBRARY}
     gtest

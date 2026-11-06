@@ -24,26 +24,13 @@
 #include "../../routing/include/remote_subscription.hpp"
 #include "../../utility/include/service_instance_map.hpp"
 
+#include "observer.hpp"
 #include "service_discovery.hpp"
 #include "ip_option_impl.hpp"
 #include "ipv4_option_impl.hpp"
 #include "ipv6_option_impl.hpp"
 #include "deserializer.hpp"
 #include "message_impl.hpp"
-
-#if VSOMEIP_BOOST_VERSION < 107600
-#include <boost/container_hash/hash.hpp>
-
-// Custom hash function for boost::asio::ip::address.
-//
-// Used because there is no hash implementation before Boost v1.76.
-struct address_hash {
-    size_t operator()(const boost::asio::ip::address& addr) const noexcept {
-        return addr.is_v4() ? boost::hash<boost::asio::ip::address_v4::bytes_type>()(addr.to_v4().to_bytes())
-                            : boost::hash<boost::asio::ip::address_v6::bytes_type>()(addr.to_v6().to_bytes());
-    }
-};
-#endif // VSOMEIP_BOOST_VERSION < 107600
 
 namespace vsomeip_v3 {
 
@@ -61,7 +48,7 @@ class serviceentry_impl;
 class service_discovery_host;
 class subscription;
 
-typedef service_instance_map<std::shared_ptr<request>> requests_t;
+typedef versioned_service_instance_map<std::shared_ptr<request>> requests_t;
 
 struct entry_data_t {
     std::shared_ptr<entry_impl> entry_;
@@ -74,16 +61,13 @@ public:
     service_discovery_impl(service_discovery_host* _host, const std::shared_ptr<configuration>& _configuration);
     virtual ~service_discovery_impl();
 
-    boost::asio::io_context& get_io();
-    std::recursive_mutex& get_subscribed_mutex();
-
     void init();
     void start();
     void stop();
     void suspend();
 
     void request_service(service_t _service, instance_t _instance, major_version_t _major, minor_version_t _minor, ttl_t _ttl);
-    void release_service(service_t _service, instance_t _instance);
+    void release_service(service_t _service, instance_t _instance, major_version_t _major);
 
     void subscribe(service_t _service, instance_t _instance, eventgroup_t _eventgroup, major_version_t _major, ttl_t _ttl, client_t _client,
                    const std::shared_ptr<eventgroupinfo>& _info);
@@ -91,7 +75,7 @@ public:
     void unsubscribe_all(service_t _service, instance_t _instance);
     void unsubscribe_all_on_suspend();
     void remove_subscriptions(service_t _service, instance_t _instance);
-    void reset_request_sent_counter(service_t _service, instance_t _instance);
+    void reset_request_sent_counter(service_t _service, instance_t _instance, major_version_t _major);
 
     bool send(bool _is_announcing);
 
@@ -116,6 +100,8 @@ public:
 
     void register_sd_acceptance_handler(const sd_acceptance_handler_t& _handler);
     void register_reboot_notification_handler(const reboot_notification_handler_t& _handler);
+
+    void remove_remote_offer_type_by_ip(const boost::asio::ip::address& _address, uint16_t _port, bool _reliable) override;
 
 private:
     std::pair<session_t, bool> get_session(const boost::asio::ip::address& _address);
@@ -143,12 +129,7 @@ private:
                                           const std::shared_ptr<eventgroupinfo>& _info, ttl_t _ttl,
                                           const std::shared_ptr<endpoint_definition>& _target, const std::set<client_t>& _clients);
 
-    typedef std::set<std::pair<bool, uint16_t>> expired_ports_t;
     struct sd_acceptance_state_t {
-        explicit sd_acceptance_state_t(expired_ports_t& _expired_ports) :
-            expired_ports_(_expired_ports), sd_acceptance_required_(false), accept_entries_(false) { }
-
-        expired_ports_t& expired_ports_;
         bool sd_acceptance_required_;
         bool accept_entries_;
     };
@@ -188,6 +169,7 @@ private:
 
     bool send(const std::vector<std::shared_ptr<message_impl>>& _messages);
     bool serialize_and_send(const std::vector<std::shared_ptr<message_impl>>& _messages, const boost::asio::ip::address& _address);
+    bool serialize_and_send(const std::shared_ptr<message_impl>& _message, const boost::asio::ip::address& _address);
 
     void update_acknowledgement(const std::shared_ptr<remote_subscription_ack>& _acknowledgement);
 
@@ -209,12 +191,12 @@ private:
     bool check_static_header_fields(const std::shared_ptr<const message>& _message, const boost::asio::ip::address& _sender) const;
     bool check_layer_four_protocol(const std::shared_ptr<const ip_option_impl>& _ip_option) const;
 
-    void get_subscription_endpoints(service_t _service, instance_t _instance, std::shared_ptr<boardnet_endpoint>& _reliable,
-                                    std::shared_ptr<boardnet_endpoint>& _unreliable) const;
+    void get_subscription_endpoints(service_t _service, instance_t _instance, major_version_t _major,
+                                    std::shared_ptr<boardnet_endpoint>& _reliable, std::shared_ptr<boardnet_endpoint>& _unreliable) const;
     void get_subscription_address(const std::shared_ptr<boardnet_endpoint>& _reliable,
                                   const std::shared_ptr<boardnet_endpoint>& _unreliable, boost::asio::ip::address& _address) const;
 
-    void update_request(service_t _service, instance_t _instance);
+    void update_request(service_t _service, instance_t _instance, major_version_t _major);
 
     void start_offer_debounce_timer(std::chrono::milliseconds _duration);
     void stop_offer_debounce_timer();
@@ -272,11 +254,9 @@ private:
     bool update_remote_offer_type(service_t _service, instance_t _instance, reliability_type_e _offer_type,
                                   const boost::asio::ip::address& _reliable_address, uint16_t _reliable_port,
                                   const boost::asio::ip::address& _unreliable_address, uint16_t _unreliable_port,
-                                  bool _received_via_multicast);
+                                  bool _received_via_multicast, bool _endpoints_changed);
     void remove_remote_offer_type(service_t _service, instance_t _instance, const boost::asio::ip::address& _reliable_address,
                                   uint16_t _reliable_port, const boost::asio::ip::address& _unreliable_address, uint16_t _unreliable_port);
-    void remove_remote_offer_type_by_ip(const boost::asio::ip::address& _address);
-    void remove_remote_offer_type_by_ip(const boost::asio::ip::address& _address, uint16_t _port, bool _reliable);
 
     // Returns true if the state changes from unicast -> multicast, false any of the other 3 cases
     bool set_offer_multicast_state(service_t _service, instance_t _instance, reliability_type_e _offer_type,
@@ -315,16 +295,8 @@ private:
     void check_stopped_services_on_suspend(const boost::system::error_code& error);
     void check_offer_services(const boost::system::error_code& error, uint32_t _faulty_value);
 
-    // Report that we have received a message from the given host.
-    //
-    // This will generate a log the first time that a message is received through unicast and
-    // multicast.
-    void observed_host(const boost::asio::ip::address& _host, const bool _multicast);
-
-    // Clear list of observer host.
-    //
-    // This will trigger new KPI reports the next time that each host is seen.
-    void clear_observed_host();
+    // Reports the offer round trip, right before the watchdog terminates the process.
+    void log_offer_watchdog_state() const;
 
 private:
     boost::asio::io_context& io_;
@@ -382,7 +354,6 @@ private:
     uint8_t remaining_find_initial_debounce_reps_;
 
     std::chrono::milliseconds find_debounce_time_;
-    std::mutex find_debounce_timer_mutex_;
     boost::asio::steady_timer find_debounce_timer_;
 
     // this map contains the offers and their timers currently in repetition phase
@@ -399,15 +370,11 @@ private:
     std::atomic<bool> is_suspended_;
 
     std::string sd_multicast_;
-    boost::asio::ip::address sd_multicast_address_;
 
     boost::asio::ip::address current_remote_address_;
 
     std::mutex pending_remote_subscriptions_mutex_;
     std::map<std::shared_ptr<remote_subscription>, std::shared_ptr<remote_subscription_ack>> pending_remote_subscriptions_;
-    std::mutex acknowledgement_mutex_;
-
-    std::mutex response_mutex_;
 
     configuration::ttl_map_t ttl_factor_offers_;
     configuration::ttl_map_t ttl_factor_subscriptions_;
@@ -439,6 +406,7 @@ private:
 
     std::map<boost::asio::ip::address, std::map<std::pair<bool, uint16_t>, std::set<remote_offer_info_t>>> remote_offers_by_ip_;
 
+    std::mutex handlers_mutex_;
     reboot_notification_handler_t reboot_notification_handler_;
     sd_acceptance_handler_t sd_acceptance_handler_;
 
@@ -455,12 +423,14 @@ private:
     std::atomic<uint32_t> offers_received_after_last_resume_;
     std::atomic<uint32_t> offers_received_;
 
-// List of hosts from which we have received unicast and multicast messages.
-#if VSOMEIP_BOOST_VERSION < 107600
-    std::unordered_map<boost::asio::ip::address, std::tuple<bool, bool>, address_hash> observed_hosts;
-#else
-    std::unordered_map<boost::asio::ip::address, std::tuple<bool, bool>> observed_hosts;
-#endif
+    // Offer entries handed to the endpoint, against offers_received_: tells "not produced" from "not returned".
+    std::atomic<uint32_t> offer_entries_sent_;
+    std::atomic<uint32_t> offer_entries_sent_after_last_resume_;
+
+    std::atomic<std::chrono::steady_clock::time_point> last_multicast_processed_;
+
+    // Tracks from which network hosts we have received messages.
+    observer observed_hosts_;
 };
 
 } // namespace sd

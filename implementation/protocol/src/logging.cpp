@@ -46,10 +46,6 @@ char const* to_string(id_e _id) {
         return "REGISTER_EVENT_ID";
     case protocol::id_e::UNREGISTER_EVENT_ID:
         return "UNREGISTER_EVENT_ID";
-    case protocol::id_e::ID_RESPONSE_ID:
-        return "ID_RESPONSE_ID";
-    case protocol::id_e::ID_REQUEST_ID:
-        return "ID_REQUEST_ID";
     case protocol::id_e::OFFERED_SERVICES_REQUEST_ID:
         return "OFFERED_SERVICES_REQUEST_ID";
     case protocol::id_e::OFFERED_SERVICES_RESPONSE_ID:
@@ -86,8 +82,14 @@ std::ostream& operator<<(std::ostream& _out, id_e _id) {
     return _out << to_string(_id);
 }
 
+std::ostream& operator<<(std::ostream& _out, service_key const& _data) {
+    return _out << hex4(_data.service_) << "." << hex4(_data.instance_) << ":" << static_cast<int>(_data.major_);
+}
 std::ostream& operator<<(std::ostream& _out, service_data const& _data) {
-    return _out << "[" << hex4(_data.service_) << "." << hex4(_data.instance_) << "." << static_cast<int>(_data.major_version_) << "."
-                << _data.minor_version_ << "]";
+    return _out << "[" << _data.key_ << "." << _data.minor_version_ << "]";
+}
+std::ostream& operator<<(std::ostream& _out, event_key const& _data) {
+    return _out << hex4(_data.key_.service_) << "." << hex4(_data.key_.instance_) << "." << hex4(_data.event_) << ":"
+                << static_cast<int>(_data.key_.major_);
 }
 }

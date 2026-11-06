@@ -40,22 +40,26 @@ data_pipe_state someip_gate::operator()(someip_message const& _msg) {
 
         bool matched = false;
         if (auto const* t = std::get_if<trigger>(&search_->trigger_)) {
-            if (!_msg.msg_)
+            if (!_msg.msg_) {
                 return data_pipe_state::OPEN;
+            }
             bool const service_match = (_msg.msg_->get_service() == t->service_);
             bool const method_match = (_msg.msg_->get_method() == t->method_);
             bool const type_match = (!t->type_ || _msg.msg_->get_message_type() == *t->type_);
             bool const payload_match = (!t->payload_ || (*t->payload_)(_msg.msg_->get_payload()));
             matched = service_match && method_match && type_match && payload_match;
         } else if (auto const* t = std::get_if<sd_trigger>(&search_->trigger_)) {
-            if (!_msg.sd_)
+            if (!_msg.sd_) {
                 return data_pipe_state::OPEN;
+            }
             for (auto const& entry : _msg.sd_->get_entries()) {
                 if (t->id_ == entry->get_type() && t->ttl_ == entry->get_ttl()) {
                     matched = true;
                     break;
                 }
             }
+        } else if (auto const* t = std::get_if<sd_predicate>(&search_->trigger_)) {
+            matched = _msg.sd_ && t->predicate_(_msg.sd_);
         }
 
         if (matched && ++search_->count_ >= search_->barrier_) {
@@ -105,6 +109,20 @@ void someip_gate::block_at(sd_trigger _trigger, uint32_t _count) {
         TEST_LOG << "[someip_gate/sd] Setup gate to block when seeing " << to_string(_trigger.id_) << ":" << _trigger.ttl_ << " for the "
                  << _count << " time, on gate mem: " << pipe_.get();
         search_ = {std::move(_trigger), _count, 0};
+        state_ = gate_state::UNBLOCKED;
+        pipe = pipe_;
+    }
+    // careful not to call this under the lock, as it will re-invoke the call operator
+    pipe->set_state(data_pipe_state::OPEN);
+}
+
+void someip_gate::block_at(sd_predicate _predicate, uint32_t _count) {
+    std::shared_ptr<data_pipe> pipe;
+    {
+        std::scoped_lock lock{mtx_};
+        TEST_LOG << "[someip_gate/sd] Setup gate to block when a SD message matches the given predicate, for the " << _count
+                 << " time, on gate mem: " << pipe_.get();
+        search_ = {std::move(_predicate), _count, 0};
         state_ = gate_state::UNBLOCKED;
         pipe = pipe_;
     }

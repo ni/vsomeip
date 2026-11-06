@@ -38,7 +38,6 @@ add_library (fake_socket_helpers OBJECT
 )
 target_link_libraries(fake_socket_helpers
     ${VSOMEIP_NAME}-test
-    ${VSOMEIP_NAME}-sd-test
     ${Boost_LIBRARIES}
     ${DL_LIBRARY}
     ${TEST_LINK_LIBRARIES}
@@ -53,6 +52,7 @@ set (TEST_SUITES
     test_connection_control
     test_connection_restoration
     test_client_lifecycle
+    test_climate
     test_debounce
     test_event_subscription_callback
     test_framework
@@ -60,11 +60,18 @@ set (TEST_SUITES
     test_queue_limit
     test_interface_manipulation_recreate
     test_multiversion_support
+    test_send_offer_check
     test_protocol_messages
+    test_registration_ordering
+    test_remote_offer_endpoint_change
     test_sd_protocol
     test_someip_tp
     test_uds_communication
+    test_security_policy_distribution
     test_vlan_toggle_registration
+    test_api
+    test_api_footguns
+    test_api_routing_manager
 )
 
 foreach(TEST_SUITE ${TEST_SUITES})

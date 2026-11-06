@@ -28,12 +28,8 @@
 #include "../include/application_impl.hpp"
 #include "../include/runtime_impl.hpp"
 #include "../include/routing_application.hpp"
-#ifdef VSOMEIP_ENABLE_MULTIPLE_ROUTING_MANAGERS
-#include "../../configuration/include/configuration_impl.hpp"
-#else
 #include "../../configuration/include/configuration.hpp"
-#include "../../configuration/include/configuration_plugin.hpp"
-#endif // VSOMEIP_ENABLE_MULTIPLE_ROUTING_MANAGERS
+#include "../../configuration/include/configuration_plugin_impl.hpp"
 #include "../../plugin/include/plugin_manager_impl.hpp"
 #include "../../endpoints/include/boardnet_endpoint.hpp"
 #include "../../routing/include/routing_manager_impl.hpp"
@@ -58,9 +54,6 @@ application_impl::application_impl(const std::string& _name, const std::string& 
     start_thread_{0},
 #endif
     work_(io_.get_executor()), routing_{nullptr}, state_{state_type_e::ST_DEREGISTERED}, security_mode_{security_mode_e::SM_ON},
-#ifdef VSOMEIP_ENABLE_SIGNAL_HANDLING
-    signals_{io_, SIGINT, SIGTERM},
-#endif
     is_dispatching_{false}, max_dispatchers_{VSOMEIP_DEFAULT_MAX_DISPATCHERS}, max_dispatch_time_{VSOMEIP_DEFAULT_MAX_DISPATCH_TIME},
     stopping_{false}, is_routing_manager_host_{false}, watchdog_timer_{io_}, client_side_logging_{false}, has_session_handling_{true} {
 }
@@ -89,29 +82,8 @@ bool application_impl::init() {
     // load configuration from module
 
     // load default module
-#ifndef VSOMEIP_ENABLE_MULTIPLE_ROUTING_MANAGERS
-    auto its_plugin = plugin_manager_->get_plugin(plugin_type_e::CONFIGURATION_PLUGIN, VSOMEIP_CFG_LIBRARY);
-    if (its_plugin) {
-        auto its_configuration_plugin = std::dynamic_pointer_cast<configuration_plugin>(its_plugin);
-        if (its_configuration_plugin) {
-            configuration_ = its_configuration_plugin->get_configuration(name_, path_);
-            VSOMEIP_INFO << "Configuration module loaded.";
-        } else {
-            std::cerr << "Invalid configuration module!" << std::endl;
-            std::exit(EXIT_FAILURE);
-        }
-    } else {
-        std::cerr << "Configuration module could not be loaded!" << std::endl;
-        std::exit(EXIT_FAILURE);
-    }
-#else
-    configuration_ = std::dynamic_pointer_cast<configuration>(std::make_shared<vsomeip_v3::cfg::configuration_impl>(configuration_path));
-    if (configuration_path.length()) {
-        configuration_->set_configuration_path(configuration_path);
-    }
-    configuration_->load(name_);
-    VSOMEIP_INFO << "Configuration loaded with Multiple Routing Managers ENABLED.";
-#endif // VSOMEIP_ENABLE_MULTIPLE_ROUTING_MANAGERS
+    configuration_ = configuration_plugin_impl::get()->get_configuration(name_, path_);
+    VSOMEIP_INFO << "Configuration module loaded.";
 
     // Elect the routing host before init() queries the configuration: load()
     // parsed the mandatory files only, and the optional pass can still change
@@ -222,51 +194,33 @@ bool application_impl::init() {
             VSOMEIP_INFO << "Application: " << name_ << " has session handling switched off!";
         }
 
+        // Tracing
+        trace_connector_ = std::make_shared<trace::connector_impl>(its_configuration->get_trace());
+
         if (is_routing_manager_host_) {
             VSOMEIP_INFO << "Instantiating routing manager [Host].";
+            const diagnosis_t its_diagnosis = configuration_->get_diagnosis_address();
+            const diagnosis_t its_diagnosis_mask = configuration_->get_diagnosis_mask();
+
+            VSOMEIP_INFO << "Client IDs start at 0x" << hex4(utility::get_client_id_base(its_diagnosis, its_diagnosis_mask))
+                         << " (diagnosis 0x" << hex2(static_cast<uint8_t>(its_diagnosis)) << ", mask 0x" << hex4(its_diagnosis_mask)
+                         << ").";
             if (client_ == VSOMEIP_CLIENT_UNSET) {
-                client_ = static_cast<client_t>((configuration_->get_diagnosis_address() << 8) & configuration_->get_diagnosis_mask());
+                client_ = utility::get_client_id_base(its_diagnosis, its_diagnosis_mask);
                 utility::request_client_id(configuration_, name_, client_);
             }
-            routing_app_ = std::make_unique<routing_application>(io_, configuration_, name_, policy_manager_, security_);
+            routing_app_ = std::make_unique<routing_application>(io_, configuration_, name_, policy_manager_, security_, trace_connector_);
         }
         VSOMEIP_INFO << "Instantiating routing manager [Proxy].";
-        routing_ = std::make_shared<routing_manager_client>(this, client_side_logging_, client_side_logging_filter_);
+        routing_ = std::make_shared<routing_manager_client>(this, client_side_logging_, client_side_logging_filter_, trace_connector_);
 
         routing_->init();
-
-        // Tracing
-        std::shared_ptr<trace::connector_impl> its_connector = trace::connector_impl::get();
-        std::shared_ptr<cfg::trace> its_trace_configuration = its_configuration->get_trace();
-        its_connector->configure(its_trace_configuration);
 
         VSOMEIP_INFO << "Application(" << (name_ != "" ? name_ : "unnamed") << ", " << hex4(client_) << ") is initialized ("
                      << max_dispatchers_ << ", " << max_dispatch_time_ << ").";
 
         is_initialized_ = true;
     }
-
-#ifdef VSOMEIP_ENABLE_SIGNAL_HANDLING
-    if (is_initialized_) {
-        signals_.add(SIGINT);
-        signals_.add(SIGTERM);
-
-        // Register signal handler
-        auto its_signal_handler = [this](boost::system::error_code const& _error, int _signal) {
-            if (!_error) {
-                switch (_signal) {
-                case SIGTERM:
-                case SIGINT:
-                    stop();
-                    break;
-                default:
-                    break;
-                }
-            }
-        };
-        signals_.async_wait(its_signal_handler);
-    }
-#endif
 
     if (configuration_) {
         auto its_plugins = configuration_->get_plugins(name_);
@@ -311,6 +265,12 @@ void application_impl::start() {
 
     const size_t io_thread_count = configuration_->get_io_thread_count(name_);
     const int io_thread_nice_level = configuration_->get_io_thread_nice_level(name_);
+
+    // NOTE: especially important that it happens *BEFORE* informing plugins of STATE_STARTED
+    // there are plugins that create threads exactly in that transition, and those threads must have the same priority as the rest of
+    // libvsomeip (especially as there are router-only callbacks (e.g., sd-acceptance) that are used by plugins)
+    utility::set_thread_niceness(io_thread_nice_level);
+
     {
         std::scoped_lock its_lock{start_stop_mutex_};
 
@@ -417,8 +377,6 @@ void application_impl::start() {
             }
         }
     }
-
-    utility::set_thread_niceness(io_thread_nice_level);
 
     try {
         io_.run();
@@ -1045,8 +1003,11 @@ void application_impl::offer_event(service_t _service, instance_t _instance, eve
 
             configuration_->get_event_update_properties(_service, _instance, _notifier, _cycle, _change_resets_cycle, _update_on_change);
 
-            VSOMEIP_INFO_P << "Event [" << hex4(_service) << "." << hex4(_instance) << "." << hex4(_notifier)
-                           << "] uses configured cycle time " << _cycle.count() << "ms";
+            // only interesting if it's a non-zero cycle time, since this causes load
+            if (_cycle != std::chrono::milliseconds::zero()) {
+                VSOMEIP_WARNING_P << "Event [" << hex4(_service) << "." << hex4(_instance) << "." << hex4(_notifier)
+                                  << "] uses configured cycle time " << _cycle.count() << "ms";
+            }
         }
 
         routing_->register_event(client_, _service, _instance, _notifier, _eventgroups, _type, _reliability, _cycle, _change_resets_cycle,
@@ -1151,7 +1112,6 @@ uid_t application_impl::get_sec_client_uid() const {
 }
 
 void application_impl::set_sec_client_port(port_t _port) {
-
     sec_client_.port = htons(_port);
 }
 
@@ -1160,14 +1120,10 @@ bool application_impl::determine_routing_host() {
     if (its_routing_host != "") {
         is_routing_manager_host_ = (its_routing_host == name_);
         if (is_routing_manager_host_ && !utility::is_routing_manager(configuration_->get_network())) {
-#ifndef VSOMEIP_ENABLE_MULTIPLE_ROUTING_MANAGERS
             VSOMEIP_ERROR << "Application: " << name_
                           << " configured as routing but other routing manager present. Won't instantiate routing";
             is_routing_manager_host_ = false;
             return false;
-#else
-            is_routing_manager_host_ = true;
-#endif // VSOMEIP_ENABLE_MULTIPLE_ROUTING_MANAGERS
         }
     } else {
         auto its_routing_address = configuration_->get_routing_host_address();
@@ -1757,16 +1713,23 @@ bool application_impl::is_routing() const {
 
 void application_impl::set_routing_state(routing_state_e _routing_state) {
     if (!routing_app_) {
-        VSOMEIP_WARNING_P << "Set " << static_cast<int>(_routing_state) << ", not supported (nullptr)";
+        VSOMEIP_ERROR_P << "only intended to be called by application acting as routing manager host";
+        return;
+    }
+
+    if (_routing_state == routing_state_e::RS_RESUMED) {
+        routing_app_->set_routing_state(routing_state_internal_e::RESUMED);
+    } else if (_routing_state == routing_state_e::RS_SUSPENDED) {
+        routing_app_->set_routing_state(routing_state_internal_e::SUSPENDED);
     } else {
-        routing_app_->set_routing_state(_routing_state);
+        VSOMEIP_ERROR_P << "only supports RS_RESUMED/RS_SUSPENDED, not state " << static_cast<int>(_routing_state);
     }
 }
 
 connection_control_response_e application_impl::change_connection_control(connection_control_request_e _control,
                                                                           const std::string& _guest_address) {
     if (!routing_app_) {
-        VSOMEIP_ERROR_P << "not routing manager host";
+        VSOMEIP_ERROR_P << "only intended to be called by application acting as routing manager host";
         return connection_control_response_e::CCR_ERROR_INVALID_PARAMETER;
     }
     return routing_app_->change_connection_control(_control, _guest_address);
@@ -2007,7 +1970,7 @@ bool application_impl::update_service_configuration(service_t _service, instance
                                                     bool _magic_cookies_enabled, bool _offer) {
     bool ret = false;
     if (!routing_app_) {
-        VSOMEIP_ERROR_P << " is only intended to be called by application acting as routing manager host";
+        VSOMEIP_ERROR_P << "only intended to be called by application acting as routing manager host";
     } else {
         ret = routing_app_->update_service_configuration(_service, _instance, _port, _reliable, _magic_cookies_enabled, _offer);
     }
@@ -2024,7 +1987,7 @@ void application_impl::update_security_policy_configuration(uint32_t _uid, uint3
     (void)_handler;
 #else
     if (!routing_app_) {
-        VSOMEIP_ERROR_P << " is only intended to be called by application acting as routing manager host";
+        VSOMEIP_ERROR_P << "only intended to be called by application acting as routing manager host";
     } else {
         routing_app_->update_security_policy_configuration(_uid, _gid, _policy, _payload, _handler);
     }
@@ -2038,7 +2001,7 @@ void application_impl::remove_security_policy_configuration(uint32_t _uid, uint3
     (void)_handler;
 #else
     if (!routing_app_) {
-        VSOMEIP_ERROR_P << " is only intended to be called by application acting as routing manager host";
+        VSOMEIP_ERROR_P << "only intended to be called by application acting as routing manager host";
     } else {
         routing_app_->remove_security_policy_configuration(_uid, _gid, _handler);
     }

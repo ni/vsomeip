@@ -31,10 +31,8 @@ This documentation was generated for version 3.5 of vSomeIP.
 The vSomeIP stack implements the http://some-ip.com/ (Scalable service-Oriented MiddlewarE over IP (SOME/IP)) Protocol.
 The stack consists out of:
 
-* a shared library for SOME/IP (`libvsomeip3.so`)
-* a shared library for SOME/IP's configuration module (`libvsomeip3-cfg.so`)
-* a shared library for SOME/IP's service discovery (`libvsomeip3-sd.so`)
-* a shared library for SOME/IP's E2E protection module (`libvsomeip3-e2e.so`)
+* a shared library for SOME/IP (`libvsomeip3.so`) which also contains the
+  configuration, service discovery and E2E protection modules
 
 # Build Instructions
 ----------------
@@ -129,16 +127,6 @@ cmake -DIPC_PORT_WAIT_TIME=50 -DIPC_PORT_MAX_WAIT_TIME=2000 ..
 The `default values are a wait time of 100ms` and a `maximum wait time of 10000ms`.
 These configurations have no effect if local communication uses UDS (default).
 
-### Compilation with signal handling
-
-To compile vsomeip with signal handling (SIGINT/SIGTERM) enabled, call cmake like:
-
-```bash
-cmake -DENABLE_SIGNAL_HANDLING=1 ..
-```
-
-In the default setting, the application has to take care of shutting down vsomeip in case these signals are received.
-
 ### Compilation with user defined "READY" message
 
 To compile vsomeip with a user defined message signal the IP routing to be ready to send/receive messages, call cmake like:
@@ -177,15 +165,13 @@ There are two cmake variables which are used to automatically adapt the json fil
 
 If one of this variables isn't specified, only the tests using local communication exclusively will be runnable.
 
-Additionally the unit tests require enabled signal handling which can be enabled via the `ENABLE_SIGNAL_HANDLING` cmake variable.
-
 **Example, compilation of tests**:
 
 ```bash
 mkdir build
 cd build
 export GTEST_ROOT=$PATH_TO_GTEST/gtest-1.7.0/
-cmake -DENABLE_SIGNAL_HANDLING=1 -DTEST_IP_MASTER=10.0.3.1 -DTEST_IP_SLAVE=10.0.3.125 ..
+cmake -DTEST_IP_MASTER=10.0.3.1 -DTEST_IP_SLAVE=10.0.3.125 ..
 make check
 ```
 
@@ -196,27 +182,6 @@ Additional make targets for the tests:
 * To run single tests call `ctest --verbose --tests-regex $TESTNAME` short form: `ctest -V -R $TESTNAME`
 * To list all available tests run `ctest -N`.
 * For further information about the tests please have a look at the `readme.txt` in the `test` subdirectory.
-
-For development purposes two cmake variables exist which control if the json files and test scripts are copied (default) or symlinked into the build directory.
-These settings are ignored on Windows.
-
-* `TEST_SYMLINK_CONFIG_FILES`: Controls if the json and scripts needed to run the tests are copied or symlinked into the build directory.
-  (`Default`: OFF, ignored on Windows)
-* `TEST_SYMLINK_CONFIG_FILES_RELATIVE`: Controls if the json and scripts needed to run the tests are symlinked relatively into the build directory.
-  (`Default`: OFF, ignored on Windows)
-
-**Example cmake call**:
-
-```bash
-cmake  -DTEST_SYMLINK_CONFIG_FILES=ON -DTEST_SYMLINK_CONFIG_FILES_RELATIVE=ON ..
-```
-
-For compilation of only a subset of tests (for a quick functionality check) the cmake variable `TESTS_BAT` has to be set:
-
-**Example cmake call**:
-```bash
-cmake  -DTESTS_BAT=ON ..
-```
 
 ### Generating the documentation
 

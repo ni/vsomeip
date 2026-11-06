@@ -10,6 +10,8 @@
 #include "fake_netlink_connector.hpp"
 #include "app_connection.hpp"
 
+#include <vsomeip/vsomeip_sec.h>
+
 #include <boost/asio/ip/address.hpp>
 #include <cstdint>
 #include <mutex>
@@ -24,6 +26,22 @@ namespace vsomeip_v3::testing {
 class app_connection;
 
 using fd_t = unsigned short;
+
+/**
+ * One side of a udp_pipe_rule. @p endpoint_ alone identifies the party when it is a concrete,
+ * process-unique address (e.g. an ECU's own unicast address, or a literal multicast group
+ * address used as a match-by-address-only destination). @p app_name_ is only needed to
+ * disambiguate a party sharing that endpoint with other applications (e.g. several simulated
+ * routers all binding the same multicast port). A nullopt @p endpoint_ (see any()) matches any
+ * address on this side -- e.g. a sender that doesn't care which peer a datagram is addressed to.
+ */
+struct udp_party {
+    std::optional<boost::asio::ip::udp::endpoint> endpoint_{};
+    std::optional<std::string> app_name_{};
+
+    /// Matches any address on this side, optionally still disambiguated by @p _app_name.
+    static udp_party any(std::optional<std::string> _app_name = std::nullopt) { return {std::nullopt, std::move(_app_name)}; }
+};
 
 /**
  * Helper that
@@ -91,11 +109,33 @@ public:
     void fail_on_tcp_port_bind(port_t _port, bool fail);
 
     /**
+     * In case a udp message is received by a host for a unassigned port the icmp message
+     * Destination port unreachable might be returned to the sending host.
+     * If a linux kernel receives such a message after sending with a "connected" udp port
+     * it will queue the "connection refused" error that will then be returned in the
+     * receive_cbk.
+     * This option enables/disables the simulation of this behavior:
+     * If a connected udp socket tries to send to an unreachable address (no bound udp socket),
+     * the sending udp socket will receive a "connection_refused" error with the next
+     * receive_cbk.
+     **/
+    void react_on_unassigned_udp_port(bool _react);
+
+    /**
      * Waits until either the timeout expires, or the application associated
      * with this name called async_accept on some fake_acceptor.
      * Useful to await the start of the routing application.
      */
     [[nodiscard]] bool await_connectable(std::string const& _app, std::chrono::milliseconds _timeout = std::chrono::seconds(3));
+
+    /**
+     * Waits until either the timeout expires, or a TCP acceptor bound to the exact endpoint
+     * @p _ep is awaiting connections. Unlike await_connectable — which returns as soon as
+     * ANY of the app's acceptors is up (e.g. the routing acceptor) — this waits for one specific
+     * server endpoint to be listening.
+     */
+    [[nodiscard]] bool await_acceptor(boost::asio::ip::tcp::endpoint const& _ep,
+                                      std::chrono::milliseconds _timeout = std::chrono::seconds(3));
 
     /**
      * Waits until either the timeout expires, or the application associated
@@ -159,6 +199,11 @@ public:
      * Used to simulate a loss of network interface.
      */
     void set_ignore_ip(boost::asio::ip::address _ip, bool _ignore_connections);
+
+    /**
+     * Ensures that every udp message from or to this ip is dropped
+     **/
+    void set_block_udp_messages(boost::asio::ip::address _ip, bool _block);
 
     /**
      * Ensures that write calls from _client are reported to be successful, but if _delay == true,
@@ -244,13 +289,17 @@ public:
                                        std::shared_ptr<data_pipe> const& _pipe);
 
     /**
-     * Replaces a data pipe for udp endpoints.
-     * Application name needs to be parameterized to identify multicast endpoints.
-     * If socket role is set as client, the receiving pipe is replaced, otherwise the change is applied to the endpoint sending pipe.
-     * @note See @ref sd_gate class documentation for multicast gate lifecycle details.
-     **/
-    bool setup_data_pipe(boost::asio::ip::udp::endpoint const& _ep, std::string const& _app_name, socket_role _applied_on,
-                         std::shared_ptr<data_pipe> const& _pipe);
+     * Registers (or replaces) a data pipe gating the udp datagram flow from @p _sender to
+     * @p _receiver, matched against the concrete addresses of every udp datagram passed to
+     * send_someip() -- independent of bind/multicast-join order, since matching is address-data
+     * only and re-evaluated on every send instead of being cached on a socket handle.
+     *
+     * Real multicast has no point-to-point channel to filter by original sender, so a @p _receiver
+     * that targets one specific group member (app_name_ set, endpoint_ a literal multicast address)
+     * requires an unconstrained @p _sender (udp_party::any()); any other sender is rejected outright
+     * (@return false).
+     */
+    [[nodiscard]] bool set_udp_data_pipe(udp_party _sender, udp_party _receiver, std::shared_ptr<data_pipe> const& _pipe);
 
     /**
      * Waits for _id to be received in the _client -> _server connection for _timeout amount of time.
@@ -281,6 +330,20 @@ public:
      * @return true, if the broken pipe should be ignored.
      **/
     [[nodiscard]] bool ignore_broken_pipe(fake_tcp_socket_handle const& _handle);
+
+    /**
+     * Configures the identity (uid/gid) to be reported as SO_PEERCRED-equivalent for UDS
+     * connections to _app_name -- the fake UDS socket has no real peer credentials to read
+     * (see fake_uds_socket::get_peer_credentials), so tests that need distinct, deterministic
+     * local peer identities (e.g. to exercise identity-based security checks) configure them
+     * here instead.
+     **/
+    void set_peer_identity(std::string const& _app_name, vsomeip_sec_client_t const& _identity);
+
+    /**
+     * Returns the identity configured via set_peer_identity() for _app_name, if any.
+     **/
+    [[nodiscard]] std::optional<vsomeip_sec_client_t> get_peer_identity(std::string const& _app_name) const;
 
     /**
      * associates a fake_tcp_socket_handle to a io_context and therefore to an app_name.
@@ -417,7 +480,25 @@ public:
      */
     void leave_multicast_group(boost::asio::ip::address _multicast, fd_t _fd);
 
-    void send_someip(std::vector<unsigned char> const& _buffer, boost::asio::ip::udp::endpoint _src, boost::asio::ip::udp::endpoint _dst);
+    /**
+     * if react_on_unassigned_udp_port_ == true,
+     * this function returns false in case no unicast endpoint could be found
+     * else,
+     * always returns true
+     *
+     * Gated by any matching udp_pipe_rule (see set_udp_data_pipe()) -- this is what a real
+     * socket's own outgoing send ends up calling.
+     **/
+    bool send_someip(std::vector<unsigned char> const& _buffer, boost::asio::ip::udp::endpoint _src, boost::asio::ip::udp::endpoint _dst);
+
+    /**
+     * The actual, uninstrumented udp delivery -- unicast lookup or multicast fan-out to every
+     * joined fd, bypassing every udp_pipe_rule. Use this (not send_someip()) to inject synthetic
+     * traffic that must land regardless of any gate a test has set up on the spoofed sender
+     * endpoint, e.g. base_fake_socket_fixture::send_someip_sd_message().
+     */
+    bool deliver_udp_someip(std::vector<unsigned char> const& _buffer, boost::asio::ip::udp::endpoint _src,
+                            boost::asio::ip::udp::endpoint _dst);
 
     /*
      * Inserts an error into the next receive operation performed by the given endpoint.
@@ -459,12 +540,30 @@ private:
     void try_add(boost::asio::io_context* _io, fd_t _fd, char const* _type);
     std::shared_ptr<app_connection> get_or_create_connection(std::string const& _client, std::string const& _server);
 
-    struct pending_someip_pipe {
+    struct udp_pipe_rule {
+        udp_party sender_;
+        udp_party receiver_;
         std::shared_ptr<data_pipe> pipe_;
-        socket_role applied_on_;
     };
 
-    std::mutex mtx_;
+    /// Drains every now-forwardable datagram held in _pipe and delivers it via deliver_udp_someip()
+    /// -- except a datagram addressed to a multicast group while _receiver.app_name_ is set, which
+    /// targets only that one recipient (see find_multicast_member()), not the whole group.
+    void flush_udp_pipe(std::shared_ptr<data_pipe> const& _pipe, udp_party const& _receiver);
+
+    /// Must be called with mtx_ held. Returns the app name owning the socket bound to _ep, if any.
+    std::optional<std::string> resolve_udp_app_unlocked(boost::asio::ip::udp::endpoint const& _ep) const;
+
+    /// Returns every currently-joined member of the multicast group @p _dst.address(), or an empty
+    /// vector (with @p _blocked set) if @p _src/@p _dst is currently address-blocked.
+    std::vector<std::shared_ptr<fake_udp_socket_handle>>
+    resolve_multicast_group(boost::asio::ip::udp::endpoint const& _src, boost::asio::ip::udp::endpoint const& _dst, bool& _blocked);
+
+    /// Returns the currently-joined multicast member owned by @p _app_name, if any.
+    std::shared_ptr<fake_udp_socket_handle> find_multicast_member(boost::asio::ip::address const& _address, std::string const& _app_name);
+
+    mutable std::mutex mtx_;
+    bool react_on_unassigned_udp_port_{false};
     std::condition_variable assignment_cv_;
     std::condition_variable connectable_cv_;
     std::condition_variable multicast_join_cv_;
@@ -487,6 +586,7 @@ private:
     // is no longer used to schedule any other task.
     std::map<std::string, std::unique_ptr<boost::asio::steady_timer>> timers_;
 
+    std::map<std::string, vsomeip_sec_client_t> app_name_to_identity_;
     std::map<std::string, size_t> app_name_to_ignore_connections_count_;
     std::map<std::string, std::vector<boost::system::error_code>> app_to_next_connection_errors_;
     std::map<boost::asio::ip::address, std::set<fd_t>> multicast_to_fds_;
@@ -495,7 +595,8 @@ private:
     std::map<std::string, std::set<std::pair<boost::asio::ip::udp::endpoint, fd_t>>> binded_multicast_endpoints_;
     // persisted delay state per sending endpoint; applied immediately if already bound, or on bind otherwise
     std::map<boost::asio::ip::udp::endpoint, bool> udp_sending_delay_;
-    std::map<std::string, std::map<boost::asio::ip::udp::endpoint, std::vector<pending_someip_pipe>>> pending_someip_pipes_;
+    std::map<boost::asio::ip::address, bool> block_udp_messages_;
+    std::vector<udp_pipe_rule> udp_pipe_rules_;
     std::set<std::string> connections_to_ignore_;
     std::set<boost::asio::ip::address> ignored_networks_;
     std::set<std::string> fail_on_bind_;

@@ -14,7 +14,6 @@
 
 #define VSOMEIP_ENV_APPLICATION_NAME            "VSOMEIP_APPLICATION_NAME"
 #define VSOMEIP_ENV_CONFIGURATION               "VSOMEIP_CONFIGURATION"
-#define VSOMEIP_ENV_E2E_PROTECTION_MODULE       "VSOMEIP_E2E_PROTECTION_MODULE"
 #define VSOMEIP_ENV_MANDATORY_CONFIGURATION_FILES "VSOMEIP_MANDATORY_CONFIGURATION_FILES"
 #define VSOMEIP_ENV_CLIENTSIDELOGGING           "VSOMEIP_CLIENTSIDELOGGING"
 #define VSOMEIP_ENV_BASE_PATH                   "VSOMEIP_BASE_PATH"
@@ -48,12 +47,6 @@
 
 #define VSOMEIP_ROUTING_HOST_PORT_DEFAULT       31490
 
-#define VSOMEIP_CFG_LIBRARY                     "libvsomeip_cfg.so"
-
-#define VSOMEIP_SD_LIBRARY                      "libvsomeip_sd.so"
-
-#define VSOMEIP_E2E_LIBRARY                     "libvsomeip_e2e.so"
-
 #define VSOMEIP_SEC_LIBRARY                     "libvsomeip-sec.so.1"
 
 #define VSOMEIP_ROUTING                         "vsomeipd"
@@ -64,7 +57,6 @@
 
 #define VSOMEIP_UNICAST_ADDRESS                 "127.0.0.1"
 #define VSOMEIP_NETMASK                         "255.255.255.0"
-#define VSOMEIP_PREFIX                          24
 
 #define VSOMEIP_DEFAULT_CONNECT_TIMEOUT         100
 #define VSOMEIP_MAX_CONNECT_TIMEOUT             1600
@@ -75,6 +67,7 @@
 
 #define VSOMEIP_DEFAULT_LOG_NETWORK             0 // milliseconds
 #define VSOMEIP_DEFAULT_LOG_NETWORK_HOST        10000 // milliseconds
+#define VSOMEIP_DEFAULT_LOG_NETWORK_STATE_INITIAL_INTERVAL 1000 // milliseconds
 #define VSOMEIP_DEFAULT_LOG_STATUS              0 // milliseconds
 #define VSOMEIP_DEFAULT_QUEUE_WARN_SIZE         32768
 
@@ -98,14 +91,15 @@
 #define VSOMEIP_DEFAULT_MAX_DISPATCHERS         10
 
 #define VSOMEIP_REQUEST_DEBOUNCE_TIME           0
-#define VSOMEIP_DEFAULT_STATISTICS_MAX_MSG      50
-#define VSOMEIP_DEFAULT_STATISTICS_MIN_FREQ     50
+#define VSOMEIP_DEFAULT_STATISTICS_MAX_MSG      500
+#define VSOMEIP_DEFAULT_STATISTICS_MIN_FREQ     5
 #define VSOMEIP_DEFAULT_STATISTICS_INTERVAL     10000
 
 #define VSOMEIP_DEFAULT_MAX_REMOTE_SUBSCRIBERS  3
 
 #define VSOMEIP_MINIMUM_CHECK_TTL_TIMEOUT       100
 #define VSOMEIP_SETSOCKOPT_TIMEOUT_US           500000 // us
+#define VSOMEIP_MULTICAST_OPTION_SLOW_THRESHOLD 50 // ms
 
 #define IPC_PORT_WAIT_TIME                100
 #define IPC_PORT_MAX_WAIT_TIME            10000

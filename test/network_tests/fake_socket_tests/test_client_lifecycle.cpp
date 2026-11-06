@@ -48,13 +48,17 @@ struct test_client_lifecycle : public base_fake_socket_fixture {
         ASSERT_TRUE(await_connectable(routingmanager_name_));
     }
 
-    void start_server() {
+    // _before_offer runs after the registration, but still before the offer goes out.
+    void start_server(std::function<void()> const& _before_offer = {}) {
         server_ = start_client(server_name_);
         ASSERT_NE(server_, nullptr);
         ASSERT_TRUE(server_->app_state_record_.wait_for_last(vsomeip::state_type_e::ST_REGISTERED));
-        server_->offer(service_instance_);
         server_->offer_event(offered_event_.si_, offered_event_.to_event_spec());
         server_->offer_field(offered_field_.si_, offered_field_.to_event_spec());
+        if (_before_offer) {
+            _before_offer();
+        }
+        server_->offer(service_instance_);
     }
 
     void start_client_app() {
@@ -63,9 +67,9 @@ struct test_client_lifecycle : public base_fake_socket_fixture {
         ASSERT_TRUE(client_->app_state_record_.wait_for_last(vsomeip::state_type_e::ST_REGISTERED));
     }
 
-    void start_apps() {
+    void start_apps(std::function<void()> const& _before_offer = {}) {
         start_router();
-        start_server();
+        start_server(_before_offer);
         start_client_app();
     }
 
@@ -96,8 +100,8 @@ struct test_client_lifecycle : public base_fake_socket_fixture {
         return _app->availability_record_.wait_for_last(service_availability::available(_si));
     }
 
-    service_instance service_instance_{0x3344, 0x1};
-    service_instance service_instance_two_{0x3345, 0x1};
+    service_instance service_instance_{.service_ = 0x3344, .instance_ = 0x1, .major_ = 1, .minor_ = 0};
+    service_instance service_instance_two_{.service_ = 0x3345, .instance_ = 0x1, .major_ = 1, .minor_ = 0};
     event_ids offered_event_{service_instance_, 0x8002, 0x1};
     message first_expected_message_{
             client_session{0, 1}, service_instance_, offered_event_.event_id_, vsomeip::message_type_e::MT_NOTIFICATION, {}};
@@ -158,7 +162,7 @@ struct test_concurrent_registration : base_fake_socket_fixture {
     std::string const routingmanager_name_{"routingmanagerd"};
     std::string const app_name_{"concurrent_app"};
 
-    service_instance service_{0x1387, 0x1};
+    service_instance service_{.service_ = 0x1387, .instance_ = 0x1, .major_ = 1, .minor_ = 0};
     vsomeip_v3::method_t method_{0x1221};
     request req_{service_, method_, vsomeip::message_type_e::MT_REQUEST, {}};
 
@@ -174,8 +178,8 @@ TEST_F(test_client_lifecycle, router_consumes_field_before_service_tries_to_offe
 
     server_ = start_client(server_name_);
     ASSERT_NE(server_, nullptr);
-    server_->offer(service_instance_);
     server_->offer_field(offered_field_.si_, offered_field_.to_event_spec());
+    server_->offer(service_instance_);
     send_field_message();
 
     ASSERT_TRUE(routingmanagerd_->subscription_record_.wait_for_last(event_subscription::successfully_subscribed_to(offered_field_)));
@@ -190,8 +194,8 @@ TEST_F(test_client_lifecycle, router_consumes_field_before_service_tries_to_offe
 
     server_ = start_client(server_name_);
     ASSERT_NE(server_, nullptr);
-    server_->offer(service_instance_);
     server_->offer_field(offered_field_.si_, offered_field_.to_event_spec());
+    server_->offer(service_instance_);
     ASSERT_TRUE(routingmanagerd_->subscription_record_.wait_for_last(event_subscription::successfully_subscribed_to(offered_field_)));
     send_field_message();
     EXPECT_TRUE(routingmanagerd_->message_record_.wait_for(field_checker_));
@@ -201,8 +205,8 @@ TEST_F(test_client_lifecycle, router_consumes_field_after_service_tries_to_offer
 
     server_ = start_client(server_name_);
     ASSERT_NE(server_, nullptr);
-    server_->offer(service_instance_);
     server_->offer_field(offered_field_.si_, offered_field_.to_event_spec());
+    server_->offer(service_instance_);
     send_field_message();
 
     start_router();
@@ -282,7 +286,7 @@ TEST_F(test_client_lifecycle, cached_field) {
     // subscribing on the server side for both fields,
     // but only handling the first
     client_->request_service(other_service);
-    client_->subscribe_eventgroup_field(field_one);
+    client_->subscribe_field(field_one);
     ASSERT_TRUE(client_->subscription_record_.wait_for_last(event_subscription::successfully_subscribed_to(field_one)));
 
     std::vector<unsigned char> p1 = {0x1, 0x2};
@@ -297,7 +301,7 @@ TEST_F(test_client_lifecycle, cached_field) {
     message_checker const field_checker3{std::nullopt, other_service, field_two.event_id_, vsomeip::message_type_e::MT_NOTIFICATION, p3};
 
     ASSERT_TRUE(client_->message_record_.wait_for(field_checker1)) << client_->message_record_;
-    client_->subscribe_eventgroup_field(field_two);
+    client_->subscribe_field(field_two);
 
     EXPECT_TRUE(client_->message_record_.wait_for(field_checker3)) << client_->message_record_;
 }
@@ -398,9 +402,9 @@ TEST_F(test_client_lifecycle, early_group_subscriptions_to_a_single_service_are_
 TEST_F(test_client_lifecycle, router_offers_field) {
     start_router();
     start_client_app();
-    routingmanagerd_->offer(service_instance_);
     routingmanagerd_->offer_event(offered_event_.si_, offered_event_.to_event_spec());
     routingmanagerd_->offer_field(offered_field_.si_, offered_field_.to_event_spec());
+    routingmanagerd_->offer(service_instance_);
     routingmanagerd_->send_event(offered_field_, field_payload_);
 
     ASSERT_TRUE(subscribe_to_field());
@@ -408,10 +412,9 @@ TEST_F(test_client_lifecycle, router_offers_field) {
 }
 
 TEST_F(test_client_lifecycle, request_reply_no_sub) {
-    start_apps();
+    start_apps([this] { answer_requests_with({0x2, 0x3}); });
 
     client_->request_service(service_instance_);
-    answer_requests_with({0x2, 0x3});
 
     // wait for availability, before sending the request
     // otherwise no guarantee that it is sent out
@@ -423,12 +426,11 @@ TEST_F(test_client_lifecycle, request_reply_no_sub) {
 }
 
 TEST_F(test_client_lifecycle, request_reply_with_sub) {
-    start_apps();
+    start_apps([this] { answer_requests_with({0x2, 0x3}); });
 
     // NOTE: subscription acknowledge happens after service availability, which is why this works!
     ASSERT_TRUE(subscribe_to_event());
 
-    answer_requests_with({0x2, 0x3});
     client_->send_request(request_);
 
     ASSERT_TRUE(server_->message_record_.wait_for_last(expected_request_));
@@ -442,12 +444,12 @@ TEST_F(test_client_lifecycle, request_reply_routingd) {
     start_client_app();
     // no server! router will be server
 
-    // routingd offers service
-    routingmanagerd_->offer(service_instance_);
-    // ..and answers
+    // routingd answers requests..
     std::vector<uint8_t> payload{0x2, 0x3};
     routingmanagerd_->answer_request(request_, [payload] { return payload; });
     expected_reply_.payload_ = payload;
+    // ..and offers the service
+    routingmanagerd_->offer(service_instance_);
 
     client_->request_service(service_instance_);
 
@@ -576,9 +578,9 @@ TEST_F(test_client_lifecycle, missing_initial_events) {
     // but not the focuse of this tests
     std::this_thread::sleep_for(std::chrono::milliseconds(200));
     // 3.
-    server_->offer(service_instance_);
     server_->offer_event(offered_event_.si_, offered_event_.to_event_spec());
     server_->offer_field(offered_field_.si_, offered_field_.to_event_spec());
+    server_->offer(service_instance_);
     // 4.
     send_field_message();
     std::this_thread::sleep_for(std::chrono::milliseconds(200));
@@ -961,7 +963,7 @@ TEST_F(test_client_lifecycle, release_and_rerequest_one_service_among_many_ends_
      * messages are held. Only the middle one is released then
      * re-requested; the other two are steady bystanders.
      */
-    service_instance const service_instance_three_{0x3346, 0x1};
+    service_instance const service_instance_three_{.service_ = 0x3346, .instance_ = 0x1, .major_ = 1, .minor_ = 0};
 
     start_apps();
     server_->offer(service_instance_two_);
@@ -1326,9 +1328,9 @@ TEST_F(test_concurrent_registration, deregister_register_service_reachable_by_cl
     ASSERT_TRUE(first_instance->app_state_record_.wait_for_last(vsomeip::state_type_e::ST_REGISTERED));
 
     // First instance offers service
-    first_instance->offer(service_);
     std::vector<uint8_t> payload_v1{0x01, 0x02};
     first_instance->answer_request(req_, [payload_v1] { return payload_v1; });
+    first_instance->offer(service_);
 
     // Wait for client to see the service available
     ASSERT_TRUE(client->availability_record_.wait_for_last(service_availability::available(service_)));
@@ -1363,9 +1365,9 @@ TEST_F(test_concurrent_registration, deregister_register_service_reachable_by_cl
     ASSERT_TRUE(second_instance->app_state_record_.wait_for_last(vsomeip::state_type_e::ST_REGISTERED));
 
     // Second instance offers service with different payload
-    second_instance->offer(service_);
     std::vector<uint8_t> payload_v2{0x03, 0x04};
     second_instance->answer_request(req_, [payload_v2] { return payload_v2; });
+    second_instance->offer(service_);
 
     // Client should see service available again (after potential unavailable)
     ASSERT_TRUE(client->availability_record_.wait_for_last(service_availability::available(service_)));
@@ -1466,7 +1468,7 @@ TEST_F(test_client_lifecycle, resubscribe_while_acked_replays_cache_without_dupl
                                   std::chrono::milliseconds(200)));
 
     // The replayed notification must arrive on the client.
-    EXPECT_TRUE(client_->message_record_.wait_for(field_checker_));
+    EXPECT_TRUE(client_->message_record_.wait_for(field_checker_)) << client_->message_record_;
 
     // No NOTIFY_ID must have been sent by the server during this window —
     // proving the notification came from local cache replay, not a fresh server emission.
@@ -1514,14 +1516,15 @@ TEST_F(test_client_lifecycle, resubscribe_after_service_restart_delivers_fresh_n
 // the cyclic timer; routing_manager_client::periodic_notify does the actual sending. Driven only by
 // the timer, a subscriber must receive more than the single on-change value.
 TEST_F(test_client_lifecycle, cyclic_field_keeps_poking_subscriber) {
-    start_apps();
-
     event_ids const cyclic_field{service_instance_, 0x8005, 0x8};
     auto const cycle = common::scaled_timeout(std::chrono::milliseconds(5));
 
-    server_->get_application()->offer_event(cyclic_field.si_.service_, cyclic_field.si_.instance_, cyclic_field.event_id_,
-                                            {cyclic_field.eventgroup_id_}, vsomeip::event_type_e::ET_FIELD, cycle,
-                                            false /*change_resets_cycle*/, true /*update_on_change*/, nullptr, cyclic_field.reliability_);
+    start_apps([&] {
+        server_->get_application()->offer_event(cyclic_field.si_.service_, cyclic_field.si_.instance_, cyclic_field.event_id_,
+                                                {cyclic_field.eventgroup_id_}, vsomeip::event_type_e::ET_FIELD, cycle,
+                                                false /*change_resets_cycle*/, true /*update_on_change*/, nullptr,
+                                                cyclic_field.reliability_);
+    });
 
     request_service();
     client_->subscribe_field(cyclic_field);
@@ -1560,7 +1563,7 @@ struct test_single_io_thread : public base_fake_socket_fixture {
 
     ecu_setup ecu_{"single_io", config_, *socket_manager_};
 
-    service_instance service_{0x3344, 0x1};
+    service_instance service_{.service_ = 0x3344, .instance_ = 0x1, .major_ = 1, .minor_ = 0};
     event_ids field_{service_, 0x8003, 0x6};
 
     void start_apps() {
@@ -1652,10 +1655,10 @@ struct test_provider_consumer_error_isolation : public base_fake_socket_fixture 
     std::string const& c_name_{client_name_two_};
 
     // S1 is offered by A and consumed by B.
-    service_instance s1_{0x3344, 0x1};
+    service_instance s1_{.service_ = 0x3344, .instance_ = 0x1, .major_ = 1, .minor_ = 0};
     event_ids ev1_{s1_, 0x8002, 0x1};
     // S2 is offered by B and consumed by A.
-    service_instance s2_{0x3345, 0x1};
+    service_instance s2_{.service_ = 0x3345, .instance_ = 0x1, .major_ = 1, .minor_ = 0};
     event_ids ev2_{s2_, 0x8002, 0x1};
 
     std::vector<unsigned char> s1_payload_{0x11, 0x22};
@@ -1687,10 +1690,10 @@ struct test_provider_consumer_error_isolation : public base_fake_socket_fixture 
         ASSERT_TRUE(b_->app_state_record_.wait_for_last(vsomeip::state_type_e::ST_REGISTERED));
 
         // A offers S1, B offers S2.
-        a_->offer(s1_);
         a_->offer_event(ev1_.si_, ev1_.to_event_spec());
-        b_->offer(s2_);
+        a_->offer(s1_);
         b_->offer_event(ev2_.si_, ev2_.to_event_spec());
+        b_->offer(s2_);
 
         // B consumes S1 (provider connection B -> A).
         b_->request_service(s1_);
@@ -1730,7 +1733,7 @@ struct test_provider_consumer_error_isolation : public base_fake_socket_fixture 
         entry.client_ = _client;
         entry.address_ = _address;
         entry.port_ = _port;
-        entry.services_.push_back({_si.service_, _si.instance_, major_version_t{0x1}, minor_version_t{0x0}});
+        entry.services_.push_back({.key_ = {_si.service_, _si.instance_, major_version_t{0x1}}, .minor_version_ = minor_version_t{0x0}});
         auto const cmd = protocol::create_routing_info_cmd(client_t{0x0} /* VSOMEIP_ROUTING_CLIENT */, {entry});
         std::vector<unsigned char> payload(protocol::wire_size(cmd));
         protocol::serialize(cmd, payload.data());
@@ -1837,8 +1840,8 @@ TEST_F(test_provider_consumer_error_isolation, stale_consumer_does_not_tear_down
     a_ = start_client(a_name_);
     ASSERT_NE(a_, nullptr);
     ASSERT_TRUE(a_->app_state_record_.wait_for_last(vsomeip::state_type_e::ST_REGISTERED));
-    a_->offer(s1_);
     a_->offer_event(ev1_.si_, ev1_.to_event_spec());
+    a_->offer(s1_);
 
     // C is the new, live client: it only CONSUMES S1 (offers nothing), so A holds no consumer_
     // entry for C — only its accepted provider endpoint C -> A at (127.0.0.1, C_port + 1).
@@ -1864,8 +1867,8 @@ TEST_F(test_provider_consumer_error_isolation, stale_consumer_does_not_tear_down
     client_t const new_client = 0x7777;
     ASSERT_NE(c_->get_client_id(), old_client);
     ASSERT_NE(c_->get_client_id(), new_client);
-    service_instance const stale_service{0x7A01, 0x1};
-    service_instance const new_service{0x7A02, 0x1};
+    service_instance const stale_service{.service_ = 0x7A01, .instance_ = 0x1, .major_ = 1, .minor_ = 0};
+    service_instance const new_service{.service_ = 0x7A02, .instance_ = 0x1, .major_ = 1, .minor_ = 0};
     a_->request_service(stale_service);
 
     // 1. Plant a STALE consumer mapping on A: the old client "offers" S_STALE at (127.0.0.1, C_port).
@@ -1914,7 +1917,7 @@ TEST_F(test_provider_consumer_error_isolation, stale_consumer_and_provider_of_ol
 
     client_t const new_client = 0x7777;
     ASSERT_NE(b_->get_client_id(), new_client);
-    service_instance const new_service{0x7A02, 0x1};
+    service_instance const new_service{.service_ = 0x7A02, .instance_ = 0x1, .major_ = 1};
 
     // Only observe post-trigger effects.
     a_->availability_record_.clear();
@@ -1951,9 +1954,9 @@ struct test_pending_event_registration_split : public base_fake_socket_fixture {
     std::string const& b_name_{client_name_};
 
     // S1 is offered by A and consumed by B; S2 is offered by B and consumed by A.
-    service_instance s1_{0x3344, 0x1};
+    service_instance s1_{.service_ = 0x3344, .instance_ = 0x1, .major_ = 1};
     event_ids ev1_{s1_, 0x8002, 0x1};
-    service_instance s2_{0x3345, 0x1};
+    service_instance s2_{.service_ = 0x3345, .instance_ = 0x1, .major_ = 1};
     event_ids ev2_{s2_, 0x8002, 0x1};
 
     std::vector<unsigned char> s1_payload_{0x11, 0x22};
@@ -1992,10 +1995,10 @@ struct test_pending_event_registration_split : public base_fake_socket_fixture {
         ASSERT_NE(b_, nullptr);
         ASSERT_TRUE(b_->app_state_record_.wait_for_last(vsomeip::state_type_e::ST_REGISTERED));
 
-        a_->offer(s1_);
         a_->offer_event(ev1_.si_, ev1_.to_event_spec());
-        b_->offer(s2_);
+        a_->offer(s1_);
         b_->offer_event(ev2_.si_, ev2_.to_event_spec());
+        b_->offer(s2_);
 
         b_->request_service(s1_);
         ASSERT_TRUE(b_->availability_record_.wait_for_last(service_availability::available(s1_)));
@@ -2035,7 +2038,7 @@ TEST_F(test_pending_event_registration_split, stopping_provided_event_does_not_d
     bring_up();
     assert_both_directions_deliver(s1_payload_, s2_payload_);
 
-    // Provider-side unregister -> erases ev1 from pending_provided_event_registrations_.
+    // Provider-side unregister -> erases ev1 from provided_event_registrations_.
     a_->get_application()->stop_offer_event(s1_.service_, s1_.instance_, ev1_.event_id_);
 
     // The consumer-side registration (ev2) must be unaffected: A still receives fresh S2.
@@ -2053,7 +2056,7 @@ TEST_F(test_pending_event_registration_split, releasing_consumed_event_does_not_
     bring_up();
     assert_both_directions_deliver(s1_payload_, s2_payload_);
 
-    // Consumer-side unregister -> erases ev2 from pending_consumed_event_registrations_.
+    // Consumer-side unregister -> erases ev2 from consumed_event_registrations_.
     a_->get_application()->release_event(s2_.service_, s2_.instance_, ev2_.event_id_);
 
     // The provider-side registration (ev1) must be unaffected: B still receives fresh S1.
@@ -2078,7 +2081,7 @@ TEST_F(test_pending_event_registration_split, resend_provided_events_resends_onl
     EXPECT_TRUE(wait_for_command(a_name_, routingmanager_name_, protocol::id_e::REGISTER_EVENT_ID, socket_role::server))
             << "A did not resend its provided event registration on RESEND_PROVIDED_EVENTS";
 
-    // Stop offering ev1 -> pending_provided_event_registrations_ becomes empty.
+    // Stop offering ev1 -> provided_event_registrations_ becomes empty.
     a_->get_application()->stop_offer_event(s1_.service_, s1_.instance_, ev1_.event_id_);
     clear_command_record(a_name_, routingmanager_name_);
     auto resend_again = make_resend_provided_events_command(rm_->get_client());
@@ -2106,8 +2109,8 @@ TEST_F(test_pending_event_registration_split, same_event_offered_and_consumed_by
     ASSERT_TRUE(b_->app_state_record_.wait_for_last(vsomeip::state_type_e::ST_REGISTERED));
 
     // A offers ev1 (provider set) and subscribes to its OWN ev1 (consumer set): same event, both sets.
-    a_->offer(s1_);
     a_->offer_event(ev1_.si_, ev1_.to_event_spec());
+    a_->offer(s1_);
     a_->request_service(s1_);
     a_->subscribe_event(ev1_);
     ASSERT_TRUE(a_->subscription_record_.wait_for_last(event_subscription::successfully_subscribed_to(ev1_)))
@@ -2126,5 +2129,252 @@ TEST_F(test_pending_event_registration_split, same_event_offered_and_consumed_by
             << "A did not receive its own offered+consumed ev1: " << a_->message_record_;
     EXPECT_TRUE(b_->message_record_.wait_for(notification_checker(s1_, ev1_.event_id_, s1_payload_)))
             << "B did not receive A's ev1: " << b_->message_record_;
+}
+
+// A single app A that both offers and self-subscribes to ev1_, used to probe what notify()'s and
+// notify_one()'s _force argument actually does: bypass the FIELD no-change dedup in
+// provider_event::update() / update_without_subscriber() (see implementation/routing/src/provider_event.cpp).
+struct test_force_notify_dedup : public base_fake_socket_fixture {
+    test_force_notify_dedup() {
+        use_configuration("multiple_client_one_process.json");
+        create_app(routingmanager_name_);
+        create_app(a_name_);
+    }
+
+    std::string const& a_name_{server_name_};
+
+    service_instance s1_{.service_ = 0x3344, .instance_ = 0x1, .major_ = 1};
+    event_ids ev1_{s1_, 0x8002, 0x1};
+    std::vector<unsigned char> s1_payload_{0x11, 0x22};
+
+    static message_checker notification_checker(service_instance const& _si, vsomeip::event_t _event,
+                                                std::vector<unsigned char> const& _payload) {
+        return message_checker{std::nullopt, _si, _event, vsomeip::message_type_e::MT_NOTIFICATION, _payload};
+    }
+
+    app* rm_{};
+    app* a_{};
+
+    // Brings A up as both provider and self-subscriber of ev1_, offered as FIELD or plain EVENT.
+    // A non-zero _cycle offers ev1_ as a cyclic event/field instead of a plain one-shot offer.
+    void bring_up_self_subscribed(vsomeip::event_type_e _type, std::chrono::milliseconds _cycle = {}) {
+        rm_ = start_client(routingmanager_name_);
+        ASSERT_NE(rm_, nullptr);
+        ASSERT_TRUE(await_connectable(routingmanager_name_));
+
+        a_ = start_client(a_name_);
+        ASSERT_NE(a_, nullptr);
+        ASSERT_TRUE(a_->app_state_record_.wait_for_last(vsomeip::state_type_e::ST_REGISTERED));
+
+        a_->request_service(s1_);
+        a_->subscribe_event(ev1_);
+
+        // A offers ev1 (provider set) and subscribes to its OWN ev1 (consumer set)
+        if (_cycle.count() > 0) {
+            a_->get_application()->offer_event(s1_.service_, s1_.instance_, ev1_.event_id_, {ev1_.eventgroup_id_}, _type, _cycle,
+                                               false /*change_resets_cycle*/, true /*update_on_change*/, nullptr, ev1_.reliability_);
+        } else if (_type == vsomeip::event_type_e::ET_FIELD) {
+            a_->offer_field(ev1_.si_, ev1_.to_event_spec());
+        } else {
+            a_->offer_event(ev1_.si_, ev1_.to_event_spec());
+        }
+        a_->offer(s1_);
+
+        ASSERT_TRUE(a_->subscription_record_.wait_for_last(event_subscription::successfully_subscribed_to(ev1_)))
+                << "A failed to subscribe to its own offered ev1";
+    }
+};
+
+// Test 1 (one app offers and consumes the same service) checks that the notify with force = true,
+// same payload after a previous notify is respected and the consumer receives it. It then
+// re-notifies with the same payload but this time with force = false, no notification should reach
+// the consumer
+TEST_F(test_force_notify_dedup, force_send_event_with_no_change) {
+    bring_up_self_subscribed(vsomeip::event_type_e::ET_FIELD);
+
+    // Send notification, must reach the self-subscriber (A)
+    a_->send_event(ev1_, s1_payload_);
+    EXPECT_TRUE(a_->message_record_.wait_for(notification_checker(s1_, ev1_.event_id_, s1_payload_)))
+            << "A did not receive its own offered+consumed ev1: " << a_->message_record_;
+
+    // Send the same payload with force = true, must reach the self-subscriber (A)
+    a_->message_record_.clear();
+    a_->send_event(ev1_, s1_payload_, true);
+    EXPECT_TRUE(a_->message_record_.wait_for(notification_checker(s1_, ev1_.event_id_, s1_payload_)))
+            << "A did not receive its own offered+consumed ev1: " << a_->message_record_;
+
+    // Send the same payload yet again, this time with force = false again, must NOT reach the self-subscriber (A)
+    a_->message_record_.clear();
+    a_->send_event(ev1_, s1_payload_, false);
+    EXPECT_FALSE(a_->message_record_.wait_for(notification_checker(s1_, ev1_.event_id_, s1_payload_), std::chrono::milliseconds(300)))
+            << "A received its own offered+consumed ev1: " << a_->message_record_;
+}
+
+// Test 2: same scenario as Test 1, but with ev1_ offered as a plain EVENT instead of a FIELD.
+// The no-change dedup is field-only, so a repeated notify with the same payload and force = false must
+// still reach the self-subscriber (A) for a plain event.
+TEST_F(test_force_notify_dedup, force_send_event_with_no_change_for_event) {
+    bring_up_self_subscribed(vsomeip::event_type_e::ET_EVENT);
+
+    // Send notification, must reach the self-subscriber (A)
+    a_->send_event(ev1_, s1_payload_);
+    EXPECT_TRUE(a_->message_record_.wait_for(notification_checker(s1_, ev1_.event_id_, s1_payload_)))
+            << "A did not receive its own offered+consumed ev1: " << a_->message_record_;
+
+    // Send the same payload with force = true, must reach the self-subscriber (A)
+    a_->message_record_.clear();
+    a_->send_event(ev1_, s1_payload_, true);
+    EXPECT_TRUE(a_->message_record_.wait_for(notification_checker(s1_, ev1_.event_id_, s1_payload_)))
+            << "A did not receive its own offered+consumed ev1: " << a_->message_record_;
+
+    // Send the same payload yet again with force = false: unlike a field, a plain event has no
+    // no-change dedup, so it must still reach the self-subscriber (A)
+    a_->message_record_.clear();
+    a_->send_event(ev1_, s1_payload_, false);
+    EXPECT_TRUE(a_->message_record_.wait_for(notification_checker(s1_, ev1_.event_id_, s1_payload_)))
+            << "A did not receive its own offered+consumed ev1 (plain event, force=false): " << a_->message_record_;
+}
+
+// Test 3: field_dedup already gates on !timer_, so a cyclic FIELD never applies the same-value dedup
+// in the first place -- force is a no-op for it. This guards against a regression where force would
+// additionally retrigger/duplicate the cyclic send: a forced same-payload notify sent well within the
+// cycle period must reach the self-subscriber exactly once.
+TEST_F(test_force_notify_dedup, force_send_event_does_not_double_notify_on_cyclic_field) {
+    bring_up_self_subscribed(vsomeip::event_type_e::ET_FIELD, common::scaled_timeout(std::chrono::milliseconds(2000)));
+
+    // Set the field once: stores the value and starts the cycle timer.
+    a_->send_event(ev1_, s1_payload_);
+    ASSERT_TRUE(a_->message_record_.wait_for(notification_checker(s1_, ev1_.event_id_, s1_payload_)))
+            << "A did not receive its own offered+consumed ev1: " << a_->message_record_;
+
+    // Re-send the same payload with force = true, well within the cycle period: must reach the
+    // self-subscriber exactly once -- force must not retrigger/duplicate the cyclic send.
+    a_->message_record_.clear();
+    a_->send_event(ev1_, s1_payload_, true);
+    ASSERT_TRUE(a_->message_record_.wait_for([](auto const& record) { return record.size() >= 1; },
+                                             common::scaled_timeout(std::chrono::milliseconds(50))))
+            << "A did not receive the forced notification on its cyclic field: " << a_->message_record_;
+    EXPECT_FALSE(a_->message_record_.wait_for([](auto const& record) { return record.size() > 1; },
+                                              common::scaled_timeout(std::chrono::milliseconds(50))))
+            << "A received more than one notification for a single forced send on a cyclic field: " << a_->message_record_;
+}
+
+// Test 4: notify_one() analog of Test 1. routing_manager_client::notify_one() reaches
+// provider_event::update_without_subscriber(), which applies the identical field_dedup gate
+// (bypassed by _force) as update() does for notify(). A targets its own client id via notify_one.
+TEST_F(test_force_notify_dedup, force_send_event_one_with_no_change) {
+    bring_up_self_subscribed(vsomeip::event_type_e::ET_FIELD);
+
+    // notify_one, targeting A's own client id, must reach the self-subscriber (A)
+    a_->send_event_one(ev1_, s1_payload_, a_->get_client_id());
+    EXPECT_TRUE(a_->message_record_.wait_for(notification_checker(s1_, ev1_.event_id_, s1_payload_)))
+            << "A did not receive its own notify_one-ed ev1: " << a_->message_record_;
+
+    // Send the same payload with force = true, must reach the self-subscriber (A)
+    a_->message_record_.clear();
+    a_->send_event_one(ev1_, s1_payload_, a_->get_client_id(), true);
+    EXPECT_TRUE(a_->message_record_.wait_for(notification_checker(s1_, ev1_.event_id_, s1_payload_)))
+            << "A did not receive its own notify_one-ed ev1: " << a_->message_record_;
+
+    // Send the same payload yet again, this time with force = false again, must NOT reach the self-subscriber (A)
+    a_->message_record_.clear();
+    a_->send_event_one(ev1_, s1_payload_, a_->get_client_id(), false);
+    EXPECT_FALSE(a_->message_record_.wait_for(notification_checker(s1_, ev1_.event_id_, s1_payload_), std::chrono::milliseconds(300)))
+            << "A received its own notify_one-ed ev1: " << a_->message_record_;
+}
+
+// Test 5: notify_one() analog of Test 2. Same as Test 4, but ev1_ is offered as a plain EVENT
+// instead of a FIELD, so update_without_subscriber's field_dedup never applies -- a repeated
+// notify_one with the same payload and force = false must still reach the self-subscriber (A).
+TEST_F(test_force_notify_dedup, force_send_event_one_with_no_change_for_event) {
+    bring_up_self_subscribed(vsomeip::event_type_e::ET_EVENT);
+
+    // notify_one, targeting A's own client id, must reach the self-subscriber (A)
+    a_->send_event_one(ev1_, s1_payload_, a_->get_client_id());
+    EXPECT_TRUE(a_->message_record_.wait_for(notification_checker(s1_, ev1_.event_id_, s1_payload_)))
+            << "A did not receive its own notify_one-ed ev1: " << a_->message_record_;
+
+    // Send the same payload with force = true, must reach the self-subscriber (A)
+    a_->message_record_.clear();
+    a_->send_event_one(ev1_, s1_payload_, a_->get_client_id(), true);
+    EXPECT_TRUE(a_->message_record_.wait_for(notification_checker(s1_, ev1_.event_id_, s1_payload_)))
+            << "A did not receive its own notify_one-ed ev1: " << a_->message_record_;
+
+    // Send the same payload yet again with force = false: unlike a field, a plain event has no
+    // no-change dedup, so it must still reach the self-subscriber (A)
+    a_->message_record_.clear();
+    a_->send_event_one(ev1_, s1_payload_, a_->get_client_id(), false);
+    EXPECT_TRUE(a_->message_record_.wait_for(notification_checker(s1_, ev1_.event_id_, s1_payload_)))
+            << "A did not receive its own notify_one-ed ev1 (plain event, force=false): " << a_->message_record_;
+}
+
+struct test_payload_set : public test_client_lifecycle {
+    void start_apps_gated() {
+        start_router();
+        ASSERT_TRUE(setup_data_pipe(server_name_, routingmanager_name_, socket_role::client, r2s_gate_->get_data_pipe()));
+        start_server();
+        start_client_app();
+    }
+
+    std::shared_ptr<command_gate> r2s_gate_ = command_gate::create();
+};
+
+/**
+ * A stop offer that is still in flight must not clear the payload of a field
+ * that the application has already re-offered.
+ *
+ * Sequence being reproduced:
+ *   1. the application stop-offers the service (e.g. a stub re-registration),
+ *   2. it immediately re-offers it and refills the field payload,
+ *   3. the DELETE_SERVICE_INSTANCE belonging to step 1 only now reaches the
+ *      application's own client library and runs on_stop_offer_service.
+ *
+ * If on_stop_offer_service iterates the *provided* events, is_set_ of the
+ * freshly refilled field is cleared and every later notification is answered
+ * with "Event payload not (yet) set!" / "Initial value ... not yet set",
+ * for the whole lifetime of the application.
+ */
+TEST_F(test_payload_set, stale_stop_offer_must_not_clear_reoffered_field_payload) {
+
+    start_apps_gated();
+
+    // This is required for the issue to happen, as the app receives the stop offer
+    // itself sent which would unset the payload
+    server_->request_service(service_instance_);
+
+    // Baseline: the field has a value and reaches the consumer.
+    send_field_message();
+    ASSERT_TRUE(subscribe_to_field());
+    ASSERT_TRUE(client_->message_record_.wait_for(field_checker_)) << client_->message_record_;
+    client_->message_record_.clear();
+
+    // Hold the next ROUTING_INFO on its way to the offering application.
+    r2s_gate_->block_at(vsomeip_v3::protocol::id_e::ROUTING_INFO_ID);
+
+    stop_offer();
+    ASSERT_TRUE(r2s_gate_->wait_for_blocked());
+
+    // Re-offer and refill the payload while the stop offer is still held back.
+    // These are local operations in the application's own client library, so
+    // they complete even though the router -> server direction is blocked.
+    server_->offer_field(offered_field_.si_, offered_field_.to_event_spec());
+    server_->offer(service_instance_);
+    server_->send_event(offered_field_, field_payload_);
+
+    // Release the stale stop offer.
+    r2s_gate_->block(false);
+
+    // Wait until the stale stop offer has actually been processed by the
+    // offering application. The gate sits on the router -> server link, so the
+    // delete is delivered ahead of the add that follows it; the server seeing
+    // its own service available again proves the delete is already through.
+    ASSERT_TRUE(server_->availability_record_.wait_for_last(service_availability::available(service_instance_)));
+
+    client_->message_record_.clear();
+
+    client_->subscribe_field(offered_field_);
+    ASSERT_TRUE(client_->subscription_record_.wait_for_last(event_subscription::successfully_subscribed_to(offered_field_)));
+
+    EXPECT_TRUE(client_->message_record_.wait_for(field_checker_)) << client_->message_record_;
 }
 }

@@ -29,15 +29,16 @@
 namespace vsomeip_v3 {
 
 local_server::local_server(boost::asio::io_context& _io, std::shared_ptr<local_acceptor> _acceptor,
-                           std::shared_ptr<configuration> _configuration, std::weak_ptr<routing_host> _routing_host,
-                           connection_handler _connection_handler, bool _is_router, std::string _server_host) :
+                           std::shared_ptr<configuration> _configuration, std::weak_ptr<routing_host> _routing_host, bool _is_router,
+                           std::string _server_host) :
     is_router_(_is_router), io_(_io), acceptor_(std::move(_acceptor)), configuration_(std::move(_configuration)),
-    routing_host_(std::move(_routing_host)), connection_handler_(std::move(_connection_handler)), server_host_(std::move(_server_host)) { }
+    routing_host_(std::move(_routing_host)), server_host_(std::move(_server_host)) { }
 
 local_server::~local_server() = default;
 
-void local_server::start() {
+void local_server::start(connection_handler _connection_handler) {
     std::scoped_lock const lock{mtx_};
+    connection_handler_ = std::move(_connection_handler);
     if (state_ == state_e::STARTED) {
         VSOMEIP_WARNING_P << "Rejecting the attempt to start the server when it is already started";
         return;
@@ -53,6 +54,7 @@ void local_server::stop() {
         VSOMEIP_WARNING_P << "Rejecting the attempt to stop the server when it is already stopped";
         return;
     }
+    connection_handler_ = nullptr;
     state_ = state_e::STOPPED;
     ++lc_count_;
     boost::system::error_code ec;
@@ -71,6 +73,7 @@ void local_server::halt() {
         VSOMEIP_WARNING_P << "Rejecting the attempt to stop the server when it is already stopped";
         return;
     }
+    connection_handler_ = nullptr;
     state_ = state_e::HALTED;
     ++lc_count_;
     boost::system::error_code ec;
@@ -221,7 +224,7 @@ void local_server::add_connection(client_t _client, [[maybe_unused]] client_t _e
 
             auto ep = local_endpoint::create_server_ep(
                     local_endpoint_context{io_, configuration_, routing_host_},
-                    local_endpoint_params{_client, rh->get_client(), std::move(_environment), std::move(_socket),
+                    local_endpoint_params{_client, own_client_id_, std::move(_environment), std::move(_socket),
                                           // For TCP sockets use the real peer endpoint directly.
                                           // For UDS, fall back to what the client advertised in assign_client_command.
                                           !peer_endpoint.address().is_unspecified() ? peer_endpoint.address() : _routing_address,
@@ -244,15 +247,19 @@ void local_server::add_connection(client_t _client, [[maybe_unused]] client_t _e
             }
             ep->send(protocol::create_config_cmd(own_client_id_, {{"hostname", server_host_}}));
 
+            // The endpoint is now fully initialized and ready to be handed over to the routing host.
             if (is_router_) {
-                ep->send(protocol::create_assign_client_ack_cmd(VSOMEIP_ROUTING_CLIENT, _client));
                 VSOMEIP_INFO << ss.str();
             }
 
-            // keep the lock acquired to ensure that the endpoint has been transferred.
-            // This is important to ensure that on the block and now drop endpoints
-            // sequence no endpoint is leaked because it was competing for the endpoint mutex
-            connection_handler_(ep);
+            // unlock when calling back into the rmc, to avoid a dead-lock.
+            // That the in-flight endpoint is not leaked during a stop/reconnect
+            // is the responsibility of the connection handler.
+            auto handler = connection_handler_;
+            lock.unlock();
+            if (handler) {
+                handler(ep);
+            }
         } else {
             VSOMEIP_WARNING_P << "Dropping connection from: " << hex4(_client) << ", from former lifecycle: " << _lc_count
                               << ", current lc: " << lc_count_ << ", as routing host is no longer available self: " << this;

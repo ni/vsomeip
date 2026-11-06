@@ -1,10 +1,21 @@
-#!/bin/bash -eu
+#!/usr/bin/env bash
+
+set -eu
 
 # Enable timestamps for all commands (works with -x flag)
 export PS4='+ [$(date "+%Y-%m-%d %H:%M:%S")] '
 
 source "${BASH_SOURCE[0]%/*}"/shlib/common.shlib
 source "${BASH_SOURCE[0]%/*}"/shlib/results.shlib
+
+if [[ "$ENABLE_SANITIZERS" == ON ]]
+then
+	export ASAN_OPTIONS="disable_coredump=0:use_madv_dontdump=1${ASAN_OPTIONS:+:$ASAN_OPTIONS}"
+fi
+if [[ "$ENABLE_THREAD_SANITIZER" == ON ]]
+then
+	export TSAN_OPTIONS="disable_coredump=0:use_madv_dontdump=1${TSAN_OPTIONS:+:$TSAN_OPTIONS}"
+fi
 
 # Ensure /run/netns is a shared mount so `ip netns add` inside test processes
 # doesn't need to call `mount --make-shared` (which may be denied by LSM).
@@ -63,8 +74,9 @@ gen-result-file "$tests_result_file" "/home/source/.tests-whitelist"
 # Enable pcap capture inside each test's network namespace.
 export PCAP_DIR=/home/logs/pcap
 
-PARALLEL_JOBS="$(nproc --all)"
-echo "Running tests with up to $PARALLEL_JOBS parallel jobs..."
+# One slot per core; each test declares its cores through the CTest PROCESSORS property.
+PARALLEL_JOBS="${TEST_PARALLEL_JOBS:-$(nproc --all)}"
+echo "Running tests with up to $PARALLEL_JOBS parallel slots (1 slot = 1 declared test process)..."
 
 # Build CTest resource spec file with one instance per slave, identified by IP
 resource_spec_file=/home/build/resource-specs.json
@@ -94,10 +106,16 @@ for ((n = 0; n < stress_times[0]; n++)); do
 		ctest_repeat=(--repeat "until-fail:${stress_times[1]}")
 	fi
 
+	# Only override the preset's test filter when stress demands a specific regex.
+	ctest_filter=()
+	if [[ -n "$stress_regex" ]]; then
+		ctest_filter=(--tests-regex "$stress_regex")
+	fi
+
 	ctest --preset ci-network-tests -j "${PARALLEL_JOBS}" \
 		--resource-spec-file "$resource_spec_file" \
 		"${ctest_repeat[@]}" \
-		${stress_regex:+--tests-regex "$stress_regex"} || true
+		"${ctest_filter[@]}" || true
 	cp /home/build/Testing/Temporary/LastTest.log /home/logs/junit/all.log
 
 	# `all.log` contains output for multiple tests, so split it into per-test files.
@@ -193,8 +211,7 @@ done
 	fi
 )
 
-gen-core-backtraces /home/logs/cores master
-run-slave bash -lc 'source /home/source/zuul/network-tests/shlib/results.shlib; gen-core-backtraces /home/logs/cores @name@' || :
+gen-core-backtraces /home/logs/cores
 
 if [ "$ENABLE_COVERAGE" != False ]; then
 	# All containers share /home/build and /home/source via bind mounts, so .gcda

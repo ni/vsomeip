@@ -46,10 +46,9 @@ public:
     void get_configured_times_from_endpoint(service_t _service, method_t _method, std::chrono::nanoseconds* _debouncing,
                                             std::chrono::nanoseconds* _maximum_retention) const override;
 
-    VSOMEIP_EXPORT void join(const std::string& _address);
-    VSOMEIP_EXPORT void join_unlocked(const std::string& _address);
-    VSOMEIP_EXPORT void leave(const std::string& _address);
-    VSOMEIP_EXPORT void set_multicast_option(const boost::asio::ip::address& _address, bool _is_join, boost::system::error_code& _error);
+    void join(const std::string& _address);
+    void leave(const std::string& _address);
+    void set_multicast_option(const boost::asio::ip::address& _address, bool _is_join, boost::system::error_code& _error);
 
     void add_default_target(service_t _service, const std::string& _address, uint16_t _port) override;
     void remove_default_target(service_t _service) override;
@@ -71,6 +70,12 @@ public:
     bool is_joined(const std::string& _address) const;
     bool is_joined(const std::string& _address, bool& _received) const;
 
+    // Own multicast messages that were looped back, the only feed of the offer watchdog.
+    std::uint64_t get_own_multicast_received() const;
+
+    // Reports and drains what is still queued on the multicast socket. Terminal use only.
+    void log_multicast_backlog();
+
     /**
      * @brief Block until all data is sent
      *
@@ -85,12 +90,13 @@ private:
     void init_unlocked(const endpoint_type& _local, boost::system::error_code& _error);
 
     bool send_queued_unlocked(const target_data_iterator_type _it);
-    void leave_unlocked(const std::string& _address);
+    void join_multicast_with_retry(const boost::asio::ip::address& _address);
+    void set_multicast_option_unlocked(const boost::asio::ip::address& _address, bool _is_join, boost::system::error_code& _error);
     void receive_unicast_unlocked(std::shared_ptr<message_buffer_t> _unicast_recv_buffer);
     void receive_multicast_unlocked(std::shared_ptr<message_buffer_t> _multicast_recv_buffer,
                                     std::shared_ptr<endpoint_type> _multicast_sender);
-    bool is_joined_unlocked(const std::string& _address) const;
-    bool is_joined_unlocked(const std::string& _address, bool& _received) const;
+    bool is_joined_unlocked(const boost::asio::ip::address& _address) const;
+    bool is_joined_unlocked(const boost::asio::ip::address& _address, bool& _received) const;
     std::string get_remote_information(const target_data_iterator_type _it) const override;
     std::string get_remote_information(const endpoint_type& _remote) const override;
 
@@ -120,13 +126,12 @@ private:
 
     std::atomic<unsigned> lifecycle_idx_; // for unicast jhandler (and otherwise for usei as a whole)
     std::atomic<unsigned> multicast_lifecycle_idx_; // for multicast handler
-    std::map<std::string, bool, std::less<>> joined_;
-    std::map<std::string, bool, std::less<>> join_status_;
+    std::map<boost::asio::ip::address, bool> joined_;
+    std::map<boost::asio::ip::address, bool> join_status_;
 
     std::map<service_t, endpoint_type> default_targets_;
 
     boost::asio::ip::address netmask_;
-    uint16_t prefix_{0};
 
     std::shared_ptr<tp::tp_reassembler> tp_reassembler_;
     boost::asio::steady_timer tp_cleanup_timer_;
@@ -143,6 +148,7 @@ private:
     // to receive own multicast messages
     bool receive_own_multicast_messages_{false};
     on_sent_multicast_received_cbk_t on_sent_multicast_received_{nullptr};
+    std::atomic<std::uint64_t> own_multicast_received_{0};
 
     std::string instance_name_;
 };

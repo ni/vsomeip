@@ -46,8 +46,6 @@ endif()
 
 add_library(${VSOMEIP_NAME}-test SHARED $<TARGET_OBJECTS:${VSOMEIP_NAME}-internal>)
 target_include_directories(${VSOMEIP_NAME}-test PRIVATE ${VSOMEIP_CONFIG_INCLUDE_DIR})
-# libvsomeip also `dlopens` other libs (cfg, sd, ..) so leave a rpath hint
-set_target_properties(${VSOMEIP_NAME}-test PROPERTIES BUILD_RPATH "${CMAKE_CURRENT_BINARY_DIR}")
 set_target_properties(${VSOMEIP_NAME}-test PROPERTIES OUTPUT_NAME ${VSOMEIP_NAME} VERSION ${VSOMEIP_VERSION} SOVERSION ${VSOMEIP_MAJOR_VERSION})
 target_link_libraries(${VSOMEIP_NAME}-test PRIVATE ${Boost_LIBRARIES} ${USE_RT} ${DL_LIBRARY} ${DLT_LIBRARIES} ${SystemD_LIBRARIES} ${CMAKE_THREAD_LIBS_INIT})
 
@@ -61,28 +59,9 @@ if (NOT MSVC)
     endif ()
 endif ()
 
-add_library(${VSOMEIP_NAME}-cfg-test SHARED $<TARGET_OBJECTS:${VSOMEIP_NAME}-cfg-internal>)
-target_include_directories(${VSOMEIP_NAME}-cfg-test PRIVATE ${VSOMEIP_CONFIG_INCLUDE_DIR})
-set_target_properties(${VSOMEIP_NAME}-cfg-test PROPERTIES OUTPUT_NAME ${VSOMEIP_NAME}-cfg VERSION ${VSOMEIP_VERSION} SOVERSION ${VSOMEIP_MAJOR_VERSION})
-target_link_libraries(${VSOMEIP_NAME}-cfg-test ${VSOMEIP_NAME}-test ${Boost_LIBRARIES} ${USE_RT} ${DL_LIBRARY} ${SystemD_LIBRARIES})
-set_target_properties(${VSOMEIP_NAME}-cfg-test PROPERTIES VERSION ${VSOMEIP_VERSION} SOVERSION ${VSOMEIP_MAJOR_VERSION})
-
-add_library(${VSOMEIP_NAME}-sd-test SHARED $<TARGET_OBJECTS:${VSOMEIP_NAME}-sd-internal>)
-target_include_directories(${VSOMEIP_NAME}-sd-test PRIVATE ${VSOMEIP_CONFIG_INCLUDE_DIR})
-set_target_properties(${VSOMEIP_NAME}-sd-test PROPERTIES OUTPUT_NAME ${VSOMEIP_NAME}-sd VERSION ${VSOMEIP_VERSION} SOVERSION ${VSOMEIP_MAJOR_VERSION})
-target_link_libraries(${VSOMEIP_NAME}-sd-test ${VSOMEIP_NAME}-test ${Boost_LIBRARIES} ${USE_RT} ${DL_LIBRARY} ${SystemD_LIBRARIES} ${CMAKE_THREAD_LIBS_INIT})
-
-add_library(${VSOMEIP_NAME}-e2e-test SHARED $<TARGET_OBJECTS:${VSOMEIP_NAME}-e2e-internal>)
-target_include_directories(${VSOMEIP_NAME}-e2e-test PRIVATE ${VSOMEIP_CONFIG_INCLUDE_DIR})
-set_target_properties(${VSOMEIP_NAME}-e2e-test PROPERTIES OUTPUT_NAME ${VSOMEIP_NAME}-e2e VERSION ${VSOMEIP_VERSION} SOVERSION ${VSOMEIP_MAJOR_VERSION})
-target_link_libraries(${VSOMEIP_NAME}-e2e-test ${VSOMEIP_NAME}-test ${Boost_LIBRARIES} ${USE_RT} ${DL_LIBRARY} ${SystemD_LIBRARIES})
-
 if (MSVC)
     set_target_properties(${VSOMEIP_NAME}-test PROPERTIES WINDOWS_EXPORT_ALL_SYMBOLS ON)
     set_target_properties(${VSOMEIP_NAME}-test PROPERTIES COMPILE_DEFINITIONS "VSOMEIP_DLL_COMPILATION_PLUGIN")
-    set_target_properties(${VSOMEIP_NAME}-cfg-test PROPERTIES COMPILE_DEFINITIONS "VSOMEIP_DLL_COMPILATION_PLUGIN")
-    set_target_properties(${VSOMEIP_NAME}-sd-test PROPERTIES COMPILE_DEFINITIONS "VSOMEIP_DLL_COMPILATION_PLUGIN")
-    set_target_properties(${VSOMEIP_NAME}-e2e-test PROPERTIES COMPILE_DEFINITIONS "VSOMEIP_DLL_COMPILATION_PLUGIN")
 endif ()
 
 ##############################################################################
@@ -91,13 +70,6 @@ include_directories(${VSOMEIP_CONFIG_INCLUDE_DIR})
 
 ##############################################################################
 # build tests
-
-SET(TESTS_BAT "OFF" CACHE BOOL
-"Controls whether only BAT tests should be build or not")
-SET(TEST_SYMLINK_CONFIG_FILES "OFF" CACHE BOOL
-"Controls if the json and scripts needed needed to run the tests are copied or symlinked into the build directroy (ignored on Windows)")
-SET(TEST_SYMLINK_CONFIG_FILES_RELATIVE "OFF" CACHE BOOL
-    "Controls if the json and scripts needed needed to run the tests are symlinked relatively into the build directroy (ignored on Windows)")
 
 SET(TEST_IP_DEFAULT_VALUE "127.0.0.1")
 SET(TEST_IP_MASTER "${TEST_IP_DEFAULT_VALUE}" CACHE STRING
@@ -115,20 +87,13 @@ endif()
 
 SET(TEST_IP_SLAVE_SECOND "${TEST_IP_DEFAULT_VALUE}" CACHE STRING
 "The second IP address of the interface which will act as test slave")
-set(TEST_SECOND_ADDRESS "OFF" CACHE BOOL
-    "Controls whether second address tests should run or not")
 
 if(${TEST_IP_SLAVE_SECOND} STREQUAL ${TEST_IP_DEFAULT_VALUE})
     message(WARNING "TEST_IP_SLAVE_SECOND isn't set. "
                     "Test with more than one IP address on same interface is not enabled."
                     "Please specify them via for example "
                     "-TEST_IP_SLAVE_SECOND=10.0.3.126")
-else()
-    set(TEST_SECOND_ADDRESS "ON")
 endif()
-
-set(TEST_E2E_PROFILE_04 "ON")
-set(TEST_E2E_PROFILE_07 "ON")
 
 SET(TEST_UID_DEFAULT_VALUE "123456789")
 SET(TEST_UID "${TEST_UID_DEFAULT_VALUE}" CACHE STRING
@@ -157,15 +122,15 @@ add_custom_target(check COMMAND ${CMAKE_CTEST_COMMAND})
 add_dependencies(check build_tests)
 
 add_custom_target(build_network_tests)
-add_dependencies(build_network_tests ${VSOMEIP_NAME}-test ${VSOMEIP_NAME}-cfg-test ${VSOMEIP_NAME}-e2e-test ${VSOMEIP_NAME}-sd-test)
+add_dependencies(build_network_tests ${VSOMEIP_NAME}-test)
 add_dependencies(build_tests build_network_tests)
 
 add_custom_target(build_unit_tests)
-add_dependencies(build_unit_tests ${VSOMEIP_NAME}-test ${VSOMEIP_NAME}-cfg-test ${VSOMEIP_NAME}-e2e-test ${VSOMEIP_NAME}-sd-test)
+add_dependencies(build_unit_tests ${VSOMEIP_NAME}-test)
 add_dependencies(build_tests build_unit_tests)
 
 add_custom_target(build_benchmark_tests)
-add_dependencies(build_benchmark_tests ${VSOMEIP_NAME}-test ${VSOMEIP_NAME}-cfg-test ${VSOMEIP_NAME}-e2e-test ${VSOMEIP_NAME}-sd-test)
+add_dependencies(build_benchmark_tests ${VSOMEIP_NAME}-test)
 add_dependencies(build_tests build_benchmark_tests)
 
 ##############################################################################
@@ -174,11 +139,9 @@ add_dependencies(build_tests build_benchmark_tests)
 
 add_subdirectory(common EXCLUDE_FROM_ALL)
 add_subdirectory(network_tests EXCLUDE_FROM_ALL)
+add_subdirectory(unit_tests EXCLUDE_FROM_ALL)
 
-if (NOT DISABLE_SECURITY)
-    add_subdirectory(unit_tests EXCLUDE_FROM_ALL)
-
-    if(benchmark_FOUND)
-        add_subdirectory(benchmark_tests EXCLUDE_FROM_ALL)
-    endif()
+if(benchmark_FOUND)
+    add_subdirectory(benchmark_tests EXCLUDE_FROM_ALL)
 endif()
+

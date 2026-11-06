@@ -76,7 +76,8 @@ local_endpoint::local_endpoint([[maybe_unused]] hidden, local_endpoint_context c
                                                             .sec_client_ = {},
                                                             .routing_address_ = std::move(_params.routing_address_),
                                                             .routing_port_ = _params.routing_port_}),
-    max_connection_attempts_(MAX_RECONNECTS_LOCAL), max_message_size_(_context.configuration_->get_max_message_size_local()),
+    expected_sec_client_(_params.expected_sec_client_), max_connection_attempts_(MAX_RECONNECTS_LOCAL),
+    max_message_size_(_context.configuration_->get_max_message_size_local()),
     queue_limit_(_context.configuration_->get_endpoint_queue_limit_local()), receive_buffer_(std::move(_receive_buffer)), io_(_context.io_),
     socket_(std::move(_params.socket_)), configuration_(_context.configuration_), routing_host_(_context.routing_host_) { }
 
@@ -407,8 +408,8 @@ void local_endpoint::connect_cbk(boost::system::error_code const& _ec) {
         return;
     }
     if (!_ec) {
-        set_state_unlocked(state_e::CONNECTED);
         if (peer_data_.id_ == VSOMEIP_ROUTING_CLIENT) {
+            set_state_unlocked(state_e::CONNECTED);
             if (!assignment_timebox_) {
                 assignment_timebox_ = timer::create(io_, std::chrono::seconds(3), [weak_self = weak_from_this()] {
                     if (auto self = weak_self.lock(); self) {
@@ -423,6 +424,19 @@ void local_endpoint::connect_cbk(boost::system::error_code const& _ec) {
                 escalate_internal(lock);
                 return;
             }
+            // Only the uid is comparable across both local transports: a local TCP connection
+            // carries no gid. A uid mismatch is not necessarily an attack. We may simply be
+            // connecting late to a client id that has meanwhile been re-used by a different
+            // process. Either way the peer is not the one we were told about, so the connection
+            // must not be used.
+            if (expected_sec_client_ && expected_sec_client_->user != peer_data_.sec_client_.user) {
+                VSOMEIP_WARNING_P << "vSomeIP Security: local connection to client 0x" << hex4(peer_data_.id_)
+                                  << " has uid=" << peer_data_.sec_client_.user << " instead of the reported " << expected_sec_client_->user
+                                  << " (client id re-used?)";
+                escalate_internal(lock);
+                return;
+            }
+            set_state_unlocked(state_e::CONNECTED);
         }
         send_unlock();
         receive_unlock();
@@ -625,11 +639,7 @@ bool local_endpoint::is_allowed() {
                             << "/" << peer_data_.sec_client_.group;
             return end();
         }
-    } else {
-        its_pm->store_client_to_sec_client_mapping(peer_data_.id_, &peer_data_.sec_client_);
-        its_pm->store_sec_client_to_client_mapping(&peer_data_.sec_client_, peer_data_.id_);
     }
-
     // For UDS clients that advertised a routing address/port in assign_client_command,
     // verify the claimed port falls within the range configured for their uid/gid.
     // Without this check, any local process could claim an arbitrary TCP endpoint

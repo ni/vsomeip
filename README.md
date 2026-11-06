@@ -20,10 +20,8 @@ For comprehensive details on how to contribute effectively to the project, pleas
 The vSomeIP stack implements the http://some-ip.com/ (Scalable service-Oriented MiddlewarE over IP (SOME/IP)) Protocol.
 The stack consists out of:
 
-* a shared library for SOME/IP (`libvsomeip3.so`)
-* a shared library for SOME/IP's configuration module (`libvsomeip3-cfg.so`)
-* a shared library for SOME/IP's service discovery (`libvsomeip3-sd.so`)
-* a shared library for SOME/IP's E2E protection module (`libvsomeip3-e2e.so`)
+* a shared library for SOME/IP (`libvsomeip3.so`) which also contains the
+  configuration, service discovery and E2E protection modules
 
 ##### Build Instructions for Linux
 
@@ -83,15 +81,6 @@ cmake -DDEFAULT_CONFIGURATION_FILE=<DEFAULT CONFIGURATION FILE> ..
 ```
 The default configuration file is `/etc/vsomeip.json`.
 
-###### Compilation with signal handling
-
-To compile vSomeIP with signal handling (SIGINT/SIGTERM) enabled, call cmake like:
-```bash
-cmake -DENABLE_SIGNAL_HANDLING=1 ..
-```
-In the default setting, the application has to take care of shutting down vSomeIP in case these signals are received.
-
-
 ##### Build Instructions for Android
 
 ###### Dependencies
@@ -110,9 +99,6 @@ In order that the vSomeIP library is also included in the Android image, the lib
 ```
 PRODUCT_PACKAGES += \
     libvsomeip \
-    libvsomeip_cfg \
-    libvsomeip_sd \
-    libvsomeip_e2e \
 ```
 
 ##### Build Instructions for Windows
