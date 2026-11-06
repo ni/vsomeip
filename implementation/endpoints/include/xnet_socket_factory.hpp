@@ -39,9 +39,9 @@ public:
 
     bool is_xnet_backend() const override { return true; }
 
-private:
-    nxIpStackRef_t get_xnet_ip_stack(boost::asio::io_context& _io) const;
+    nxIpStackRef_t get_xnet_ip_stack(boost::asio::io_context& _io) const override;
 
+private:
     mutable std::mutex stacks_mutex_;
     std::map<const boost::asio::io_context*, nxIpStackRef_t> stacks_;
 };

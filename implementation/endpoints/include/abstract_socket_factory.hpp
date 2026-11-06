@@ -66,6 +66,8 @@ public:
     virtual void register_ip_stack(boost::asio::io_context&, boost::asio::io_context&) { }
    
     virtual bool is_xnet_backend() const { return false; }
+
+    virtual nxIpStackRef_t get_xnet_ip_stack(boost::asio::io_context&) const { return nullptr; }
     // --- NI modification: END ---
 };
 

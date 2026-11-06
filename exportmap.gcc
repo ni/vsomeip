@@ -61,9 +61,6 @@ global:
 
         /* abstract socket factory API */
         vsomeip_v3::set_abstract_factory*;
-        vsomeip_v3::freeze_abstract_factory*;
-        vsomeip_v3::is_abstract_factory_finalized*;
-        vsomeip_v3::was_abstract_factory_late_injection_detected*;
         *vsomeip_v3::abstract_socket_factory*;
         *vsomeip_v3::asio_socket_factory*;
 

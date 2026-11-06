@@ -188,6 +188,11 @@ bool application_impl::init(const std::string& _json) {
 }
 
 bool application_impl::init_configuration() {
+    auto its_socket_factory = abstract_socket_factory::get();
+    if (its_socket_factory->is_xnet_backend() && nullptr == its_socket_factory->get_xnet_ip_stack(io_)) {
+        error_init("No IP stack reference was passed, but the XNET socket factory requires one.");
+        return false;
+    }
 // --- NI modification: END ---
     // Elect the routing host before init() queries the configuration: load()
     // parsed the mandatory files only, and the optional pass can still change
@@ -379,22 +384,30 @@ bool application_impl::init(const std::string& _json, const nxIpStackRef_t _stac
 bool application_impl::register_ip_stack(const nxIpStackRef_t _stack) {
     std::scoped_lock its_initialized_lock{initialize_mutex_};
     if (is_initialized_) {
-        VSOMEIP_ERROR_P << "Application \"" << name_ << "\" is already initialized, IP stack must be registered before init().";
+        error_init("Application is already initialized, IP stack must be registered before init().");
         return false;
     }
     
     if (nullptr == _stack) {
-        VSOMEIP_ERROR_P << "Registering the IP stack for application \"" << name_ << "\" failed."
-                        << "Invalid IP stack reference provided for application";
+        error_init("Invalid IP stack reference provided for application.");
         return false;
     }
 
+    auto socket_factory = abstract_socket_factory::get();
+    if (!socket_factory->is_xnet_backend()) {
+        error_init("The XNET socket factory is not being used.");
+        return false;  
+    }
     // All sockets of this application (local routing and network) are created on io_.
     // The auxiliary context of the routing host is bound to the same stack when it is created during init().
-    abstract_socket_factory::get()->register_ip_stack(io_, _stack);
+    socket_factory->register_ip_stack(io_, _stack);
 
     VSOMEIP_INFO_P << "IP stack registered for application \"" << name_ << "\".";
     return true;
+}
+
+void application_impl::error_init(const char* _message) const {
+    VSOMEIP_ERROR_P << "Failed to initialize application \"" << name_ << "\". " << _message;
 }
 // --- NI modification: END ---
 

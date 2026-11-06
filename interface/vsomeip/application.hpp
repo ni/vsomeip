@@ -94,7 +94,7 @@ public:
      */
     virtual diagnosis_t get_diagnosis() const = 0;
 
-     /**
+    /**
      *
      * \brief Initializes the application with xnet.
      *
@@ -147,7 +147,7 @@ public:
      */
     virtual bool init(const std::string& _json) = 0;
 
-     /**
+    /**
      *
      * \brief Initializes the application from an in-memory JSON configuration
      * with the given IP stack.

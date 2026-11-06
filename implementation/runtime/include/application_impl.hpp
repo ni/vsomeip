@@ -215,6 +215,9 @@ private:
 
     // Binds the IP stack used for all sockets of this application. Must run before init.
     bool register_ip_stack(const nxIpStackRef_t _stack);
+
+    // Emits an error log that the application initialization failed, with the given message.
+    void error_init(const char* _message) const;
     // --- NI modification: END ---
 
     using members_key_t = uint64_t;

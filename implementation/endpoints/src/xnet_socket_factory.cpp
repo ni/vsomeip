@@ -102,6 +102,10 @@ namespace vsomeip_v3 {
     void xnet_socket_factory::register_ip_stack(boost::asio::io_context& _io, boost::asio::io_context& _auxiliary_io) {
         std::lock_guard<std::mutex> lock{stacks_mutex_};
         auto stack = stacks_.find(&_io);
+        if (stack == stacks_.end()) {
+            VSOMEIP_ERROR_P << "No IP stack registered for io_context: " << &_io;
+            return;
+        }
         stacks_[&_auxiliary_io] = stack->second;
     }
 
@@ -120,14 +124,15 @@ namespace vsomeip_v3 {
         return nullptr;
     }
 
-
 void use_xnet_socket_factory() {
-    static bool is_factory_set = false;
-
-    // call set_abstract_factory only once
-    if (!is_factory_set) {
-        is_factory_set = true;
+    // call set_abstract_factory() only once and check if the factory was already initialized (ASIO) 
+    static const bool is_xnet_active = [] {
         set_abstract_factory(std::make_shared<xnet_socket_factory>());
+        return abstract_socket_factory::get()->is_xnet_backend();
+    }();
+
+    if (!is_xnet_active) {
+        VSOMEIP_ERROR_P << "Late xnet_socket_factory injection: the socket factory was already initialized (ASIO).";
     }
 }
 
