@@ -4,10 +4,6 @@
 #include "../include/xnet_tcp_acceptor.hpp"
 #include "../include/xnet_tcp_socket.hpp"
 #include "../include/xnet_udp_socket.hpp"
-#if defined(__linux__) || defined(__QNX__)
-#include "../include/asio_uds_socket.hpp"
-#include "../include/asio_uds_acceptor.hpp"
-#endif
 #include "../include/asio_timer.hpp"
 #include "../include/steady_clock.hpp"
 #include "logger_ext.hpp"
@@ -16,6 +12,10 @@
 
 #if defined(__linux__)
 #include "../include/netlink_connector.hpp"
+#if defined(__QNX__)
+#include "../include/asio_uds_socket.hpp"
+#include "../include/asio_uds_acceptor.hpp"
+#endif
 
 namespace {
 
