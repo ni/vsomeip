@@ -384,8 +384,8 @@ bool application_impl::init(const std::string& _json, const nxIpStackRef_t _stac
 bool application_impl::register_ip_stack(const nxIpStackRef_t _stack) {
     std::scoped_lock its_initialized_lock{initialize_mutex_};
     if (is_initialized_) {
-        error_init("Application is already initialized, IP stack must be registered before init().");
-        return false;
+        VSOMEIP_WARNING << "Trying to initialize already-initialized application \"" << name_ << "\" (" << hex4(client_) << ")";
+        return true;
     }
 
     if (nullptr == _stack) {
@@ -402,7 +402,6 @@ bool application_impl::register_ip_stack(const nxIpStackRef_t _stack) {
     // The auxiliary context of the routing host is bound to the same stack when it is created during init().
     socket_factory->register_ip_stack(io_, _stack);
 
-    std::cerr << "IP stack registered for application \"" << name_ << "\"." << std::endl;
     return true;
 }
 
