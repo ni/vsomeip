@@ -124,7 +124,7 @@ namespace vsomeip_v3 {
         return nullptr;
     }
 
-void use_xnet_socket_factory() {
+bool use_xnet_socket_factory() {
     // call set_abstract_factory() only once and check if the factory was already initialized (ASIO) 
     static const bool is_xnet_active = [] {
         set_abstract_factory(std::make_shared<xnet_socket_factory>());
@@ -134,6 +134,7 @@ void use_xnet_socket_factory() {
     if (!is_xnet_active) {
         VSOMEIP_ERROR_P << "Late xnet_socket_factory injection: the socket factory was already initialized (ASIO).";
     }
+    return is_xnet_active;
 }
 
 }

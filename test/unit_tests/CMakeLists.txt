@@ -17,8 +17,9 @@ add_subdirectory(utility_utility_tests)
 add_subdirectory(configuration_tests)
 
 # --- NI modification: BEGIN ---
-# Unit tests for initializing an application from an in-memory JSON configuration.
 add_subdirectory(in_memory_json_api_tests)
+add_subdirectory(xnet_application_tests)
+add_subdirectory(xnet_factory_tests)
 # --- NI modification: END ---
 
 # --- NI modification: BEGIN ---

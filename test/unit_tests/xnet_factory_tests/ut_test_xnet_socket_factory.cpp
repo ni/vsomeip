@@ -13,18 +13,18 @@
 #include "asio_uds_socket.hpp"
 #endif
 
-TEST(xnet_socket_factory_policy_test, create_timer_uses_asio_timer) {
+TEST(xnet_socket_factory_test, create_timer_uses_asio_timer) {
     boost::asio::io_context io;
-    vsomeip_v3::xnet_socket_factory factory(nullptr);
+    vsomeip_v3::xnet_socket_factory factory;
 
     auto timer = factory.create_timer(io);
     EXPECT_NE(dynamic_cast<vsomeip_v3::asio_timer*>(timer.get()), nullptr);
 }
 
 #if defined(__linux__) || defined(__QNX__)
-TEST(xnet_socket_factory_policy_test, create_uds_objects_use_asio) {
+TEST(xnet_socket_factory_test, create_uds_objects_use_asio) {
     boost::asio::io_context io;
-    vsomeip_v3::xnet_socket_factory factory(nullptr);
+    vsomeip_v3::xnet_socket_factory factory;
 
     auto uds_socket = factory.create_uds_socket(io);
     auto uds_acceptor = factory.create_uds_acceptor(io);
@@ -34,10 +34,11 @@ TEST(xnet_socket_factory_policy_test, create_uds_objects_use_asio) {
 }
 #endif
 
-TEST(xnet_socket_factory_policy_test, create_transport_objects_use_xnet) {
+TEST(xnet_socket_factory_test, create_transport_objects_use_xnet) {
     boost::asio::io_context io;
     auto const fake_stack = reinterpret_cast<nxIpStackRef_t>(0x1);
-    vsomeip_v3::xnet_socket_factory factory(fake_stack);
+    vsomeip_v3::xnet_socket_factory factory;
+    factory.register_ip_stack(io, fake_stack);
 
     auto tcp_socket = factory.create_tcp_socket(io);
     auto udp_socket = factory.create_udp_socket(io);

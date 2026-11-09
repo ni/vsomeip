@@ -2,10 +2,8 @@ project("unit_tests_xnet_tests" LANGUAGES CXX)
 
 set(SRCS 
     ../main.cpp
-    test_xnet_socket_factory.cpp
     ut_xnet_api_seam.cpp
     ut_xnet_error_mapping.cpp
-    ut_xnet_socket_factory_policy.cpp
     ut_xnet_tcp_acceptor.cpp
     ut_xnet_tcp_socket_async.cpp
     ut_xnet_tcp_socket_sync.cpp
