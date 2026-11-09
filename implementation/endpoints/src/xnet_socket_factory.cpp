@@ -12,10 +12,6 @@
 
 #if defined(__linux__)
 #include "../include/netlink_connector.hpp"
-#if defined(__QNX__)
-#include "../include/asio_uds_socket.hpp"
-#include "../include/asio_uds_acceptor.hpp"
-#endif
 
 namespace {
 
@@ -45,6 +41,11 @@ private:
 };
 
 }
+#endif
+
+#if defined(__linux__) || defined(__QNX__)
+#include "../include/asio_uds_socket.hpp"
+#include "../include/asio_uds_acceptor.hpp"
 #endif
 
 namespace vsomeip_v3 {
