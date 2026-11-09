@@ -6,13 +6,7 @@
 #include "../include/abstract_socket_factory.hpp"
 #include "../include/asio_socket_factory.hpp"
 
-#include "logger_ext.hpp"
-
-#include <mutex>
-#include <stdexcept>
-
-#define VSOMEIP_LOG_PREFIX "asf"
-
+#include <iostream>
 namespace vsomeip_v3 {
 
 /**
