@@ -22,7 +22,6 @@
 #endif
 #include <functional>
 #include <string>
-
 // --- NI modification: BEGIN ---
 #include "nxsocket.h"
 // --- NI modification: END ---

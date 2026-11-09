@@ -10,7 +10,6 @@
 #include "../include/endpoint_manager_impl.hpp"
 
 #include "logger_ext.hpp"
-#include "../include/abstract_socket_factory.hpp"
 #include "../include/local_server.hpp"
 #include "../include/local_acceptor_uds_impl.hpp"
 #include "../include/local_acceptor_tcp_impl.hpp"
@@ -27,6 +26,9 @@
 #include "../../routing/include/routing_host.hpp"
 #include "../../utility/include/utility.hpp"
 #include "../../utility/include/bithelper.hpp"
+// --- NI modification: BEGIN ---
+#include "../include/abstract_socket_factory.hpp"
+// --- NI modification: END ---
 
 #include <forward_list>
 #include <iomanip>
