@@ -18,7 +18,6 @@
 #include <vsomeip/function_types.hpp>
 #include <vsomeip/constants.hpp>
 #include <vsomeip/handler.hpp>
-
 // --- NI modification: BEGIN ---
 #include "nxsocket.h"
 // --- NI modification: END ---
