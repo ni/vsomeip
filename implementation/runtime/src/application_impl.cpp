@@ -374,10 +374,12 @@ bool application_impl::init_configuration() {
 
 // --- NI modification: BEGIN ---
 bool application_impl::init(const nxIpStackRef_t _stack) {
+    std::scoped_lock its_initialized_lock{initialize_mutex_};
     return register_ip_stack(_stack) && init();
 }
 
 bool application_impl::init(const std::string& _json, const nxIpStackRef_t _stack) {
+    std::scoped_lock its_initialized_lock{initialize_mutex_};
     return register_ip_stack(_stack) && init(_json);
 }
 
