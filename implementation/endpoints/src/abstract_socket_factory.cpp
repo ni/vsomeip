@@ -7,6 +7,9 @@
 #include "../include/asio_socket_factory.hpp"
 
 #include <iostream>
+// --- NI modification: BEGIN ---
+#include <mutex>
+// --- NI modification: END ---
 namespace vsomeip_v3 {
 
 /**
@@ -36,7 +39,14 @@ namespace vsomeip_v3 {
  *non-neglectable cost to pay during production run-time for enabling these tests.
  **/
 static std::shared_ptr<abstract_socket_factory> _factory;
+// --- NI modification: BEGIN ---
+// The mutex is used to ensure that the factory is initialized only once, even in a multithreaded environment.
+static std::mutex _factory_mutex;
+// --- NI modification: END ---
 static std::shared_ptr<abstract_socket_factory> init() {
+    // --- NI modification: BEGIN ---
+    std::lock_guard<std::mutex> lock(_factory_mutex);
+    /// --- NI modification: END ---
     if (!_factory) {
         _factory = std::make_shared<asio_socket_factory>();
     }
@@ -44,6 +54,9 @@ static std::shared_ptr<abstract_socket_factory> init() {
 }
 
 void set_abstract_factory(std::shared_ptr<abstract_socket_factory> ptr) {
+    /// --- NI modification: BEGIN ---
+    std::lock_guard<std::mutex> lock(_factory_mutex);
+    /// --- NI modification: END ---
     _factory = ptr;
 }
 

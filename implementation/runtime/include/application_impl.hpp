@@ -365,7 +365,7 @@ private:
     std::mutex session_mutex_;
 
     // --- NI modification: BEGIN ---
-    // Recursive, so the stack-taking init() overloads can hold it across register_ip_stack() and init()/init(json).
+    // Make mutex recursive, so the stack-taking init() overloads can hold it across register_ip_stack() and init()/init(json).
     std::recursive_mutex initialize_mutex_;
     // --- NI modification: END ---
     bool is_initialized_;
