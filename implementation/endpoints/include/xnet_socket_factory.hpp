@@ -1,26 +1,21 @@
-#ifndef XNET_SOCKET_FACTORY_HPP_
-#define XNET_SOCKET_FACTORY_HPP_
+#pragma once
 
-#include <iostream>
+#include <map>
+#include <mutex>
 
 #include "abstract_socket_factory.hpp"
-#include "nxsocket.h"
 
 namespace vsomeip_v3 {
 
 class xnet_socket_factory final : public abstract_socket_factory {
 public:
-explicit xnet_socket_factory(nxIpStackRef_t xnet_stack);
-~xnet_socket_factory() override = default;
-
-// Get XNET stack reference
-nxIpStackRef_t get_xnet_stack() const { return xnet_stack_; }
+    ~xnet_socket_factory() override = default;
 
 #if defined(__linux__)
     std::shared_ptr<abstract_netlink_connector> create_netlink_connector(boost::asio::io_context& _io,
-        const boost::asio::ip::address& _address,
-        const boost::asio::ip::address& _multicast_address,
-        bool _is_requiring_link) override;
+                                                                         const boost::asio::ip::address& _address,
+                                                                         const boost::asio::ip::address& _multicast_address,
+                                                                         bool _is_requiring_link) override;
 #endif
 
     std::unique_ptr<tcp_socket> create_tcp_socket(boost::asio::io_context& _io) override;
@@ -36,12 +31,19 @@ nxIpStackRef_t get_xnet_stack() const { return xnet_stack_; }
 
     std::shared_ptr<abstract_clock> get_clock() override;
 
-    bool is_xnet_backend() const override;
+    void register_ip_stack(boost::asio::io_context& _io, nxIpStackRef_t _stack) override;
+
+    void register_ip_stack(boost::asio::io_context& _io, boost::asio::io_context& _auxiliary_io) override;
+
+    void unregister_ip_stack(boost::asio::io_context& _io) override;
+
+    bool is_xnet_backend() const override { return true; }
+
+    nxIpStackRef_t get_xnet_ip_stack(boost::asio::io_context& _io) const override;
 
 private:
-    nxIpStackRef_t xnet_stack_ = nullptr; // XNET IP stack reference
+    mutable std::mutex stacks_mutex_;
+    std::map<const boost::asio::io_context*, nxIpStackRef_t> stacks_;
 };
 
 }
-
-#endif

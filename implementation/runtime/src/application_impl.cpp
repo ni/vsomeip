@@ -42,6 +42,9 @@
 #include "../../security/include/security.hpp"
 #include "../../tracing/include/connector_impl.hpp"
 #include "../../thread_manager/include/thread_manager.hpp"
+// --- NI modification: BEGIN ---
+#include "../../endpoints/include/abstract_socket_factory.hpp"
+// --- NI modification: END ---
 
 #define VSOMEIP_LOG_PREFIX "app"
 
@@ -67,6 +70,10 @@ application_impl::application_impl(const std::string& _name, const std::string& 
 
 application_impl::~application_impl() {
     runtime_->remove_application(name_);
+    // --- NI modification: BEGIN ---
+    // Release the IP stack bindings.
+    abstract_socket_factory::get()->unregister_ip_stack(io_);
+    // --- NI modification: END ---
 }
 
 bool application_impl::init() {
@@ -181,6 +188,11 @@ bool application_impl::init(const std::string& _json) {
 }
 
 bool application_impl::init_configuration() {
+    auto its_socket_factory = abstract_socket_factory::get();
+    if (its_socket_factory->is_xnet_backend() && nullptr == its_socket_factory->get_xnet_ip_stack(io_)) {
+        error_init("No IP stack reference was passed, but the XNET socket factory requires one.");
+        return false;
+    }
 // --- NI modification: END ---
     // Elect the routing host before init() queries the configuration: load()
     // parsed the mandatory files only, and the optional pass can still change
@@ -359,6 +371,46 @@ bool application_impl::init_configuration() {
 
     return is_initialized_;
 }
+
+// --- NI modification: BEGIN ---
+bool application_impl::init(const nxIpStackRef_t _stack) {
+    std::scoped_lock its_initialized_lock{initialize_mutex_};
+    return register_ip_stack(_stack) && init();
+}
+
+bool application_impl::init(const std::string& _json, const nxIpStackRef_t _stack) {
+    std::scoped_lock its_initialized_lock{initialize_mutex_};
+    return register_ip_stack(_stack) && init(_json);
+}
+
+bool application_impl::register_ip_stack(const nxIpStackRef_t _stack) {
+    std::scoped_lock its_initialized_lock{initialize_mutex_};
+    if (is_initialized_) {
+        VSOMEIP_WARNING << "Trying to initialize already-initialized application \"" << name_ << "\" (" << hex4(client_) << ")";
+        return true;
+    }
+
+    if (nullptr == _stack) {
+        error_init("Invalid IP stack reference provided for application.");
+        return false;
+    }
+
+    auto socket_factory = abstract_socket_factory::get();
+    if (!socket_factory->is_xnet_backend()) {
+        error_init("The XNET socket factory is not being used.");
+        return false;
+    }
+    // All sockets of this application (local routing and network) are created on io_.
+    // The auxiliary context of the routing host is bound to the same stack when it is created during init().
+    socket_factory->register_ip_stack(io_, _stack);
+
+    return true;
+}
+
+void application_impl::error_init(const char* _message) const {
+    std::cerr << "Failed to initialize application \"" << name_ << "\". " << _message << std::endl;
+}
+// --- NI modification: END ---
 
 void application_impl::start() {
 #if defined(__linux__)

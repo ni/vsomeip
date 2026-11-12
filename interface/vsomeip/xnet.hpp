@@ -1,14 +1,13 @@
-#ifndef VSOMEIP_V3_XNET_HPP_
-#define VSOMEIP_V3_XNET_HPP_
+#pragma once
 
-#include "nxsocket.h" // Part of the public API: provides nxIpStackRef_t and the nx* stack functions.
+#include <vsomeip/export.hpp>
 
 namespace vsomeip_v3 {
 
-/// Installs the NI-XNET socket factory using the given IP stack.
+/// Installs the NI-XNET socket factory.
 /// Must be called before the first vsomeip application is created.
-void use_xnet_socket_factory(nxIpStackRef_t _xnet_stack);
+/// \return True if the XNET socket factory is active, false if another
+/// socket factory was already initialized.
+VSOMEIP_IMPORT_EXPORT bool use_xnet_socket_factory();
 
-} // namespace vsomeip_v3
-
-#endif // VSOMEIP_V3_XNET_HPP_
+}

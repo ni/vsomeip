@@ -7,11 +7,13 @@
 
 #include <vsomeip/vsomeip.hpp>
 #include <vsomeip/xnet.hpp>
+#include "nxsocket.h"
 #include "nixnet.h"
 
 #include "xnet-stack-configuration.h"
 
 std::shared_ptr<vsomeip::application> app;
+const char* app_name = "xnet-notify-tp-client";
 
 void stop_application([[maybe_unused]] int exit_code) {
     std::cout << "\nShutting down application..." << std::endl;
@@ -24,12 +26,10 @@ void stop_application([[maybe_unused]] int exit_code) {
     }
 }
 
-bool setup_xnet_stack() {
-    nxIpStackRef_t xnet_stack = nullptr;
-
+bool setup_xnet_stack(nxIpStackRef_t& xnet_stack) {
     // Initialize the xnet IP stack with the provided configuration
     nxStatus_t status{};
-    status = nxIpStackCreate("xnet-notify-tp-client", client::xnet_ip_stack_config, &xnet_stack);
+    status = nxIpStackCreate(app_name, client::xnet_ip_stack_config, &xnet_stack);
     if (status != 0) {
         std::cerr << "Failed to create XNET IP stack. Status code: " << status << std::endl;
         return false;
@@ -39,15 +39,6 @@ bool setup_xnet_stack() {
     std::cout << "Waiting for XNET IP stack to be ready..." << std::endl;
     nxIpStackWaitForInterface(xnet_stack, client::xnet_interface_name, 30000);
 
-    // Initialize the XNET socket factory
-    try {
-        std::cout << "Initializing XNET socket factory with XNET driver enabled..." << std::endl;
-        vsomeip_v3::use_xnet_socket_factory(xnet_stack);
-
-    } catch (std::exception const& e) {
-        std::cerr << "Failed to initialize XNET socket factory: " << e.what() << std::endl;
-        return false;
-    }
     return true;
 }
 
@@ -71,11 +62,17 @@ void on_message(const std::shared_ptr<vsomeip::message>& _response) {
 }
 
 bool setup_application() {
+    // Setup the xnet stack
+    nxIpStackRef_t xnet_stack = nullptr;
+    if (!setup_xnet_stack(xnet_stack)) {
+        return false;
+    }
+
     // Create a vsomeip application
-    app = vsomeip::runtime::get()->create_application("xnet-notify-tp-client");
+    app = vsomeip::runtime::get()->create_application(app_name);
 
     // Initialize the application
-    if (!app->init()) {
+    if (!app->init(xnet_stack)) {
         std::cerr << "Couldn't initialize application" << std::endl;
         return false;
     }
@@ -93,10 +90,8 @@ bool setup_application() {
 }
 
 int main() {
-    // Setup the XNET IP stack and socket factory
-    if (!setup_xnet_stack()) {
-        return 1;
-    }
+    // Use the XNET socket factory for vsomeip
+    vsomeip::use_xnet_socket_factory();
 
     // Setup the vsomeip application
     if (!setup_application()) {

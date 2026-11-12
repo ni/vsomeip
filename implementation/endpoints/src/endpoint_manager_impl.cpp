@@ -10,7 +10,6 @@
 #include "../include/endpoint_manager_impl.hpp"
 
 #include "logger_ext.hpp"
-#include "../include/abstract_socket_factory.hpp"
 #include "../include/local_server.hpp"
 #include "../include/local_acceptor_uds_impl.hpp"
 #include "../include/local_acceptor_tcp_impl.hpp"
@@ -27,6 +26,9 @@
 #include "../../routing/include/routing_host.hpp"
 #include "../../utility/include/utility.hpp"
 #include "../../utility/include/bithelper.hpp"
+// --- NI modification: BEGIN ---
+#include "../include/abstract_socket_factory.hpp"
+// --- NI modification: END ---
 
 #include <forward_list>
 #include <iomanip>
@@ -50,24 +52,15 @@ endpoint_manager_impl::endpoint_manager_impl(routing_manager_impl* const _rm, bo
     is_local_routing_(configuration_->is_local_routing()), is_uds_preferred_(configuration_->is_uds_preferred()),
     auxiliary_context_(configuration_->get_io_thread_nice_level(router_name_)), is_processing_options_(true) {
     // --- NI modification: BEGIN ---
-    // Register both application I/O contexts with backends that require explicit ownership.
-    auto* const its_factory = abstract_socket_factory::get();
-    if (!its_factory->register_io_context(io_, router_name_)) {
-        throw std::runtime_error("Failed to register application I/O context with the socket factory.");
-    }
-    if (!its_factory->register_io_context(auxiliary_context_.get_context(), router_name_)) {
-        its_factory->unregister_io_context(io_, router_name_);
-        throw std::runtime_error("Failed to register auxiliary I/O context with the socket factory.");
-    }
+    // Bind the auxiliary context to the IP stack of the application I/O context.
+    abstract_socket_factory::get()->register_ip_stack(io_, auxiliary_context_.get_context());
     // --- NI modification: END ---
 }
 
 endpoint_manager_impl::~endpoint_manager_impl() {
     // --- NI modification: BEGIN ---
-    // Release I/O-context registrations before destroying the endpoint manager.
-    auto* const its_factory = abstract_socket_factory::get();
-    its_factory->unregister_io_context(auxiliary_context_.get_context(), router_name_);
-    its_factory->unregister_io_context(io_, router_name_);
+    // Unregister the auxiliary context from the IP stack.
+    abstract_socket_factory::get()->unregister_ip_stack(auxiliary_context_.get_context());
     // --- NI modification: END ---
 }
 
