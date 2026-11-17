@@ -54,6 +54,16 @@ void xnet_tcp_acceptor::open(boost::asio::ip::tcp::endpoint::protocol_type _pt, 
         return;
     }
 
+    // Non-blocking, so nxaccept() cannot block the worker after a pending connection went away
+    // and close() can always stop the worker.
+    int opt = 1;
+    if (xnet_api::nxsetsockopt(acceptor_, nxSOL_SOCKET, nxSO_NONBLOCK, &opt, static_cast<nxsocklen_t>(sizeof(opt))) == SOCKET_ERROR_VALUE) {
+        _ec = xnet_socket_helper::get_xnet_error();
+        boost::system::error_code its_close_error;
+        close(its_close_error);
+        return;
+    }
+
     _ec.clear();
 }
 

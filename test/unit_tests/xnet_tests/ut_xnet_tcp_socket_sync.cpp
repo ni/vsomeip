@@ -34,6 +34,7 @@ struct fake_tcp_backend_state {
 
     int last_setsockopt_level{0};
     int last_setsockopt_name{0};
+    int last_nonblock_value{-1};
 
     int io_control_rx_data{73};
 
@@ -66,10 +67,13 @@ int fake_nxclose(nxSOCKET) {
     return g_state.close_result;
 }
 
-int fake_nxsetsockopt(nxSOCKET, int level, int name, const void*, nxsocklen_t) {
+int fake_nxsetsockopt(nxSOCKET, int level, int name, const void* value, nxsocklen_t) {
     ++g_state.setopt_calls;
     g_state.last_setsockopt_level = level;
     g_state.last_setsockopt_name = name;
+    if (level == nxSOL_SOCKET && name == nxSO_NONBLOCK && value != nullptr) {
+        g_state.last_nonblock_value = *static_cast<const int*>(value);
+    }
 
     if (g_state.fail_nonblock_setopt && level == nxSOL_SOCKET && name == nxSO_NONBLOCK) {
         g_state.last_error = 13813;
@@ -158,6 +162,7 @@ TEST_F(xnet_tcp_socket_sync_fixture, open_sets_nonblocking_and_opens_socket) {
     EXPECT_GE(g_state.setopt_calls, 1);
     EXPECT_EQ(g_state.last_setsockopt_level, nxSOL_SOCKET);
     EXPECT_EQ(g_state.last_setsockopt_name, nxSO_NONBLOCK);
+    EXPECT_EQ(g_state.last_nonblock_value, 1);
 
     socket->close(ec);
     xnet_test_utils::expect_success(ec);

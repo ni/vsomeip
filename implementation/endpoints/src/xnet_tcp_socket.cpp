@@ -51,7 +51,8 @@ void xnet_tcp_socket::assign_accepted_socket(nxSOCKET _socket, bool _is_ipv6, bo
 
     auto its_socket = _socket;
 
-    int opt = 0;
+    // Non-blocking, so a worker waiting for data can be stopped by close() (see open())
+    int opt = 1;
     if (xnet_api::nxsetsockopt(its_socket, nxSOL_SOCKET, nxSO_NONBLOCK, &opt, static_cast<nxsocklen_t>(sizeof(opt))) == SOCKET_ERROR_VALUE) {
         _ec = xnet_socket_helper::get_xnet_error();
         return;
@@ -80,7 +81,10 @@ void xnet_tcp_socket::open(boost::asio::ip::tcp::endpoint::protocol_type _pt, bo
         return;
     }
 
-    int opt = 0;
+    // Non-blocking mode (required for vsomeip): the worker threads wait in wait_socket_ready(), which
+    // polls cancel_epoch_. A blocking nxrecv() is not woken up by nxclose(), so close() would wait
+    // forever in stop_worker_threads() for a receive worker on a connection without traffic.
+    int opt = 1;
     if (xnet_api::nxsetsockopt(socket_, nxSOL_SOCKET, nxSO_NONBLOCK, &opt, static_cast<nxsocklen_t>(sizeof(opt))) == SOCKET_ERROR_VALUE) {
         _ec = xnet_socket_helper::get_xnet_error();
         boost::system::error_code its_close_error;
