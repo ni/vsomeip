@@ -6,8 +6,11 @@
 #include <array>
 #include <atomic>
 #include <chrono>
+#include <condition_variable>
 #include <cstring>
+#include <future>
 #include <memory>
+#include <mutex>
 #include <thread>
 #include <vector>
 
@@ -44,10 +47,25 @@ struct fake_tcp_async_backend_state {
     std::vector<int32_t> send_results{};
     std::size_t send_result_index{0};
 
+    // Last nxSO_NONBLOCK value; like XNET, nxrecv() blocks in blocking mode until released.
+    bool nonblocking{false};
+
     void reset() { *this = fake_tcp_async_backend_state{}; }
 };
 
 fake_tcp_async_backend_state g_state;
+
+std::mutex g_blocked_recv_mutex;
+std::condition_variable g_blocked_recv_cv;
+bool g_blocked_recv_released{false};
+
+void release_blocked_recv() {
+    {
+        std::lock_guard<std::mutex> its_lock(g_blocked_recv_mutex);
+        g_blocked_recv_released = true;
+    }
+    g_blocked_recv_cv.notify_all();
+}
 
 auto fake_nxgetlasterrornum() {
     return static_cast<decltype(vsomeip_v3::xnet_api::nxgetlasterrornum())>(g_state.last_error);
@@ -57,7 +75,10 @@ nxSOCKET fake_nxsocket(nxIpStackRef_t, int, int, int) {
     return g_state.socket_to_return;
 }
 
-int fake_nxsetsockopt(nxSOCKET, int, int, const void*, nxsocklen_t) {
+int fake_nxsetsockopt(nxSOCKET, int level, int name, const void* value, nxsocklen_t) {
+    if (level == nxSOL_SOCKET && name == nxSO_NONBLOCK && value != nullptr) {
+        g_state.nonblocking = *static_cast<const int*>(value) != 0;
+    }
     return 0;
 }
 
@@ -91,6 +112,14 @@ int32_t fake_nxrecv(nxSOCKET, void* buffer, int32_t len, int) {
     int32_t result = 0;
     if (g_state.recv_result_index < g_state.recv_results.size()) {
         result = g_state.recv_results[g_state.recv_result_index++];
+    }
+
+    if (result < 0 && g_state.recv_error == 13837 && !g_state.nonblocking) {
+        // Blocking socket without data: nxclose() does not wake this up. Bounded so a regression fails instead of hanging the run.
+        std::unique_lock<std::mutex> its_lock(g_blocked_recv_mutex);
+        g_blocked_recv_cv.wait_for(its_lock, std::chrono::seconds(3), []() { return g_blocked_recv_released; });
+        g_state.last_error = 13858;
+        return -1;
     }
 
     if (result > 0 && buffer != nullptr) {
@@ -134,6 +163,10 @@ struct xnet_tcp_socket_async_fixture : ::testing::Test {
 
     void SetUp() override {
         g_state.reset();
+        {
+            std::lock_guard<std::mutex> its_lock(g_blocked_recv_mutex);
+            g_blocked_recv_released = false;
+        }
         original_table_ = std::make_unique<vsomeip_v3::xnet_api::api_table>(vsomeip_v3::xnet_api::get_api_table());
 
         auto table = *original_table_;
@@ -150,6 +183,7 @@ struct xnet_tcp_socket_async_fixture : ::testing::Test {
     }
 
     void TearDown() override {
+        release_blocked_recv();
         if (original_table_) {
             vsomeip_v3::xnet_api::set_api_table(*original_table_);
         }
@@ -386,5 +420,45 @@ TEST_F(xnet_tcp_socket_async_fixture, async_connect_cancel_race_reports_operatio
     pump_until(probe, std::chrono::milliseconds(350));
 
     EXPECT_EQ(handler_calls.load(), 1);
+    EXPECT_EQ(completion_ec, boost::asio::error::make_error_code(boost::asio::error::operation_aborted));
+}
+
+TEST_F(xnet_tcp_socket_async_fixture, close_stops_pending_receive_on_idle_connection) {
+    auto socket = create_open_socket();
+
+    // Connected peer that never sends: every nxrecv() would block and nxselect() times out.
+    g_state.recv_results = std::vector<int32_t>(1000, -1);
+    g_state.recv_error = 13837;
+    g_state.select_result = 0;
+
+    std::array<std::uint8_t, 8> buffer{};
+    xnet_test_utils::async_completion_probe probe;
+    boost::system::error_code completion_ec;
+
+    socket->async_receive(boost::asio::buffer(buffer.data(), buffer.size()),
+                          [&](boost::system::error_code const& ec, std::size_t) {
+                              completion_ec = ec;
+                              probe.signal();
+                          });
+
+    auto const wait_deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(100);
+    while (g_state.select_calls == 0 && std::chrono::steady_clock::now() < wait_deadline) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+
+    // close() joins the receive worker; it must not wait for data that never arrives.
+    auto close_done = std::async(std::launch::async, [&socket]() {
+        boost::system::error_code ec;
+        socket->close(ec);
+        return ec;
+    });
+    const auto close_status = close_done.wait_for(std::chrono::seconds(2));
+    release_blocked_recv();
+    ASSERT_EQ(close_status, std::future_status::ready) << "close() hangs on a pending receive";
+    xnet_test_utils::expect_success(close_done.get());
+
+    pump_until(probe, std::chrono::milliseconds(350));
+
+    EXPECT_EQ(probe.signal_count(), 1U);
     EXPECT_EQ(completion_ec, boost::asio::error::make_error_code(boost::asio::error::operation_aborted));
 }

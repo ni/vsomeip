@@ -45,6 +45,7 @@ struct fake_tcp_acceptor_backend_state {
 
     int last_setsockopt_level{0};
     int last_setsockopt_name{0};
+    int last_nonblock_value{-1};
 
     boost::asio::ip::tcp::endpoint accepted_peer_ep{boost::asio::ip::make_address_v4("127.0.0.21"), 34567};
 
@@ -83,10 +84,13 @@ int fake_nxclose(nxSOCKET) {
     return g_state.close_result;
 }
 
-int fake_nxsetsockopt(nxSOCKET, int level, int name, const void*, nxsocklen_t) {
+int fake_nxsetsockopt(nxSOCKET, int level, int name, const void* value, nxsocklen_t) {
     ++g_state.setopt_calls;
     g_state.last_setsockopt_level = level;
     g_state.last_setsockopt_name = name;
+    if (level == nxSOL_SOCKET && name == nxSO_NONBLOCK && value != nullptr) {
+        g_state.last_nonblock_value = *static_cast<const int*>(value);
+    }
 
     if (g_state.setopt_result != 0) {
         g_state.last_error = 13813;
@@ -184,6 +188,8 @@ TEST_F(xnet_tcp_acceptor_fixture, open_bind_listen_set_option_and_close_success)
     acceptor->open(boost::asio::ip::tcp::v4(), ec);
     xnet_test_utils::expect_success(ec);
     EXPECT_TRUE(acceptor->is_open());
+    EXPECT_EQ(g_state.last_setsockopt_name, nxSO_NONBLOCK);
+    EXPECT_EQ(g_state.last_nonblock_value, 1);
 
     acceptor->set_option(boost::asio::ip::tcp::socket::reuse_address(true), ec);
     xnet_test_utils::expect_success(ec);
@@ -287,6 +293,7 @@ TEST_F(xnet_tcp_acceptor_fixture, async_accept_success_sets_peer_endpoint_and_op
 
     g_state.select_result = 1;
     g_state.accept_fails = false;
+    g_state.last_nonblock_value = -1;
 
     boost::asio::ip::tcp::endpoint peer_ep;
     xnet_test_utils::async_completion_probe probe;
@@ -305,6 +312,7 @@ TEST_F(xnet_tcp_acceptor_fixture, async_accept_success_sets_peer_endpoint_and_op
     xnet_test_utils::expect_success(completion_ec);
     EXPECT_EQ(g_state.accept_calls, 1);
     EXPECT_TRUE(peer_socket->is_open());
+    EXPECT_EQ(g_state.last_nonblock_value, 1);
     EXPECT_EQ(peer_ep.address(), g_state.accepted_peer_ep.address());
     EXPECT_EQ(peer_ep.port(), g_state.accepted_peer_ep.port());
 
